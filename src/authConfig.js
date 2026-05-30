@@ -8,7 +8,7 @@ export const msalConfig = {
     authority: "https://login.microsoftonline.com/b9cfc83f-9274-459b-a7ea-62dca3451e8c",
 
     // Redirection locale (aligne EXACTEMENT avec ce que tu as enregistré dans l'app)
-    redirectUri: import.meta.env.VITE_REDIRECT_URI || "http://localhost:5174",
+    redirectUri: import.meta.env.VITE_REDIRECT_URI || "https://ashy-pebble-0206b8703.7.azurestaticapps.net/",
 
     postLogoutRedirectUri: "/",
     // knownAuthorities n'est pas nécessaire avec login.microsoftonline.com
