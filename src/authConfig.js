@@ -18,4 +18,6 @@ export const msalConfig = {
 };
 
 // Scopes MINIMAUX pour le sign-in (le front ne demande pas Graph)
-export const loginRequest = { scopes: ["openid", "profile", "offline_access"] };
+export const loginRequest = {
+  scopes: ["User.Read"]  // ← Change juste ça
+};
