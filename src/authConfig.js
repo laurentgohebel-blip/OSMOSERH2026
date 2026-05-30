@@ -2,7 +2,7 @@
 export const msalConfig = {
   auth: {
     // ⚠️ mets ici le Client ID de l'App SPA créée dans ton tenant interne (pas celui de CIAM)
-    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "835bfda1-14c6-4a76-8a73-d1dcbe81efe8",
+    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "0cc9877f-07e3-46c0-93e9-1c2f55ade914",
 
     // Authority = ton tenant interne (remplace par ton TENANT_ID interne)
     authority: "https://login.microsoftonline.com/b9cfc83f-9274-459b-a7ea-62dca3451e8c",
