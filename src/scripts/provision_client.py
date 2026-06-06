@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Provision de base pour un **site client existant** :
-- crée les listes Contrats / BoiteIdees / DPAE / Conges si absentes
+- crée les listes Contrats / BoiteIdees / DPAE / Conges / Onboarding si absentes
 - ajoute quelques colonnes standards
 - crée la bibliothèque "Contrats" si absente
 
@@ -28,11 +28,12 @@ site_id = get_site_id(args.site_host, args.site_path)
 print(f"Site ID: {site_id}")
 
 # Listes
-contrats_id = ensure_list(site_id, 'Contrats')
-ideas_id    = ensure_list(site_id, 'BoiteIdees')
-dpae_id     = ensure_list(site_id, 'DPAE')
-conges_id   = ensure_list(site_id, 'Conges')
-print('Lists:', contrats_id, ideas_id, dpae_id, conges_id)
+contrats_id    = ensure_list(site_id, 'Contrats')
+ideas_id       = ensure_list(site_id, 'BoiteIdees')
+dpae_id        = ensure_list(site_id, 'DPAE')
+conges_id      = ensure_list(site_id, 'Conges')
+onboarding_id  = ensure_list(site_id, 'Onboarding')
+print('Lists:', contrats_id, ideas_id, dpae_id, conges_id, onboarding_id)
 
 # Colonnes Contrats
 try:
@@ -80,6 +81,21 @@ try:
     print(f'Colonnes Conges créées sur liste {conges_id}')
 except Exception as e:
     print('Columns (Conges):', e)
+
+# Colonnes Onboarding
+try:
+    add_text_column(site_id, onboarding_id, 'EmployeeName')
+    add_text_column(site_id, onboarding_id, 'EmployeeEmail')
+    add_text_column(site_id, onboarding_id, 'Position')
+    add_text_column(site_id, onboarding_id, 'Department')
+    add_text_column(site_id, onboarding_id, 'Manager')
+    add_text_column(site_id, onboarding_id, 'StartDate')
+    add_choice_column(site_id, onboarding_id, 'Status', ['in_progress', 'completed', 'canceled'])
+    add_text_column(site_id, onboarding_id, 'TasksJson')   # JSON serialisé des tâches
+    add_text_column(site_id, onboarding_id, 'CreatedAt')
+    print(f'Colonnes Onboarding créées sur liste {onboarding_id}')
+except Exception as e:
+    print('Columns (Onboarding):', e)
 
 # Bibliothèque Contrats
 try:

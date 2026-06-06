@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from "react";
 import FormBuilder from "./FormBuilder.jsx";
 import ValidationConges from "./ValidationConges.jsx";
+import Onboarding from "./Onboarding.jsx";
 
 /**
  * AdminRH — Interface service RH (route /admin)
@@ -518,10 +519,11 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, le
           {/* Onglets */}
           <div className="tabs">
             {[
-              { key:"taches",    label:`📋 Tâches (${tasks.length})` },
-              { key:"conges",    label:"🏖️ Validation congés" },
-              { key:"creer",     label:"➕ Créer une tâche" },
-              { key:"apercu",    label:"📊 Aperçu par groupe" },
+              { key:"taches",      label:`📋 Tâches (${tasks.length})` },
+              { key:"conges",      label:"🏖️ Validation congés" },
+              { key:"onboarding",  label:"👋 Onboarding" },
+              { key:"creer",       label:"➕ Créer une tâche" },
+              { key:"apercu",      label:"📊 Aperçu par groupe" },
               { key:"formulaires", label:"🗂️ Formulaires & Documents" },
             ].map(t => (
               <button key={t.key}
@@ -641,6 +643,13 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, le
                 onReject={onRejectLeave}
                 instance={msalInstance}
               />
+            </div>
+          )}
+
+          {/* ── ONGLET ONBOARDING ── */}
+          {tab === "onboarding" && (
+            <div className="panel">
+              <Onboarding instance={msalInstance} />
             </div>
           )}
 
