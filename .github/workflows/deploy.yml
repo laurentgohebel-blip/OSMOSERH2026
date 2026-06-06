@@ -3,33 +3,22 @@ name: Deploy to Azure Static Web Apps
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
+    name: Build and Deploy
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          lfs: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-
-      - name: Debug — verifier longueur du token (sans le reveler)
-        env:
-          TOK: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
-        run: |
-          if [ -z "$TOK" ]; then
-            echo "ERREUR: AZURE_STATIC_WEB_APPS_API_TOKEN est VIDE"
-            exit 1
-          fi
-          echo "Longueur du token: ${#TOK} caracteres"
-          echo "Debut: ${TOK:0:4}... Fin: ...${TOK: -4}"
-          # Un token SWA Azure fait ~118 caracteres typiquement
-          if [ ${#TOK} -lt 50 ]; then
-            echo "ERREUR: Token trop court (probablement tronque)"
-            exit 1
-          fi
 
       - name: Install dependencies
         run: npm ci
@@ -40,11 +29,14 @@ jobs:
           VITE_AZURE_CLIENT_ID: ${{ secrets.AZCLIENT }}
           VITE_REDIRECT_URI: ${{ secrets.AZURE_REDIRECT_URI }}
 
-      - name: Upload to Static Web App
+      - name: Build And Deploy
+        id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
-          app_location: "dist"
+          app_location: "/"
+          output_location: "dist"
           skip_app_build: true
+          production_branch: "main"
