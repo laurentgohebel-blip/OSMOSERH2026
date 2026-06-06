@@ -344,15 +344,6 @@ export default function Onboarding({ instance }) {
         if (spItem) newOnb.spItemId = spItem.spItemId;
       }
 
-      // Notification email au manager (si renseigné + email valide)
-      if (instance && form.manager) {
-        try {
-          const { sendEmail } = await import("../services/graphService.js");
-          // Note : on n'a pas l'email du manager, juste son nom. Skip email pour l'instant.
-          // À enrichir si on stocke l'email manager côté champ.
-        } catch {}
-      }
-
       setItems(prev => [newOnb, ...prev]);
       setForm(EMPTY_FORM);
       setShowModal(false);
