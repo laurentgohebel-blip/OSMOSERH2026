@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Provision de base pour un **site client existant** :
-- crée les listes Contrats / BoiteIdees / DPAE si absentes
+- crée les listes Contrats / BoiteIdees / DPAE / Conges si absentes
 - ajoute quelques colonnes standards
 - crée la bibliothèque "Contrats" si absente
 
@@ -29,9 +29,10 @@ print(f"Site ID: {site_id}")
 
 # Listes
 contrats_id = ensure_list(site_id, 'Contrats')
-ideas_id = ensure_list(site_id, 'BoiteIdees')
-dpae_id = ensure_list(site_id, 'DPAE')
-print('Lists:', contrats_id, ideas_id, dpae_id)
+ideas_id    = ensure_list(site_id, 'BoiteIdees')
+dpae_id     = ensure_list(site_id, 'DPAE')
+conges_id   = ensure_list(site_id, 'Conges')
+print('Lists:', contrats_id, ideas_id, dpae_id, conges_id)
 
 # Colonnes Contrats
 try:
@@ -61,6 +62,24 @@ try:
     add_choice_column(site_id, dpae_id, 'Statut', ['A traiter','Envoyée','Refusée'])
 except Exception as e:
     print('Columns (DPAE):', e)
+
+# Colonnes Conges
+try:
+    add_text_column(site_id, conges_id, 'EmployeeEmail')
+    add_text_column(site_id, conges_id, 'EmployeeName')
+    add_text_column(site_id, conges_id, 'Type')
+    add_text_column(site_id, conges_id, 'StartDate')
+    add_text_column(site_id, conges_id, 'EndDate')
+    add_text_column(site_id, conges_id, 'StartHalf')
+    add_text_column(site_id, conges_id, 'EndHalf')
+    add_number_column(site_id, conges_id, 'Days')
+    add_choice_column(site_id, conges_id, 'Statut', ['pending', 'approved', 'rejected', 'canceled'])
+    add_text_column(site_id, conges_id, 'Comment')
+    add_text_column(site_id, conges_id, 'ManagerComment')
+    add_text_column(site_id, conges_id, 'CreatedAt')
+    print(f'Colonnes Conges créées sur liste {conges_id}')
+except Exception as e:
+    print('Columns (Conges):', e)
 
 # Bibliothèque Contrats
 try:

@@ -35,13 +35,13 @@ export default function App() {
   };
   const goto   = (r) => { window.location.hash = r; };
   const logout = () => instance.logoutRedirect();
-  const props  = { user, onNavigate: goto, onLogout: logout };
+  const props  = { user, onNavigate: goto, onLogout: logout, msalInstance: instance };
 
   switch (route) {
     case "conges":     return <Conges     {...props} />;
     case "documents":  return <Documents  {...props} />;
     case "formations": return <Formations {...props} />;
-    case "admin":      return <AdminRH    {...props} />;
+    case "admin":      return <AdminRH    {...props} msalInstance={instance} />;
     case "production": return <Production {...props} />;
     default:
       return <Home {...props}

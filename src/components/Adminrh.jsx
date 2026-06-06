@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import FormBuilder from "./FormBuilder.jsx";
+import ValidationConges from "./ValidationConges.jsx";
 
 /**
  * AdminRH — Interface service RH (route /admin)
@@ -284,7 +285,7 @@ html,body,#root{height:100%}
 `;
 
 // ─── Composant ────────────────────────────────────────────────────────────────
-export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, onNavigate, onLogout, onCreateTask, onUpdateTask, onDeleteTask }) {
+export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, leaveRequests, onNavigate, onLogout, onCreateTask, onUpdateTask, onDeleteTask, onApproveLeave, onRejectLeave, msalInstance }) {
 
   const [tasks, setTasks]   = useState(tasksProp || DEMO_TASKS);
   const groups              = groupsProp || DEMO_GROUPS;
@@ -518,6 +519,7 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, on
           <div className="tabs">
             {[
               { key:"taches",    label:`📋 Tâches (${tasks.length})` },
+              { key:"conges",    label:"🏖️ Validation congés" },
               { key:"creer",     label:"➕ Créer une tâche" },
               { key:"apercu",    label:"📊 Aperçu par groupe" },
               { key:"formulaires", label:"🗂️ Formulaires & Documents" },
@@ -627,6 +629,18 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, on
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── ONGLET VALIDATION CONGÉS ── */}
+          {tab === "conges" && (
+            <div className="panel">
+              <ValidationConges
+                requests={leaveRequests}
+                onApprove={onApproveLeave}
+                onReject={onRejectLeave}
+                instance={msalInstance}
+              />
             </div>
           )}
 

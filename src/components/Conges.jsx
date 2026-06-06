@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
+import { createCongeRequest, getCongesEmployee, cancelCongeRequest, isSharePointConfigured } from "../services/congesService.js";
 
 /**
  * Page Congés — React (Vite/React)
@@ -260,6 +261,7 @@ export default function Conges({
   onSubmitLeave,
   onCancelRequest,
   onUploadJustif,
+  msalInstance,       // optionnel — si fourni, persistance SharePoint activée
 }) {
   const u = {
     displayName: "Jean Dupont",
@@ -321,6 +323,18 @@ export default function Conges({
     },
   ];
   const [localRequests, setLocalRequests] = useState(requests || defaultRequests);
+  const [spLoaded, setSpLoaded] = useState(false);
+
+  // Chargement depuis SharePoint si configuré
+  useEffect(() => {
+    if (!msalInstance || !isSharePointConfigured() || spLoaded) return;
+    setSpLoaded(true);
+    getCongesEmployee(msalInstance, u.email)
+      .then(items => {
+        if (items) setLocalRequests(items);
+      })
+      .catch(err => console.warn("[Conges] Chargement SharePoint échoué :", err.message));
+  }, [msalInstance, u.email, spLoaded]);
 
   const holidaysSet = useMemo(() => new Set(holidays || []), [holidays]);
 
@@ -406,16 +420,31 @@ export default function Conges({
       status: "pending",
       comment: reason?.trim() || "",
       createdAt: fmt(new Date()),
-      approver: "", // à renseigner côté backend
+      approver: "",
       attachmentsCount: file ? 1 : 0,
-      file, // facultatif, à uploader côté backend
+      file,
+      // Champs SharePoint
+      employeeEmail: u.email,
+      employeeName:  u.displayName,
     };
 
     try {
       setSubmitting(true);
+
+      // Persistance SharePoint si configuré
+      if (msalInstance && isSharePointConfigured()) {
+        try {
+          const spItem = await createCongeRequest(msalInstance, payload);
+          if (spItem) payload.spItemId = spItem.spItemId; // conserver l'ID SP pour annulation
+        } catch (spErr) {
+          console.warn("[Conges] Sauvegarde SharePoint échouée, poursuite en local :", spErr.message);
+        }
+      }
+
       if (typeof onSubmitLeave === "function") {
         await onSubmitLeave(payload);
       }
+
       // Optimistic UI
       setLocalRequests((prev) => [payload, ...prev]);
       // Reset form
@@ -438,6 +467,16 @@ export default function Conges({
     const ok = confirm("Confirmer l’annulation de cette demande ?");
     if (!ok) return;
     try {
+      // Annulation SharePoint si l’item a un ID SP
+      const req = localRequests.find(r => r.id === id);
+      if (msalInstance && isSharePointConfigured() && req?.spItemId) {
+        try {
+          await cancelCongeRequest(msalInstance, req.spItemId);
+        } catch (spErr) {
+          console.warn("[Conges] Annulation SharePoint échouée :", spErr.message);
+        }
+      }
+
       if (typeof onCancelRequest === "function") {
         await onCancelRequest(id);
       }
