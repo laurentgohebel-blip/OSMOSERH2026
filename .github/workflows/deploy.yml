@@ -15,6 +15,22 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Debug — verifier longueur du token (sans le reveler)
+        env:
+          TOK: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: |
+          if [ -z "$TOK" ]; then
+            echo "ERREUR: AZURE_STATIC_WEB_APPS_API_TOKEN est VIDE"
+            exit 1
+          fi
+          echo "Longueur du token: ${#TOK} caracteres"
+          echo "Debut: ${TOK:0:4}... Fin: ...${TOK: -4}"
+          # Un token SWA Azure fait ~118 caracteres typiquement
+          if [ ${#TOK} -lt 50 ]; then
+            echo "ERREUR: Token trop court (probablement tronque)"
+            exit 1
+          fi
+
       - name: Install dependencies
         run: npm ci
 

@@ -1,2 +1,0 @@
-git commit --allow-empty -m "Trigger deployment"
-git push origin main
