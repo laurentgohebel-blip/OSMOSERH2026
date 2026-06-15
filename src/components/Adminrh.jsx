@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import FormBuilder from "./FormBuilder.jsx";
 import ValidationConges from "./ValidationConges.jsx";
 import Onboarding from "./Onboarding.jsx";
+import ATraiter from "./ATraiter.jsx";
 
 /**
  * AdminRH — Interface service RH (route /admin)
@@ -306,7 +307,7 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, le
   const logout = () => (typeof onLogout === "function" ? onLogout() : null);
 
   // ── Onglets ───────────────────────────────────────────────────────────────
-  const [tab, setTab] = useState("taches"); // taches | creer | apercu
+  const [tab, setTab] = useState("atraiter"); // atraiter | taches | conges | onboarding | creer | apercu
 
   // ── Filtres liste ─────────────────────────────────────────────────────────
   const [fType,    setFType]    = useState("tous");
@@ -519,6 +520,7 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, le
           {/* Onglets */}
           <div className="tabs">
             {[
+              { key:"atraiter",    label:"📥 À traiter" },
               { key:"taches",      label:`📋 Tâches (${tasks.length})` },
               { key:"conges",      label:"🏖️ Validation congés" },
               { key:"onboarding",  label:"👋 Onboarding" },
@@ -533,6 +535,13 @@ export default function AdminRH({ user, tasks: tasksProp, groups: groupsProp, le
               </button>
             ))}
           </div>
+
+          {/* ── ONGLET À TRAITER ── */}
+          {tab === "atraiter" && (
+            <div className="panel">
+              <ATraiter />
+            </div>
+          )}
 
           {/* ── ONGLET TÂCHES ── */}
           {tab === "taches" && (
