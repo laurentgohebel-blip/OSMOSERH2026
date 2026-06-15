@@ -64,4 +64,47 @@ export async function runScan() {
   return handle(res);
 }
 
+// ── Workflows (situations guidées) ───────────────────────────────────────────
+
+export async function getWorkflows() {
+  const res = await fetch(`${API}/workflows`, { headers: DEMO_HEADERS });
+  return handle(res);
+}
+export async function getWorkflowRuns() {
+  const res = await fetch(`${API}/workflows/runs`, { headers: DEMO_HEADERS });
+  return handle(res);
+}
+export async function startWorkflow(type) {
+  const res = await fetch(`${API}/workflows`, {
+    method: "POST",
+    headers: { ...DEMO_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify({ type }),
+  });
+  return handle(res);
+}
+export async function getWorkflowRun(id) {
+  const res = await fetch(`${API}/workflows/runs/${id}`, { headers: DEMO_HEADERS });
+  return handle(res);
+}
+export async function saveWorkflowFiche(id, fiche) {
+  const res = await fetch(`${API}/workflows/runs/${id}/fiche`, {
+    method: "PUT",
+    headers: { ...DEMO_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify({ fiche }),
+  });
+  return handle(res);
+}
+export async function completeWorkflowStep(id, key) {
+  const res = await fetch(`${API}/workflows/runs/${id}/steps/${key}/complete`, {
+    method: "POST",
+    headers: DEMO_HEADERS,
+  });
+  return handle(res);
+}
+export async function getWorkflowDocument(id, key) {
+  const res = await fetch(`${API}/workflows/runs/${id}/steps/${key}/document`, { headers: DEMO_HEADERS });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.text();
+}
+
 export const SYNAPSE_API = API;
