@@ -24,15 +24,26 @@ export default function App() {
     return () => window.removeEventListener("hashchange", h);
   }, []);
 
+  // Bypass d'auth en DEV uniquement (VITE_DEV_NO_AUTH=true) : permet de voir
+  // l'app en local sans login Microsoft. En prod, le flag est absent → MSAL requis.
+  const DEV_NO_AUTH = import.meta.env.VITE_DEV_NO_AUTH === "true";
   const accounts = instance.getAllAccounts();
-  if (!accounts.length) return <LoginPage />;
+  if (!DEV_NO_AUTH && !accounts.length) return <LoginPage />;
 
-  const user   = {
-    displayName: accounts[0].name,
-    email:       accounts[0].username,
-    givenName:   accounts[0].idTokenClaims?.given_name,
-    tenantLabel: "Client",
-  };
+  const account = accounts[0];
+  const user   = account
+    ? {
+        displayName: account.name,
+        email:       account.username,
+        givenName:   account.idTokenClaims?.given_name,
+        tenantLabel: "Client",
+      }
+    : {
+        displayName: "Sophie Martin",
+        email:       "sophie.martin@pme-demo.fr",
+        givenName:   "Sophie",
+        tenantLabel: "PME Démo (dev)",
+      };
   const goto   = (r) => { window.location.hash = r; };
   const logout = () => instance.logoutRedirect();
   const props  = { user, onNavigate: goto, onLogout: logout, msalInstance: instance };
