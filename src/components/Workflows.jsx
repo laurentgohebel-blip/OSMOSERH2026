@@ -212,7 +212,9 @@ export default function Workflows() {
                 {isCurrent && s.kind === "form" && (
                   <>
                     <div className="wf-form">
-                      {run.ficheFields.map(f => (
+                      {run.ficheFields
+                        .filter(f => !f.when || (f.when.in || []).includes(fiche[f.when.field]))
+                        .map(f => (
                         <div className={`wf-field${f.type === "textarea" ? " full" : ""}`} key={f.key}>
                           <label>{f.label}{f.required && <span className="wf-req"> *</span>}</label>
                           {f.type === "select" ? (
