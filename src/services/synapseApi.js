@@ -41,4 +41,27 @@ export async function askAssistant(question) {
   return handle(res);
 }
 
+/** Tâches générées par le moteur de cascades. */
+export async function getTasks(status) {
+  const url = status ? `${API}/tasks?status=${encodeURIComponent(status)}` : `${API}/tasks`;
+  const res = await fetch(url, { headers: DEMO_HEADERS });
+  return handle(res);
+}
+
+/** Met à jour une tâche : { status } (Fait) ou { due_date } (Reporter). */
+export async function updateTask(id, patch) {
+  const res = await fetch(`${API}/tasks/${id}`, {
+    method: "PATCH",
+    headers: { ...DEMO_HEADERS, "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  return handle(res);
+}
+
+/** Lance le scan d'échéances (déclenche les cascades applicables). */
+export async function runScan() {
+  const res = await fetch(`${API}/cascades/scan`, { method: "POST", headers: DEMO_HEADERS });
+  return handle(res);
+}
+
 export const SYNAPSE_API = API;
