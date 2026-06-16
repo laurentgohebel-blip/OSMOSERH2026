@@ -128,6 +128,10 @@ export default function Workflows() {
     try { setDoc({ key, html: await getWorkflowDocument(run.id, key) }); }
     catch (e) { setError(e.message); }
   }
+  function printDoc() {
+    const fr = document.getElementById("wf-doc-frame");
+    if (fr && fr.contentWindow) { fr.contentWindow.focus(); fr.contentWindow.print(); }
+  }
 
   const currentKey = useMemo(() => run?.steps?.find(s => s.status !== "done")?.key, [run]);
 
@@ -273,9 +277,12 @@ export default function Workflows() {
           <div className="wf-modal">
             <div className="wf-modal-h">
               <strong>Document généré</strong>
-              <button className="btn ghost" onClick={() => setDoc(null)}>Fermer</button>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="btn primary" onClick={printDoc}>🖨️ Télécharger / Imprimer</button>
+                <button className="btn ghost" onClick={() => setDoc(null)}>Fermer</button>
+              </div>
             </div>
-            <iframe title="document" srcDoc={doc.html} />
+            <iframe id="wf-doc-frame" title="document" srcDoc={doc.html} />
           </div>
         </div>
       )}
