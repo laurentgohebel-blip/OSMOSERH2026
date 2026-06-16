@@ -2,8 +2,30 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   getWorkflows, getWorkflowRuns, startWorkflow, getWorkflowRun,
   saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
-  getDpaeXml, teledeclarerDpae, SYNAPSE_API,
+  getDpaeXml, teledeclarerDpae, scanFicheDocument, SYNAPSE_API,
 } from "../services/synapseApi.js";
+
+/** Lit un fichier image et le réduit (≤1600px, JPEG) pour un payload léger. */
+function fileToScaledDataUrl(file, maxDim = 1600) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = reject;
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = reject;
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale), h = Math.round(img.height * scale);
+        const c = document.createElement("canvas");
+        c.width = w; c.height = h;
+        c.getContext("2d").drawImage(img, 0, 0, w, h);
+        resolve(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 /**
  * Workflows — situations guidées (ex. Embauche).
@@ -89,6 +111,8 @@ export default function Workflows() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [doc, setDoc] = useState(null);          // { key, html }
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState("");
 
   function loadList() {
     setLoading(true); setError("");
@@ -145,6 +169,28 @@ export default function Workflows() {
     try { setRun(await teledeclarerDpae(run.id)); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
+  }
+  async function handleScan(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScanning(true); setError(""); setScanMsg("");
+    try {
+      const dataUri = await fileToScaledDataUrl(file);
+      const { fields } = await scanFicheDocument(dataUri);
+      const keys = Object.keys(fields || {});
+      if (!keys.length) {
+        setScanMsg("Aucune donnée exploitable détectée dans ce document.");
+      } else {
+        setFiche(p => ({ ...p, ...fields }));
+        const labels = Object.fromEntries(run.ficheFields.map(f => [f.key, f.label]));
+        setScanMsg(`✨ ${keys.length} champ(s) pré-rempli(s) : ${keys.map(k => labels[k] || k).join(", ")}. Vérifiez avant d'enregistrer.`);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setScanning(false);
+      e.target.value = "";
+    }
   }
 
   const currentKey = useMemo(() => run?.steps?.find(s => s.status !== "done")?.key, [run]);
@@ -229,6 +275,15 @@ export default function Workflows() {
                 {/* Étape fiche en cours → formulaire */}
                 {isCurrent && s.kind === "form" && (
                   <>
+                    <div style={{ marginBottom: 14, padding: "12px 14px", background: "#f5f3ff", border: "1px dashed #c4b5fd", borderRadius: 10 }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#5b21b6" }}>📷 Scanner un document pour gagner du temps</div>
+                      <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 8px" }}>Pièce d'identité, carte vitale, RIB… l'IA pré-remplit la fiche, vous validez ensuite.</div>
+                      <label className="btn ghost" style={{ cursor: scanning ? "wait" : "pointer", display: "inline-flex" }}>
+                        {scanning ? "Analyse en cours…" : "📎 Choisir un document"}
+                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleScan} disabled={scanning} />
+                      </label>
+                      {scanMsg && <div style={{ fontSize: 12, color: scanMsg.startsWith("✨") ? "#065f46" : "#92400e", marginTop: 8 }}>{scanMsg}</div>}
+                    </div>
                     <div className="wf-form">
                       {run.ficheFields
                         .filter(f => !f.when || (f.when.in || []).includes(fiche[f.when.field]))
