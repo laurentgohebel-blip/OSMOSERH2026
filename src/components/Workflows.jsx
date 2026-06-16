@@ -2,8 +2,36 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   getWorkflows, getWorkflowRuns, startWorkflow, getWorkflowRun,
   saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
-  getDpaeXml, teledeclarerDpae, scanFicheDocument, SYNAPSE_API,
+  getDpaeXml, teledeclarerDpae, scanFicheDocuments, SYNAPSE_API,
 } from "../services/synapseApi.js";
+import * as pdfjsLib from "pdfjs-dist";
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+
+/** Convertit un PDF en images (1 par page, ≤maxPages). */
+async function pdfToImages(file, maxPages = 5, maxDim = 1600) {
+  const buf = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+  const n = Math.min(pdf.numPages, maxPages);
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const page = await pdf.getPage(i);
+    const base = page.getViewport({ scale: 1 });
+    const scale = Math.min(2, maxDim / Math.max(base.width, base.height));
+    const vp = page.getViewport({ scale });
+    const c = document.createElement("canvas");
+    c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
+    out.push(c.toDataURL("image/jpeg", 0.85));
+  }
+  return out;
+}
+
+/** Un fichier → tableau d'images (image = 1, PDF = N pages). */
+async function fileToImages(file) {
+  if (file.type === "application/pdf") return pdfToImages(file);
+  return [await fileToScaledDataUrl(file)];
+}
 
 /** Lit un fichier image et le réduit (≤1600px, JPEG) pour un payload léger. */
 function fileToScaledDataUrl(file, maxDim = 1600) {
@@ -171,19 +199,24 @@ export default function Workflows() {
     finally { setBusy(false); }
   }
   async function handleScan(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
     setScanning(true); setError(""); setScanMsg("");
     try {
-      const dataUri = await fileToScaledDataUrl(file);
-      const { fields } = await scanFicheDocument(dataUri);
+      const images = [];
+      for (const f of files) {
+        const imgs = await fileToImages(f);
+        images.push(...imgs);
+      }
+      if (!images.length) { setScanMsg("Aucune page exploitable dans les documents fournis."); return; }
+      const { fields } = await scanFicheDocuments(images);
       const keys = Object.keys(fields || {});
       if (!keys.length) {
-        setScanMsg("Aucune donnée exploitable détectée dans ce document.");
+        setScanMsg(`Aucune donnée détectée dans ${files.length} document(s).`);
       } else {
         setFiche(p => ({ ...p, ...fields }));
         const labels = Object.fromEntries(run.ficheFields.map(f => [f.key, f.label]));
-        setScanMsg(`✨ ${keys.length} champ(s) pré-rempli(s) : ${keys.map(k => labels[k] || k).join(", ")}. Vérifiez avant d'enregistrer.`);
+        setScanMsg(`✨ ${keys.length} champ(s) pré-rempli(s) depuis ${files.length} document(s) : ${keys.map(k => labels[k] || k).join(", ")}. Vérifiez avant d'enregistrer.`);
       }
     } catch (err) {
       setError(err.message);
@@ -277,10 +310,10 @@ export default function Workflows() {
                   <>
                     <div style={{ marginBottom: 14, padding: "12px 14px", background: "#f5f3ff", border: "1px dashed #c4b5fd", borderRadius: 10 }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: "#5b21b6" }}>📷 Scanner un document pour gagner du temps</div>
-                      <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 8px" }}>Pièce d'identité, carte vitale, RIB… l'IA pré-remplit la fiche, vous validez ensuite.</div>
+                      <div style={{ fontSize: 12, color: "#64748b", margin: "4px 0 8px" }}>Pièce d'identité, carte vitale, RIB… images ou PDF, plusieurs à la fois. L'IA pré-remplit la fiche, vous validez ensuite.</div>
                       <label className="btn ghost" style={{ cursor: scanning ? "wait" : "pointer", display: "inline-flex" }}>
-                        {scanning ? "Analyse en cours…" : "📎 Choisir un document"}
-                        <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleScan} disabled={scanning} />
+                        {scanning ? "Analyse en cours…" : "📎 Choisir un ou plusieurs documents"}
+                        <input type="file" accept="image/*,application/pdf" multiple style={{ display: "none" }} onChange={handleScan} disabled={scanning} />
                       </label>
                       {scanMsg && <div style={{ fontSize: 12, color: scanMsg.startsWith("✨") ? "#065f46" : "#92400e", marginTop: 8 }}>{scanMsg}</div>}
                     </div>

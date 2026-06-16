@@ -116,12 +116,12 @@ export async function teledeclarerDpae(id) {
   return handle(res);
 }
 
-/** OCR : scanne un document (data URI) → champs de fiche extraits. */
-export async function scanFicheDocument(dataUri) {
+/** OCR : scanne un ou plusieurs documents (data URIs) → champs de fiche fusionnés. */
+export async function scanFicheDocuments(images) {
   const res = await fetch(`${API}/ocr/fiche-scan`, {
     method: "POST",
     headers: { ...DEMO_HEADERS, "Content-Type": "application/json" },
-    body: JSON.stringify({ image: dataUri }),
+    body: JSON.stringify({ images }),
   });
   return handle(res);
 }
