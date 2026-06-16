@@ -4,35 +4,6 @@ import {
   saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
   getDpaeXml, teledeclarerDpae, scanFicheDocuments, SYNAPSE_API,
 } from "../services/synapseApi.js";
-import * as pdfjsLib from "pdfjs-dist";
-import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
-
-/** Convertit un PDF en images (1 par page, ≤maxPages). */
-async function pdfToImages(file, maxPages = 5, maxDim = 1600) {
-  const buf = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-  const n = Math.min(pdf.numPages, maxPages);
-  const out = [];
-  for (let i = 1; i <= n; i++) {
-    const page = await pdf.getPage(i);
-    const base = page.getViewport({ scale: 1 });
-    const scale = Math.min(2, maxDim / Math.max(base.width, base.height));
-    const vp = page.getViewport({ scale });
-    const c = document.createElement("canvas");
-    c.width = vp.width; c.height = vp.height;
-    await page.render({ canvasContext: c.getContext("2d"), viewport: vp }).promise;
-    out.push(c.toDataURL("image/jpeg", 0.85));
-  }
-  return out;
-}
-
-/** Un fichier → tableau d'images (image = 1, PDF = N pages). */
-async function fileToImages(file) {
-  if (file.type === "application/pdf") return pdfToImages(file);
-  return [await fileToScaledDataUrl(file)];
-}
-
 /** Lit un fichier image et le réduit (≤1600px, JPEG) pour un payload léger. */
 function fileToScaledDataUrl(file, maxDim = 1600) {
   return new Promise((resolve, reject) => {
@@ -52,6 +23,17 @@ function fileToScaledDataUrl(file, maxDim = 1600) {
       img.src = reader.result;
     };
     reader.readAsDataURL(file);
+  });
+}
+
+/** Un fichier → data URI : PDF envoyé BRUT (l'OCR le lit nativement), image réduite. */
+function fileToDataUri(file) {
+  if (file.type !== "application/pdf") return fileToScaledDataUrl(file);
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onerror = reject;
+    r.onload = () => resolve(r.result);
+    r.readAsDataURL(file);
   });
 }
 
@@ -203,13 +185,10 @@ export default function Workflows() {
     if (!files.length) return;
     setScanning(true); setError(""); setScanMsg("");
     try {
-      const images = [];
-      for (const f of files) {
-        const imgs = await fileToImages(f);
-        images.push(...imgs);
-      }
-      if (!images.length) { setScanMsg("Aucune page exploitable dans les documents fournis."); return; }
-      const { fields } = await scanFicheDocuments(images);
+      const docs = [];
+      for (const f of files) docs.push(await fileToDataUri(f));
+      if (!docs.length) { setScanMsg("Aucun document exploitable."); return; }
+      const { fields } = await scanFicheDocuments(docs);
       const keys = Object.keys(fields || {});
       if (!keys.length) {
         setScanMsg(`Aucune donnée détectée dans ${files.length} document(s).`);
