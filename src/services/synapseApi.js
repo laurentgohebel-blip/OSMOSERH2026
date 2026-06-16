@@ -106,5 +106,14 @@ export async function getWorkflowDocument(id, key) {
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.text();
 }
+export async function getDpaeXml(id) {
+  const res = await fetch(`${API}/workflows/runs/${id}/dpae/xml`, { headers: DEMO_HEADERS });
+  if (!res.ok) throw new Error(`API ${res.status}`);
+  return res.text();
+}
+export async function teledeclarerDpae(id) {
+  const res = await fetch(`${API}/workflows/runs/${id}/dpae/teledeclarer`, { method: "POST", headers: DEMO_HEADERS });
+  return handle(res);
+}
 
 export const SYNAPSE_API = API;

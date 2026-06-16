@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   getWorkflows, getWorkflowRuns, startWorkflow, getWorkflowRun,
-  saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument, SYNAPSE_API,
+  saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
+  getDpaeXml, teledeclarerDpae, SYNAPSE_API,
 } from "../services/synapseApi.js";
 
 /**
@@ -132,6 +133,19 @@ export default function Workflows() {
     const fr = document.getElementById("wf-doc-frame");
     if (fr && fr.contentWindow) { fr.contentWindow.focus(); fr.contentWindow.print(); }
   }
+  async function viewXml() {
+    try {
+      const xml = await getDpaeXml(run.id);
+      const esc = xml.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      setDoc({ key: "xml", html: `<pre style="padding:20px;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:12px;color:#1a202c;margin:0">${esc}</pre>` });
+    } catch (e) { setError(e.message); }
+  }
+  async function teledeclarer() {
+    setBusy(true); setError("");
+    try { setRun(await teledeclarerDpae(run.id)); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
 
   const currentKey = useMemo(() => run?.steps?.find(s => s.status !== "done")?.key, [run]);
 
@@ -260,10 +274,23 @@ export default function Workflows() {
                   </div>
                 )}
 
-                {/* Étape document faite → voir */}
+                {/* Étape document faite → voir + (DPAE) télédéclarer */}
                 {isDone && s.kind === "document" && (
-                  <div className="wf-step-actions">
-                    <button className="btn ghost" onClick={() => viewDoc(s.key)}>👁️ Voir le document</button>
+                  <div className="wf-step-actions" style={{ flexDirection: "column", alignItems: "flex-start" }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button className="btn ghost" onClick={() => viewDoc(s.key)}>👁️ Voir le document</button>
+                      {s.key === "dpae" && <button className="btn ghost" onClick={viewXml}>🧾 Voir le XML</button>}
+                      {s.key === "dpae" && !s.teledeclaration && (
+                        <button className="btn primary" disabled={busy} onClick={teledeclarer}>📨 Télédéclarer à l'URSSAF</button>
+                      )}
+                    </div>
+                    {s.key === "dpae" && s.teledeclaration && (
+                      <div style={{ fontSize: 12, color: "#065f46", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
+                        ✅ Déposée à l'URSSAF — réf. <strong>{s.teledeclaration.depositId}</strong>
+                        {s.teledeclaration.aee?.recu && " · accusé reçu (AEE)"}
+                        {s.teledeclaration.mode === "simulation" && <span style={{ marginLeft: 6, color: "#92400e", fontWeight: 700 }}>· mode simulation</span>}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
