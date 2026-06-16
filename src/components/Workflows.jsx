@@ -4,8 +4,8 @@ import {
   saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
   getDpaeXml, teledeclarerDpae, scanFicheDocuments, SYNAPSE_API,
 } from "../services/synapseApi.js";
-/** Lit un fichier image et le réduit (≤1600px, JPEG) pour un payload léger. */
-function fileToScaledDataUrl(file, maxDim = 1600) {
+/** Lit un fichier image et le réduit (≤2400px, JPEG qualité élevée pour l'OCR). */
+function fileToScaledDataUrl(file, maxDim = 2400) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = reject;
@@ -18,7 +18,7 @@ function fileToScaledDataUrl(file, maxDim = 1600) {
         const c = document.createElement("canvas");
         c.width = w; c.height = h;
         c.getContext("2d").drawImage(img, 0, 0, w, h);
-        resolve(c.toDataURL("image/jpeg", 0.85));
+        resolve(c.toDataURL("image/jpeg", 0.92));
       };
       img.src = reader.result;
     };
