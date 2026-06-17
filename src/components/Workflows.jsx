@@ -112,6 +112,15 @@ function pct(steps) {
   return Math.round((steps.filter(s => s.status === "done").length / steps.length) * 100);
 }
 
+const ACTION_LABEL = {
+  onboarding: "⚡ Déclencher l'onboarding",
+  visiteMedicale: "📅 Créer l'échéance",
+  titreSejour: "✓ Marquer vérifié",
+  conformite: "✓ Marquer vérifié",
+  mutuelle: "✓ Marquer affilié",
+  registre: "✓ Enregistrer l'entrée",
+};
+
 export default function Workflows() {
   const [catalog, setCatalog] = useState([]);
   const [runs, setRuns] = useState([]);
@@ -332,11 +341,11 @@ export default function Workflows() {
                   </div>
                 )}
 
-                {/* Étape action (onboarding) en cours → déclencher */}
+                {/* Étape action en cours → bouton contextuel selon l'étape */}
                 {isCurrent && s.kind === "action" && (
                   <div className="wf-step-actions">
                     <button className="btn primary" disabled={busy} onClick={() => handleStep(s.key)}>
-                      {busy ? "…" : "⚡ Déclencher l'onboarding"}
+                      {busy ? "…" : (ACTION_LABEL[s.key] || "✓ Marquer fait")}
                     </button>
                   </div>
                 )}
@@ -358,6 +367,13 @@ export default function Workflows() {
                         {s.teledeclaration.mode === "simulation" && <span style={{ marginLeft: 6, color: "#92400e", fontWeight: 700 }}>· mode simulation</span>}
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Étape action faite ayant créé une échéance → note */}
+                {isDone && s.kind === "action" && s.echeance && (
+                  <div style={{ fontSize: 12, color: "#065f46", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 8, padding: "6px 10px", marginTop: 8 }}>
+                    📅 Échéance créée — visible dans l'onglet « À traiter »
                   </div>
                 )}
               </div>
