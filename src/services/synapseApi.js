@@ -101,6 +101,13 @@ export async function completeWorkflowStep(id, key) {
   });
   return handle(res);
 }
+export async function revertWorkflowStep(id, key) {
+  const res = await fetch(`${API}/workflows/runs/${id}/steps/${key}/revert`, {
+    method: "POST",
+    headers: DEMO_HEADERS,
+  });
+  return handle(res);
+}
 export async function getWorkflowDocument(id, key) {
   const res = await fetch(`${API}/workflows/runs/${id}/steps/${key}/document`, { headers: DEMO_HEADERS });
   if (!res.ok) throw new Error(`API ${res.status}`);

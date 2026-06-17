@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   getWorkflows, getWorkflowRuns, startWorkflow, getWorkflowRun,
-  saveWorkflowFiche, completeWorkflowStep, getWorkflowDocument,
+  saveWorkflowFiche, completeWorkflowStep, revertWorkflowStep, getWorkflowDocument,
   getDpaeXml, teledeclarerDpae, scanFicheDocuments, SYNAPSE_API,
 } from "../services/synapseApi.js";
 /** Lit un fichier image et le réduit (≤2400px, JPEG qualité élevée pour l'OCR). */
@@ -165,6 +165,12 @@ export default function Workflows() {
   async function handleStep(key) {
     setBusy(true); setError("");
     try { setRun(await completeWorkflowStep(run.id, key)); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  async function revertStep(key) {
+    setBusy(true); setError("");
+    try { setRun(await revertWorkflowStep(run.id, key)); }
     catch (e) { setError(e.message); }
     finally { setBusy(false); }
   }
@@ -374,6 +380,13 @@ export default function Workflows() {
                 {isDone && s.kind === "action" && s.echeance && (
                   <div style={{ fontSize: 12, color: "#065f46", background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 8, padding: "6px 10px", marginTop: 8 }}>
                     📅 Échéance créée — visible dans l'onglet « À traiter »
+                  </div>
+                )}
+
+                {/* Toute étape faite → possibilité de revenir en arrière */}
+                {isDone && (
+                  <div style={{ marginTop: 8 }}>
+                    <button className="btn ghost" style={{ padding: "5px 10px", fontSize: 12 }} disabled={busy} onClick={() => revertStep(s.key)}>↩ Revenir / modifier</button>
                   </div>
                 )}
               </div>
