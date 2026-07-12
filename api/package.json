@@ -1,0 +1,12 @@
+{
+  "name": "osmose-rh-api",
+  "version": "1.0.0",
+  "description": "Fonction d'ingestion des démarches — relais vers Power Automate",
+  "main": "src/functions/*.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@azure/functions": "^4.5.0"
+  }
+}
