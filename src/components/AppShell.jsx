@@ -2,10 +2,10 @@
 // Tableau de bord / Production (tuiles → formulaires) / Documents
 // ATT-01 câblé : la tuile « Attestation » poste vers /api/demande
 // ACP-01 câblé : la tuile « Acompte » poste vers /api/demande,
-// champs alignés sur la liste SharePoint « Acomptes » (MOIS, Agence,
-// NOM, PRENOM, MATRICULE, MONTANT, PERMANENT/PONCTUEL — Statut et
-// affectation restent côté gestionnaire). Le flux Power Automate
-// fait tout le reste. Les autres tuiles restent en démo locale.
+// champs alignés sur la liste SharePoint « Acompte » du site RH
+// (Matricule, Nom, Prénom, Montant demandé — Date de demande et
+// Statut sont posés par le flux). Le flux Power Automate fait
+// tout le reste. Les autres tuiles restent en démo locale.
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -677,15 +677,14 @@ function AttestationEmployeur({ user, onRetour }) {
 /* ================================================================
    ACP-01 — DEMANDE D'ACOMPTE (câblée sur /api/demande)
    Champs alignés colonne à colonne sur la liste SharePoint
-   « Acomptes » : MOIS, Agence, NOM, PRENOM, MATRICULE, MONTANT,
-   PERMANENT/PONCTUEL. « Statut » (Nouveau → Traité) et
-   « Attribué à » sont posés par le flux / le gestionnaire.
+   « Acompte » (site RH) : Matricule (nombre), Nom, Prénom,
+   Montant demandé (nombre). « Date de demande » et
+   « Statut » (Nouveau → Traité) sont posés par le flux ;
+   « Title » reçoit la référence ACOMPTE-… générée par l'API.
    Même contrat que ATT-01 : /api/demande, honeypot, erreurs
    affichées, mode démo si l'API est injoignable en dev local.
    Variable à configurer sur la Static Web App : FLOW_URL_ACOMPTE.
    ================================================================ */
-const MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
-  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
 
 /* Champ requis avec message d'erreur — défini au niveau module
    (un composant défini DANS le rendu serait remonté à chaque frappe
@@ -701,8 +700,7 @@ const ChampReq = ({ label, erreur, large, children }) => (
 function DemandeAcompte({ user, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
-    mois: MOIS_FR[new Date().getMonth()],
-    agence: "", nom: "", prenom: "", matricule: "", montant: "", type: "",
+    nom: "", prenom: "", matricule: "", montant: "",
   });
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
@@ -714,13 +712,10 @@ function DemandeAcompte({ user, onRetour }) {
   const valider = () => {
     const e = {
       email: !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim()),
-      mois: !f.mois,
-      agence: f.agence.trim().length < 2,
       nom: f.nom.trim().length < 2,
       prenom: f.prenom.trim().length < 2,
       matricule: !/^\d{1,10}$/.test(f.matricule.trim()),
       montant: !/^\d{1,5}([.,]\d{1,2})?$/.test(f.montant.trim()) || parseFloat(f.montant.trim().replace(",", ".")) <= 0,
-      type: !f.type,
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -735,13 +730,10 @@ function DemandeAcompte({ user, onRetour }) {
       demarche: "acompte",
       client: CODE_CLIENT,
       email: f.email.trim(),
-      mois: f.mois,
-      agence: f.agence.trim().toUpperCase(),
       nom: f.nom.trim().toUpperCase(),
-      prenom: f.prenom.trim().toUpperCase(),
-      matricule: f.matricule.trim(),
-      montant: f.montant.trim().replace(",", "."),
-      typeAcompte: f.type, // "PERMANENT" | "PONCTUEL"
+      prenom: f.prenom.trim(),
+      matricule: f.matricule.trim(),          // colonne Matricule (nombre) : int(...) côté flux
+      montant: f.montant.trim().replace(",", "."), // colonne Montant demandé (nombre) : float(...) côté flux
       xq_note: "", // honeypot : doit rester vide
     };
 
@@ -782,7 +774,7 @@ function DemandeAcompte({ user, onRetour }) {
           </div>
           <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Demande transmise</h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
-            Demande d'acompte de <strong>{f.montant.trim().replace(".", ",")} €</strong> ({f.type.toLowerCase()}) pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim().toUpperCase()}</strong> — {f.mois}, agence {f.agence.trim().toUpperCase()}.
+            Demande d'acompte de <strong>{f.montant.trim().replace(".", ",")} €</strong> pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong> (matricule {f.matricule.trim()}).
           </p>
           <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
             Elle sera traitée par votre gestionnaire ; un accusé sera adressé à <strong>{f.email.trim()}</strong>.
@@ -827,38 +819,20 @@ function DemandeAcompte({ user, onRetour }) {
             <input style={err.email ? inputInvalid : inputStyle} value={f.email} onChange={(e) => maj("email", e.target.value)} />
           </ChampReq>
 
-          <ChampReq label="Mois concerné" erreur={err.mois && "Champ requis."}>
-            <select style={err.mois ? inputInvalid : inputStyle} value={f.mois} onChange={(e) => maj("mois", e.target.value)}>
-              {MOIS_FR.map((m) => <option key={m}>{m}</option>)}
-            </select>
-          </ChampReq>
-
-          <ChampReq label="Agence" erreur={err.agence && "Champ requis."}>
-            <input style={err.agence ? inputInvalid : inputStyle} placeholder="Ex. MONTPELLIER" value={f.agence} onChange={(e) => maj("agence", e.target.value)} />
-          </ChampReq>
-
           <ChampReq label="Nom du salarié" erreur={err.nom && "Champ requis."}>
             <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. MARQUES" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
           </ChampReq>
 
           <ChampReq label="Prénom du salarié" erreur={err.prenom && "Champ requis."}>
-            <input style={err.prenom ? inputInvalid : inputStyle} placeholder="Ex. SOFIA" value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+            <input style={err.prenom ? inputInvalid : inputStyle} placeholder="Ex. Sofia" value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
           </ChampReq>
 
           <ChampReq label="Matricule" erreur={err.matricule && "Matricule numérique attendu."}>
             <input inputMode="numeric" style={err.matricule ? inputInvalid : inputStyle} placeholder="Ex. 600138" value={f.matricule} onChange={(e) => maj("matricule", e.target.value)} />
           </ChampReq>
 
-          <ChampReq label="Montant (€)" erreur={err.montant && "Montant invalide (ex. 150 ou 113,35)."}>
+          <ChampReq label="Montant demandé (€)" erreur={err.montant && "Montant invalide (ex. 150 ou 113,35)."}>
             <input inputMode="decimal" style={err.montant ? inputInvalid : inputStyle} placeholder="Ex. 150" value={f.montant} onChange={(e) => maj("montant", e.target.value)} />
-          </ChampReq>
-
-          <ChampReq large label="Type d'acompte" erreur={err.type && "Champ requis."}>
-            <select style={err.type ? inputInvalid : inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
-              <option value="">—</option>
-              <option value="PONCTUEL">Ponctuel — ce mois uniquement</option>
-              <option value="PERMANENT">Permanent — reconduit chaque mois</option>
-            </select>
           </ChampReq>
         </div>
 
