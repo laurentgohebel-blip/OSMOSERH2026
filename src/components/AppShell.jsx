@@ -201,12 +201,6 @@ export default function AppShell({ user, onLogout }) {
     notifier("Enregistré (démo locale — démarche pas encore câblée)");
   };
 
-  const envoyerDpaeDemo = async (id) => {
-    await latence(400);
-    setDb((d) => ({ ...d, dpae: d.dpae.map((x) => (x.id === id ? { ...x, statut: "Envoyée" } : x)) }));
-    notifier("DPAE marquée envoyée (démo)");
-  };
-
   const deposerFichierDemo = async () => {
     await latence();
     setDb((d) => ({
@@ -384,22 +378,6 @@ export default function AppShell({ user, onLogout }) {
               })}
             </div>
 
-            {db.dpae.length > 0 && (
-              <div style={{ marginTop: 24 }}>
-                <h2 style={{ fontSize: 14, fontFamily: T.serif, margin: "0 0 10px" }}>DPAE en cours</h2>
-                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
-                  {db.dpae.map((x, i) => (
-                    <div key={x.id} style={{ padding: "10px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: i < db.dpae.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
-                      <span>{x.nom} {x.prenom} — embauche le {x.debut?.split("-").reverse().join("/")}</span>
-                      <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <Badge s={x.statut} />
-                        {x.statut === "À traiter" && <Btn small primary onClick={() => envoyerDpaeDemo(x.id)}><Send size={12} /> Envoyer</Btn>}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </>
         )}
 
