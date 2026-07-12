@@ -1,9 +1,11 @@
-// src/components/AppShell.jsx — v2.1
+// src/components/AppShell.jsx — v2.2
 // Tableau de bord / Production (tuiles → formulaires) / Documents
 // ATT-01 câblé : la tuile « Attestation » poste vers /api/demande
-// (même payload que le formulaire du portail public), le flux Power
-// Automate fait tout le reste. Les autres tuiles restent en démo
-// locale — on les câblera démarche par démarche.
+// ACP-01 câblé : la tuile « Acompte » poste vers /api/demande,
+// champs alignés sur la liste SharePoint « Acomptes » (MOIS, Agence,
+// NOM, PRENOM, MATRICULE, MONTANT, PERMANENT/PONCTUEL — Statut et
+// affectation restent côté gestionnaire). Le flux Power Automate
+// fait tout le reste. Les autres tuiles restent en démo locale.
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -100,13 +102,7 @@ const TUILES = [
       { k: "debut", l: "Date d'embauche", type: "date" },
     ] },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
-  { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote,
-    cible: "Démarche ACP-01 — à câbler (vague 1)",
-    champs: [
-      { k: "salarie", l: "Salarié", large: true },
-      { k: "montant", l: "Montant (€)" },
-      { k: "versement", l: "Date de versement", type: "date" },
-    ] },
+  { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "formation", titre: "Formation", sous: "Demande de formation", icone: GraduationCap,
     cible: "Hors catalogue v1 — démo",
     champs: [
@@ -411,7 +407,11 @@ export default function AppShell({ user, onLogout }) {
           <AttestationEmployeur user={user} onRetour={() => setTuile(null)} />
         )}
 
-        {vue === "prod" && tuile && tuile.id !== "attestation" && (
+        {vue === "prod" && tuile && tuile.id === "acompte" && (
+          <DemandeAcompte user={user} onRetour={() => setTuile(null)} />
+        )}
+
+        {vue === "prod" && tuile && !tuile.cablee && (
           <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
         )}
 
@@ -658,6 +658,208 @@ function AttestationEmployeur({ user, onRetour }) {
               <option>contrat à durée déterminée (CDD)</option>
             </select>
           </Champ>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Btn onClick={onRetour}>Annuler</Btn>
+          <Btn primary disabled={envoi} onClick={envoyer}>
+            {envoi ? "Envoi en cours…" : "Envoyer la demande"}
+          </Btn>
+        </div>
+        <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
+          Un accusé de traitement vous sera adressé. Données traitées par Osmose RH dans le cadre de la mission confiée par votre entreprise.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   ACP-01 — DEMANDE D'ACOMPTE (câblée sur /api/demande)
+   Champs alignés colonne à colonne sur la liste SharePoint
+   « Acomptes » : MOIS, Agence, NOM, PRENOM, MATRICULE, MONTANT,
+   PERMANENT/PONCTUEL. « Statut » (Nouveau → Traité) et
+   « Attribué à » sont posés par le flux / le gestionnaire.
+   Même contrat que ATT-01 : /api/demande, honeypot, erreurs
+   affichées, mode démo si l'API est injoignable en dev local.
+   Variable à configurer sur la Static Web App : FLOW_URL_ACOMPTE.
+   ================================================================ */
+const MOIS_FR = ["Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
+  "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"];
+
+/* Champ requis avec message d'erreur — défini au niveau module
+   (un composant défini DANS le rendu serait remonté à chaque frappe
+   et ferait perdre le focus de l'input). */
+const ChampReq = ({ label, erreur, large, children }) => (
+  <div style={{ gridColumn: large ? "1 / -1" : "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 12, color: T.mut }}>{label} <span style={{ color: T.err }}>*</span></label>
+    {children}
+    {erreur && <span style={{ fontSize: 11, color: T.err }}>{erreur}</span>}
+  </div>
+);
+
+function DemandeAcompte({ user, onRetour }) {
+  const [f, setF] = useState({
+    email: user?.email || "",
+    mois: MOIS_FR[new Date().getMonth()],
+    agence: "", nom: "", prenom: "", matricule: "", montant: "", type: "",
+  });
+  const [err, setErr] = useState({});
+  const [errbar, setErrbar] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [fini, setFini] = useState(null); // { ref, demo }
+
+  const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  const valider = () => {
+    const e = {
+      email: !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim()),
+      mois: !f.mois,
+      agence: f.agence.trim().length < 2,
+      nom: f.nom.trim().length < 2,
+      prenom: f.prenom.trim().length < 2,
+      matricule: !/^\d{1,10}$/.test(f.matricule.trim()),
+      montant: !/^\d{1,5}([.,]\d{1,2})?$/.test(f.montant.trim()) || parseFloat(f.montant.trim().replace(",", ".")) <= 0,
+      type: !f.type,
+    };
+    setErr(e);
+    return !Object.values(e).some(Boolean);
+  };
+
+  const envoyer = async () => {
+    if (!valider()) return;
+    setEnvoi(true);
+    setErrbar("");
+
+    const payload = {
+      demarche: "acompte",
+      client: CODE_CLIENT,
+      email: f.email.trim(),
+      mois: f.mois,
+      agence: f.agence.trim().toUpperCase(),
+      nom: f.nom.trim().toUpperCase(),
+      prenom: f.prenom.trim().toUpperCase(),
+      matricule: f.matricule.trim(),
+      montant: f.montant.trim().replace(",", "."),
+      typeAcompte: f.type, // "PERMANENT" | "PONCTUEL"
+      xq_note: "", // honeypot : doit rester vide
+    };
+
+    let ref = null, demo = false;
+    try {
+      const r = await fetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        let msg = "HTTP " + r.status;
+        try { const e = await r.json(); if (e.erreur) msg = `${e.erreur} (HTTP ${r.status})`; } catch (_) {}
+        if (r.status === 404) msg = "API /api/demande introuvable (404) — vérifier api_location dans le workflow GitHub.";
+        setErrbar(msg);
+        setEnvoi(false);
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      ref = j.reference || null;
+    } catch (_) {
+      demo = true;
+    }
+
+    setFini({ ref, demo });
+  };
+
+  /* ---------- Écran de confirmation ---------- */
+  if (fini) {
+    return (
+      <>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 520, textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <Check size={24} />
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Demande transmise</h1>
+          <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+            Demande d'acompte de <strong>{f.montant.trim().replace(".", ",")} €</strong> ({f.type.toLowerCase()}) pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim().toUpperCase()}</strong> — {f.mois}, agence {f.agence.trim().toUpperCase()}.
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+            Elle sera traitée par votre gestionnaire ; un accusé sera adressé à <strong>{f.email.trim()}</strong>.
+          </p>
+          {fini.ref && (
+            <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>
+          )}
+          {fini.demo && (
+            <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
+              Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  /* ---------- Formulaire ---------- */
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 520 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <Banknote size={22} color={T.accent} strokeWidth={1.6} />
+          <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Demande d'acompte</h1>
+        </div>
+        <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+          Client : {CODE_CLIENT} — versée après validation par votre gestionnaire.
+        </p>
+
+        {errbar && (
+          <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+            ✗ Envoi refusé : {errbar}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <ChampReq large label="Votre email (accusé de traitement)" erreur={err.email && "Email invalide."}>
+            <input style={err.email ? inputInvalid : inputStyle} value={f.email} onChange={(e) => maj("email", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Mois concerné" erreur={err.mois && "Champ requis."}>
+            <select style={err.mois ? inputInvalid : inputStyle} value={f.mois} onChange={(e) => maj("mois", e.target.value)}>
+              {MOIS_FR.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </ChampReq>
+
+          <ChampReq label="Agence" erreur={err.agence && "Champ requis."}>
+            <input style={err.agence ? inputInvalid : inputStyle} placeholder="Ex. MONTPELLIER" value={f.agence} onChange={(e) => maj("agence", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Nom du salarié" erreur={err.nom && "Champ requis."}>
+            <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. MARQUES" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Prénom du salarié" erreur={err.prenom && "Champ requis."}>
+            <input style={err.prenom ? inputInvalid : inputStyle} placeholder="Ex. SOFIA" value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Matricule" erreur={err.matricule && "Matricule numérique attendu."}>
+            <input inputMode="numeric" style={err.matricule ? inputInvalid : inputStyle} placeholder="Ex. 600138" value={f.matricule} onChange={(e) => maj("matricule", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Montant (€)" erreur={err.montant && "Montant invalide (ex. 150 ou 113,35)."}>
+            <input inputMode="decimal" style={err.montant ? inputInvalid : inputStyle} placeholder="Ex. 150" value={f.montant} onChange={(e) => maj("montant", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq large label="Type d'acompte" erreur={err.type && "Champ requis."}>
+            <select style={err.type ? inputInvalid : inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+              <option value="">—</option>
+              <option value="PONCTUEL">Ponctuel — ce mois uniquement</option>
+              <option value="PERMANENT">Permanent — reconduit chaque mois</option>
+            </select>
+          </ChampReq>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
