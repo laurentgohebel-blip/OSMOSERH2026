@@ -465,6 +465,7 @@ function AttestationEmployeur({ user, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     civilite: "", nom: "", naissance: "", entree: "", poste: "", contrat: "",
+    format: "PDF",
   });
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
@@ -502,6 +503,7 @@ function AttestationEmployeur({ user, onRetour }) {
       dateEntree: f.entree,
       poste: f.poste.trim(),
       typeContrat: f.contrat,
+      formatSouhaite: f.format, // "PDF" | "Word" — format du document généré par le flux
       xq_note: "", // honeypot : doit rester vide
     };
 
@@ -636,6 +638,14 @@ function AttestationEmployeur({ user, onRetour }) {
               <option>contrat à durée déterminée (CDD)</option>
             </select>
           </Champ>
+
+          <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Format du document</label>
+            <select style={inputStyle} value={f.format} onChange={(e) => maj("format", e.target.value)}>
+              <option value="PDF">PDF (recommandé — non modifiable)</option>
+              <option value="Word">Word (.docx)</option>
+            </select>
+          </div>
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
