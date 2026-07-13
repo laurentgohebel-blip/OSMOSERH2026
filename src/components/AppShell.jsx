@@ -793,19 +793,8 @@ function AttestationEmployeur({ user, client, onRetour }) {
     setFini({ ref, demo });
   };
 
-  const Champ = ({ k, label, children }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-      <label style={{ fontSize: 12, color: T.mut }}>{label} <span style={{ color: T.err }}>*</span></label>
-      {children}
-      {err[k] && (
-        <span style={{ fontSize: 11, color: T.err }}>
-          {k === "entree" ? "La date d'entrée ne peut pas être future."
-            : k === "email" ? "Email invalide."
-            : k === "naissance" ? "Date requise." : "Champ requis."}
-        </span>
-      )}
-    </div>
-  );
+  /* Les champs utilisent ChampReq (défini au niveau module) : un composant
+     défini ICI serait recréé à chaque frappe et ferait perdre le focus. */
 
   /* ---------- Écran de confirmation ---------- */
   if (fini) {
@@ -867,37 +856,37 @@ function AttestationEmployeur({ user, client, onRetour }) {
             {err.email && <span style={{ fontSize: 11, color: T.err }}>Email invalide.</span>}
           </div>
 
-          <Champ k="civilite" label="Civilité">
+          <ChampReq label="Civilité" erreur={err.civilite && "Champ requis."}>
             <select style={err.civilite ? inputInvalid : inputStyle} value={f.civilite} onChange={(e) => maj("civilite", e.target.value)}>
               <option value="">—</option>
               <option>Madame</option>
               <option>Monsieur</option>
             </select>
-          </Champ>
+          </ChampReq>
 
-          <Champ k="nom" label="Nom et prénom du salarié">
+          <ChampReq label="Nom et prénom du salarié" erreur={err.nom && "Champ requis."}>
             <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. Sofia Marques" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
-          </Champ>
+          </ChampReq>
 
-          <Champ k="naissance" label="Date de naissance">
+          <ChampReq label="Date de naissance" erreur={err.naissance && "Date requise."}>
             <input type="date" max="2010-12-31" style={err.naissance ? inputInvalid : inputStyle} value={f.naissance} onChange={(e) => maj("naissance", e.target.value)} />
-          </Champ>
+          </ChampReq>
 
-          <Champ k="entree" label="Date d'entrée">
+          <ChampReq label="Date d'entrée" erreur={err.entree && "La date d'entrée ne peut pas être future."}>
             <input type="date" style={err.entree ? inputInvalid : inputStyle} value={f.entree} onChange={(e) => maj("entree", e.target.value)} />
-          </Champ>
+          </ChampReq>
 
-          <Champ k="poste" label="Intitulé du poste">
+          <ChampReq label="Intitulé du poste" erreur={err.poste && "Champ requis."}>
             <input style={err.poste ? inputInvalid : inputStyle} placeholder="Ex. Agent de service" value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
-          </Champ>
+          </ChampReq>
 
-          <Champ k="contrat" label="Type de contrat">
+          <ChampReq label="Type de contrat" erreur={err.contrat && "Champ requis."}>
             <select style={err.contrat ? inputInvalid : inputStyle} value={f.contrat} onChange={(e) => maj("contrat", e.target.value)}>
               <option value="">—</option>
               <option>contrat à durée indéterminée (CDI)</option>
               <option>contrat à durée déterminée (CDD)</option>
             </select>
-          </Champ>
+          </ChampReq>
 
           <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: T.mut }}>Format du document</label>
