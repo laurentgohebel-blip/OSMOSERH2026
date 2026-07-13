@@ -17,8 +17,14 @@ export async function apiFetch(chemin, options = {}) {
       catch { /* l'utilisateur a refermé la fenêtre — l'API répondra 401 */ }
     }
   }
+  // « x-osmose-jeton » : Static Web Apps écrase Authorization avant les
+  // fonctions managées ; un en-tête personnalisé arrive intact. On envoie
+  // aussi Authorization pour le dev local (func start, pas de proxy SWA).
   return fetch(chemin, {
     ...options,
-    headers: { ...(options.headers || {}), ...(jeton ? { Authorization: `Bearer ${jeton}` } : {}) },
+    headers: {
+      ...(options.headers || {}),
+      ...(jeton ? { "x-osmose-jeton": jeton, Authorization: `Bearer ${jeton}` } : {}),
+    },
   });
 }

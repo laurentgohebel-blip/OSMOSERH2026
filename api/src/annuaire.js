@@ -23,10 +23,14 @@ function getJwks() {
   return jwks;
 }
 
-/** Valide le Bearer token et renvoie { email } ou lève { status, erreur }. */
+/** Valide le jeton et renvoie { email } ou lève { status, erreur }.
+    Le jeton est lu en priorité dans « x-osmose-jeton » : Static Web Apps
+    écrase l'en-tête Authorization avant les fonctions managées, un en-tête
+    personnalisé passe intact. Authorization reste en repli (dev local). */
 async function verifierJeton(request) {
+  const perso = request.headers.get("x-osmose-jeton") || "";
   const entete = request.headers.get("authorization") || "";
-  const brut = entete.startsWith("Bearer ") ? entete.slice(7) : null;
+  const brut = perso || (entete.startsWith("Bearer ") ? entete.slice(7) : null);
   if (!brut) throw { status: 401, erreur: "Connexion requise." };
 
   let charge;
