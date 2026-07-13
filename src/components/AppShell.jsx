@@ -161,6 +161,8 @@ export default function AppShell({ user, onLogout }) {
   // moi : { client, raisonSociale } résolu par l'API, { bloque } si compte
   // non rattaché, { client: CODE_CLIENT } en repli dev local (API absente).
   const [moi, setMoi] = useState(null);
+  // stats : KPI réels par client (/api/dashboard) ; null = repli démo (dev local).
+  const [stats, setStats] = useState(null);
 
   const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
@@ -184,6 +186,10 @@ export default function AppShell({ user, onLogout }) {
         if (import.meta.env.DEV) return setMoi({ client: CODE_CLIENT, demo: true });
         setMoi({ bloque: "Service momentanément indisponible — vérifiez votre connexion et réessayez.", code: 0 });
       });
+    // KPI réels — en cas d'échec on reste sur la maquette de démonstration
+    apiFetch("/api/dashboard")
+      .then(async (r) => { if (r.ok) setStats(await r.json()); })
+      .catch(() => {});
   }, []);
 
   const notifier = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
@@ -325,29 +331,47 @@ export default function AppShell({ user, onLogout }) {
       <main style={{ flex: 1, minWidth: 0, padding: "26px 32px", maxWidth: 1000 }}>
 
         {/* ===== TABLEAU DE BORD ===== */}
-        {vue === "dash" && (
+        {vue === "dash" && (() => {
+          /* KPI réels (/api/dashboard) quand disponibles, maquette sinon (dev local) */
+          const rep = stats ? stats.embauches.repartition : db.repartition;
+          const totalRep = Object.values(rep).reduce((a, b) => a + b, 0) || 1;
+          const mois = stats ? stats.embauches.parMois : db.embauchesParMois;
+          const maxM = Math.max(...mois.map((x) => x.n), 1);
+          const enAttente = stats ? stats.aTraiter : aTraiter;
+          const kpis = stats ? [
+            { label: "Embauches en attente", val: stats.embauches.enAttente, warn: stats.embauches.enAttente > 0, icon: Users },
+            { label: "Acomptes à traiter", val: stats.acomptes.enAttente, warn: stats.acomptes.enAttente > 0, icon: Banknote },
+            { label: "Montant acomptes (€)", val: stats.acomptes.montantEnAttente, icon: Clock },
+            { label: "Attestations ce mois-ci", val: stats.attestations.moisCourant, icon: FileText },
+          ] : [
+            { label: "Effectif", val: db.effectif, icon: Users },
+            { label: "Embauches 2026", val: embauches2026, icon: FileText },
+            { label: "DPAE à traiter", val: dpaeATraiter, warn: dpaeATraiter > 0, icon: Clock },
+            { label: "Documents", val: db.documents.length, icon: Folder },
+          ];
+          return (
           <>
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Bonjour {prenom}</h1>
             <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Tableau de bord — {moi?.raisonSociale || codeClient}</p>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-              <Kpi label="Effectif" val={db.effectif} icon={Users} />
-              <Kpi label="Embauches 2026" val={embauches2026} icon={FileText} />
-              <Kpi label="DPAE à traiter" val={dpaeATraiter} warn={dpaeATraiter > 0} icon={Clock} />
-              <Kpi label="Documents" val={db.documents.length} icon={Folder} />
+              {kpis.map((k) => <Kpi key={k.label} label={k.label} val={k.val} warn={k.warn} icon={k.icon} />)}
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
               <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Répartition des contrats</h2>
+                {Object.keys(rep).length === 0 && (
+                  <p style={{ fontSize: 12.5, color: T.mut, margin: 0 }}>Aucune embauche déclarée pour l'instant.</p>
+                )}
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                  {Object.entries(db.repartition).map(([type, n]) => (
+                  {Object.entries(rep).map(([type, n]) => (
                     <div key={type}>
                       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 3 }}>
                         <span>{type}</span><span style={{ color: T.mut }}>{n}</span>
                       </div>
                       <div style={{ height: 8, background: T.bg, borderRadius: 4 }}>
-                        <div style={{ width: `${Math.round((n / totalContrats) * 100)}%`, height: 8, background: BARRES[type] || T.accentSoft, borderRadius: 4, transition: "width .4s" }} />
+                        <div style={{ width: `${Math.round((n / totalRep) * 100)}%`, height: 8, background: BARRES[type] || T.accentSoft, borderRadius: 4, transition: "width .4s" }} />
                       </div>
                     </div>
                   ))}
@@ -357,10 +381,10 @@ export default function AppShell({ user, onLogout }) {
               <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Embauches par mois</h2>
                 <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 120 }}>
-                  {db.embauchesParMois.map((x, i) => (
-                    <div key={x.m} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                  {mois.map((x, i) => (
+                    <div key={x.m + i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
                       <span style={{ fontSize: 11, color: T.mut }}>{x.n}</span>
-                      <div style={{ width: "100%", height: Math.max(6, (x.n / maxMois) * 85), background: i >= db.embauchesParMois.length - 2 ? "#378ADD" : "#B5D4F4", borderRadius: "3px 3px 0 0", transition: "height .4s" }} />
+                      <div style={{ width: "100%", height: Math.max(6, (x.n / maxM) * 85), background: i >= mois.length - 2 ? "#378ADD" : "#B5D4F4", borderRadius: "3px 3px 0 0", transition: "height .4s" }} />
                       <span style={{ fontSize: 11, color: T.mut }}>{x.m}</span>
                     </div>
                   ))}
@@ -370,11 +394,11 @@ export default function AppShell({ user, onLogout }) {
 
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
               <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
-              {aTraiter.length === 0 && (
+              {enAttente.length === 0 && (
                 <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
               )}
-              {aTraiter.map((a, i) => (
-                <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: i < aTraiter.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
+              {enAttente.map((a, i) => (
+                <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <AlertCircle size={15} color="#BA7517" /> {a.t}
                   </span>
@@ -384,10 +408,14 @@ export default function AppShell({ user, onLogout }) {
             </div>
 
             <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
-              <ShieldCheck size={13} /> Données hébergées dans votre tenant Microsoft 365 — conforme RGPD
+              <ShieldCheck size={13} />
+              {stats
+                ? "Indicateurs calculés en direct depuis vos démarches — données hébergées en Europe, conformes RGPD"
+                : "Données de démonstration — connectez-vous en production pour vos indicateurs réels"}
             </div>
           </>
-        )}
+          );
+        })()}
 
         {/* ===== PRODUCTION ===== */}
         {vue === "prod" && !tuile && (

@@ -199,4 +199,4 @@ async function creerEmbauche(email, clientInfo, d, reference) {
   if (!r.ok) throw { status: 502, erreur: "Enregistrement de la demande d'embauche impossible, réessayez." };
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items };
