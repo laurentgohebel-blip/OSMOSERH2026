@@ -3,8 +3,8 @@
 // Page d'accueil de l'espace client Osmose RH — UNE seule porte d'entrée :
 // le bouton ouvre la page External ID qui gère à la fois la connexion et la
 // création de compte (email + mot de passe, vérification par code).
-// Un compte fraîchement créé mais non rattaché arrive sur le formulaire de
-// demande d'accès (AppShell → DemandeAcces) : c'est le parcours d'onboarding.
+// Gabarit aligné sur la page Connexion de synapserh.fr : panneau visuel navy
+// à gauche, carte de connexion à droite — empilés sur mobile.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
@@ -23,11 +23,9 @@ export default function LoginPage() {
       const result = await instance.loginPopup(loginRequest);
       if (result?.account) {
         instance.setActiveAccount(result.account);
-        // App.jsx réagit à useIsAuthenticated() → redirige vers #/dashboard
         window.location.hash = "/dashboard";
       }
     } catch (err) {
-      // Popup fermée volontairement → pas d'erreur affichée
       if (err?.errorCode === "user_cancelled") {
         setStatus("idle");
         return;
@@ -38,58 +36,96 @@ export default function LoginPage() {
   }
 
   return (
-    <div style={s.page}>
-      <div style={s.card}>
-        {/* ── Logo / Titre ── */}
-        <div style={s.logoZone}>
-          <div style={s.logoMark}>O</div>
-          <h1 style={s.title}>Osmose <em style={{ fontStyle: "italic", color: "#60A5FA" }}>RH</em></h1>
-          <p style={s.subtitle}>Espace client — vos démarches RH en quelques clics</p>
-        </div>
+    <div className="osrh-login">
+      <style>{`
+        .osrh-login { display: flex; min-height: 100vh; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; background: #fff; }
+        .osrh-login-illu {
+          width: 44%; min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between;
+          padding: 44px 48px; box-sizing: border-box; color: #fff;
+          background: linear-gradient(160deg, #061840 0%, #0D1F33 60%, #0A1628 100%);
+        }
+        .osrh-login-logo { font-family: Georgia, 'Times New Roman', serif; font-size: 22px; color: #fff; text-decoration: none; }
+        .osrh-login-logo em { font-style: italic; color: #60A5FA; }
+        .osrh-login-headline { font-family: Georgia, 'Times New Roman', serif; font-style: italic; font-weight: 500; font-size: 38px; line-height: 1.18; margin: 48px 0 16px; }
+        .osrh-login-sub { font-size: 14.5px; color: rgba(255,255,255,0.65); line-height: 1.65; max-width: 340px; margin: 0; }
+        .osrh-login-trust { margin-top: 40px; display: flex; flex-direction: column; gap: 12px; }
+        .osrh-login-trust-item { display: flex; align-items: center; gap: 10px; font-size: 13px; color: rgba(255,255,255,0.75); }
+        .osrh-login-dot { width: 7px; height: 7px; border-radius: 50%; background: #60A5FA; flex-shrink: 0; }
+        .osrh-login-copy { font-size: 11.5px; color: rgba(255,255,255,0.4); }
+        .osrh-login-panel { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 24px; box-sizing: border-box; }
+        .osrh-login-card { width: 100%; max-width: 380px; }
+        .osrh-login-eyebrow { display: flex; align-items: center; gap: 10px; font-size: 11px; letter-spacing: 0.18em; color: #1668D9; font-weight: 700; margin: 0 0 14px; }
+        .osrh-login-eyebrow::before { content: ''; width: 26px; height: 1px; background: #1668D9; }
+        .osrh-login-title { font-family: Georgia, 'Times New Roman', serif; font-weight: 600; font-size: 34px; color: #0A1628; margin: 0 0 8px; }
+        .osrh-login-subtitle { font-size: 14px; color: #5C6B80; margin: 0 0 30px; }
+        .osrh-login-btn {
+          display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+          padding: 15px 20px; background: linear-gradient(135deg, #1668D9 0%, #061840 100%); color: #fff;
+          border: none; border-radius: 10px; font-size: 13px; font-weight: 700; letter-spacing: 0.06em;
+          text-transform: uppercase; cursor: pointer; box-shadow: 0 4px 20px rgba(22,104,217,0.3);
+          transition: transform .15s, box-shadow .15s; font-family: inherit;
+        }
+        .osrh-login-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(22,104,217,0.4); }
+        .osrh-login-btn:disabled { opacity: 0.75; cursor: not-allowed; }
+        .osrh-login-error { margin-top: 16px; background: #FCEBEB; border: 1px solid #F7C1C1; color: #791F1F; border-radius: 8px; padding: 10px 14px; font-size: 13px; text-align: center; }
+        .osrh-login-note { margin-top: 26px; font-size: 12.5px; color: #8794A8; text-align: center; line-height: 1.65; }
+        @media (max-width: 820px) {
+          .osrh-login { flex-direction: column; }
+          .osrh-login-illu { width: 100%; min-height: 0; padding: 26px 24px 30px; }
+          .osrh-login-headline { font-size: 26px; margin: 18px 0 8px; }
+          .osrh-login-sub { font-size: 13px; }
+          .osrh-login-trust, .osrh-login-copy { display: none; }
+          .osrh-login-panel { padding: 34px 20px 44px; align-items: flex-start; }
+        }
+      `}</style>
 
-        {/* ── Bouton connexion ── */}
-        <button
-          onClick={handleLogin}
-          disabled={status === "loading"}
-          style={{
-            ...s.btn,
-            opacity: status === "loading" ? 0.75 : 1,
-            cursor:  status === "loading" ? "not-allowed" : "pointer",
-          }}
-        >
-          {status === "loading" ? (
-            <>
-              <Spinner /> Connexion en cours…
-            </>
-          ) : (
-            "Se connecter ou créer un compte"
-          )}
-        </button>
-
-        {/* ── Message d'erreur ── */}
-        {status === "error" && (
-          <div style={s.error}>
-            <span>⚠️ {errorMsg}</span>
+      {/* ── Panneau visuel (identité landing) ── */}
+      <div className="osrh-login-illu">
+        <div>
+          <span className="osrh-login-logo">Osmose <em>RH</em></span>
+          <h2 className="osrh-login-headline">Vos démarches RH,<br />en quelques clics.</h2>
+          <p className="osrh-login-sub">
+            Attestations, acomptes, embauches : déclarez, votre gestionnaire dédié s'occupe du reste — documents générés et suivis depuis un seul endroit.
+          </p>
+          <div className="osrh-login-trust">
+            <div className="osrh-login-trust-item"><span className="osrh-login-dot" />Hébergé en Europe</div>
+            <div className="osrh-login-trust-item"><span className="osrh-login-dot" />Données sécurisées, accès par entreprise</div>
+            <div className="osrh-login-trust-item"><span className="osrh-login-dot" />Conforme RGPD</div>
           </div>
-        )}
-
-        {/* ── Note bas de page ── */}
-        <p style={s.note}>
-          Première visite ? Créez votre compte avec votre adresse email
-          professionnelle — votre gestionnaire Osmose RH activera ensuite
-          votre accès.
-        </p>
+        </div>
+        <div className="osrh-login-copy">© 2026 Osmose RH · Cabinet de conseil en ressources humaines</div>
       </div>
 
-      {/* ── Baseline ── */}
-      <p style={s.footer}>Osmose RH — données hébergées en Europe</p>
+      {/* ── Carte de connexion ── */}
+      <div className="osrh-login-panel">
+        <div className="osrh-login-card">
+          <p className="osrh-login-eyebrow">ESPACE CLIENT</p>
+          <h1 className="osrh-login-title">Connexion</h1>
+          <p className="osrh-login-subtitle">Bienvenue sur votre plateforme Osmose RH</p>
+
+          <button className="osrh-login-btn" onClick={handleLogin} disabled={status === "loading"}>
+            {status === "loading" ? (
+              <>
+                <Spinner /> Connexion en cours…
+              </>
+            ) : (
+              "Se connecter ou créer un compte"
+            )}
+          </button>
+
+          {status === "error" && (
+            <div className="osrh-login-error">⚠️ {errorMsg}</div>
+          )}
+
+          <p className="osrh-login-note">
+            Première visite ? Créez votre compte avec votre adresse email
+            professionnelle — votre gestionnaire Osmose RH activera ensuite
+            votre accès.
+          </p>
+        </div>
+      </div>
     </div>
   );
-}
-
-// ─── Icône Microsoft ─────────────────────────────────────────────────────────
-function MicrosoftIcon() {
- 
 }
 
 // ─── Spinner inline ──────────────────────────────────────────────────────────
@@ -108,104 +144,3 @@ function Spinner() {
     </>
   );
 }
-
-// ─── Styles ──────────────────────────────────────────────────────────────────
-const s = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "linear-gradient(160deg, #061840 0%, #0D1F33 60%, #0A1628 100%)",
-    fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif",
-    padding: "24px",
-  },
-  card: {
-    background: "white",
-    borderRadius: "20px",
-    padding: "48px 40px",
-    maxWidth: "400px",
-    width: "100%",
-    boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "0",
-  },
-  logoZone: {
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    marginBottom: "36px",
-  },
-  logoMark: {
-    width: 56,
-    height: 56,
-    borderRadius: "16px",
-    background: "linear-gradient(135deg, #1668D9, #061840)",
-    color: "white",
-    fontSize: "28px",
-    fontWeight: "700",
-    fontFamily: "'Georgia', 'Times New Roman', serif",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: "16px",
-    boxShadow: "0 8px 24px rgba(22,104,217,0.35)",
-  },
-  title: {
-    margin: "0 0 6px 0",
-    fontSize: "26px",
-    fontWeight: "600",
-    color: "#0A1628",
-    letterSpacing: "-0.5px",
-    fontFamily: "'Georgia', 'Times New Roman', serif",
-  },
-  subtitle: {
-    margin: 0,
-    fontSize: "14px",
-    color: "#64748b",
-    textAlign: "center",
-  },
-  btn: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "10px",
-    width: "100%",
-    padding: "14px 20px",
-    background: "#1668D9",
-    color: "white",
-    border: "none",
-    borderRadius: "10px",
-    fontSize: "15px",
-    fontWeight: "600",
-    transition: "background .2s, transform .1s",
-    boxShadow: "0 4px 16px rgba(22,104,217,0.3)",
-  },
-  error: {
-    marginTop: "16px",
-    background: "#fef2f2",
-    border: "1px solid #fecaca",
-    color: "#dc2626",
-    borderRadius: "8px",
-    padding: "10px 14px",
-    fontSize: "13px",
-    width: "100%",
-    textAlign: "center",
-    boxSizing: "border-box",
-  },
-  note: {
-    marginTop: "28px",
-    fontSize: "12px",
-    color: "#94a3b8",
-    textAlign: "center",
-    lineHeight: "1.6",
-  },
-  footer: {
-    marginTop: "24px",
-    fontSize: "12px",
-    color: "rgba(255,255,255,0.4)",
-  },
-};

@@ -9,6 +9,18 @@ export default function App() {
   const accounts = instance.getAllAccounts();
   const isAuth = accounts.length > 0;
 
+  // Aperçu UI local : http://localhost:5173/?apercu — rend l'app sans
+  // authentification avec un utilisateur factice. import.meta.env.DEV
+  // garantit que ce chemin n'existe pas dans le build de production.
+  if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("apercu")) {
+    return (
+      <AppShell
+        user={{ displayName: "Sofia Marques", email: "sofia@apercu.local", givenName: "Sofia" }}
+        onLogout={() => {}}
+      />
+    );
+  }
+
   if (!isAuth) return <LoginPage />;
 
   const account = accounts[0];

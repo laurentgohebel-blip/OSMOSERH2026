@@ -120,9 +120,14 @@ const Badge = ({ s }) => {
 };
 
 const Kpi = ({ label, val, warn, icon: Icon }) => (
-  <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 130 }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut, marginBottom: 4 }}>
-      {Icon && <Icon size={14} />}{label}
+  <div className="osrh-kpi" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", flex: 1, minWidth: 150 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: T.mut, marginBottom: 8 }}>
+      {Icon && (
+        <span style={{ width: 26, height: 26, borderRadius: 8, background: warn ? "#FAEEDA" : "#E6F1FB", color: warn ? "#854F0B" : T.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <Icon size={14} />
+        </span>
+      )}
+      {label}
     </div>
     <div style={{ fontSize: 26, fontWeight: 600, color: warn ? "#B45309" : T.ink, fontFamily: T.serif }}>{val}</div>
   </div>
@@ -294,6 +299,7 @@ export default function AppShell({ user, onLogout }) {
 
   const NavBtn = ({ id, icon: Icon, label }) => (
     <button
+      className="osrh-navbtn"
       onClick={() => { setVue(id); setTuile(null); }}
       style={{
         all: "unset", cursor: "pointer", padding: "11px 20px", fontSize: 13.5,
@@ -308,31 +314,58 @@ export default function AppShell({ user, onLogout }) {
   );
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
+    <div className="osrh-racine" style={{ display: "flex", minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
+      {/* Adaptation mobile : les media queries ci-dessous priment (via
+          !important) sur les styles inline pensés pour l'écran large.
+          ≤ 760 px : la barre latérale devient une barre de navigation
+          horizontale collante, grilles et formulaires passent en 1 colonne. */}
+      <style>{`
+        .osrh-kpi { transition: transform .15s, box-shadow .15s; }
+        .osrh-kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(6,24,64,0.07); }
+        .osrh-tuile { transition: transform .15s, box-shadow .15s, border-color .15s !important; }
+        .osrh-tuile:hover { transform: translateY(-3px); box-shadow: 0 10px 24px rgba(6,24,64,0.08); }
+        /* Focus clavier visible partout — !important requis : les boutons
+           utilisent all:unset en inline, qui neutralise l'outline. */
+        .osrh-racine :focus-visible { outline: 2px solid #1668D9 !important; outline-offset: 2px; }
+        @media (max-width: 760px) {
+          .osrh-racine { flex-direction: column !important; }
+          .osrh-aside { width: 100% !important; flex-direction: row !important; align-items: center !important; padding: 10px 14px !important; position: sticky; top: 0; z-index: 40; gap: 2px; overflow-x: auto; }
+          .osrh-logo { padding: 0 12px 0 0 !important; font-size: 17px !important; white-space: nowrap; }
+          .osrh-navbtn { padding: 9px 10px !important; border-left: none !important; border-radius: 8px !important; white-space: nowrap !important; flex-shrink: 0 !important; }
+          .osrh-user { margin: 0 0 0 auto !important; padding: 0 0 0 10px !important; border-top: none !important; }
+          .osrh-user-info { display: none !important; }
+          .osrh-user-label { display: none !important; }
+          .osrh-main { padding: 18px 14px !important; }
+          .osrh-grille2 { grid-template-columns: 1fr !important; }
+          .osrh-form { grid-template-columns: 1fr !important; }
+          .osrh-table { overflow-x: auto !important; }
+          .osrh-table > div { min-width: 540px; }
+        }
+      `}</style>
 
-      {/* ---------- BARRE LATÉRALE ---------- */}
-      <aside style={{ width: 200, flexShrink: 0, background: T.navy, display: "flex", flexDirection: "column", paddingTop: 24 }}>
-        <div style={{ padding: "0 20px 26px", fontFamily: T.serif, fontSize: 19, color: "#fff" }}>
+      {/* ---------- BARRE LATÉRALE (barre du haut sur mobile) ---------- */}
+      <aside className="osrh-aside" style={{ width: 200, flexShrink: 0, background: T.navy, display: "flex", flexDirection: "column", paddingTop: 24 }}>
+        <div className="osrh-logo" style={{ padding: "0 20px 26px", fontFamily: T.serif, fontSize: 19, color: "#fff" }}>
           Osmose <span style={{ fontStyle: "italic", color: T.accentSoft }}>RH</span>
         </div>
         <NavBtn id="dash" icon={ChartBar} label="Tableau de bord" />
         <NavBtn id="prod" icon={FileText} label="Production" />
         <NavBtn id="docs" icon={Folder} label="Documents" />
-        <div style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
+        <div className="osrh-user" style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+          <div className="osrh-user-info" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
             <div style={{ width: 30, height: 30, borderRadius: "50%", background: T.accentSoft, color: T.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>{initiales}</div>
             <div style={{ fontSize: 11.5, color: "#9FB2C9", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis" }}>
               {user?.displayName}<br />{moi?.raisonSociale || codeClient}
             </div>
           </div>
-          <button onClick={onLogout} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#9FB2C9", fontFamily: T.sans }}>
-            <LogOut size={13} /> Se déconnecter
+          <button onClick={onLogout} title="Se déconnecter" style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#9FB2C9", fontFamily: T.sans, padding: 4 }}>
+            <LogOut size={15} /> <span className="osrh-user-label">Se déconnecter</span>
           </button>
         </div>
       </aside>
 
       {/* ---------- CONTENU ---------- */}
-      <main style={{ flex: 1, minWidth: 0, padding: "26px 32px", maxWidth: 1000 }}>
+      <main className="osrh-main" style={{ flex: 1, minWidth: 0, padding: "26px 32px", maxWidth: 1000 }}>
 
         {/* ===== TABLEAU DE BORD ===== */}
         {vue === "dash" && (() => {
@@ -344,6 +377,11 @@ export default function AppShell({ user, onLogout }) {
           const mois = stats ? (emb?.parMois || []) : db.embauchesParMois;
           const maxM = Math.max(...mois.map((x) => x.n), 1);
           const enAttente = stats ? stats.aTraiter : aTraiter;
+          /* Prochaines embauches : calculées par l'API (dates de début à
+             venir) ; en démo locale, dérivées des contrats de la maquette. */
+          const prochaines = stats
+            ? (emb?.prochaines || [])
+            : db.contrats.slice(0, 3).map((x) => ({ nom: x.nom, prenom: x.prenom, type: x.type, debut: x.debut }));
           const avecGraphiques = !stats || !!emb;
           const kpis = stats ? [
             ...(emb ? [{ label: "Embauches en attente", val: emb.enAttente, warn: emb.enAttente > 0, icon: Users }] : []),
@@ -373,7 +411,7 @@ export default function AppShell({ user, onLogout }) {
             </div>
 
             {avecGraphiques && (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+            <div className="osrh-grille2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
               <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Répartition des contrats</h2>
                 {Object.keys(rep).length === 0 && (
@@ -408,19 +446,39 @@ export default function AppShell({ user, onLogout }) {
             </div>
             )}
 
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
-              <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
-              {enAttente.length === 0 && (
-                <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
-              )}
-              {enAttente.map((a, i) => (
-                <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <AlertCircle size={15} color="#BA7517" /> {a.t}
-                  </span>
-                  <Badge s={a.s} />
-                </div>
-              ))}
+            <div className="osrh-grille2" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 14, alignItems: "start" }}>
+              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+                <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
+                {enAttente.length === 0 && (
+                  <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
+                )}
+                {enAttente.map((a, i) => (
+                  <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={15} color="#BA7517" style={{ flexShrink: 0 }} /> {a.t}
+                    </span>
+                    <Badge s={a.s} />
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+                <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Prochaines embauches</div>
+                {prochaines.length === 0 && (
+                  <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Aucune embauche planifiée.</div>
+                )}
+                {prochaines.map((x, i) => (
+                  <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderBottom: i < prochaines.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
+                    <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <strong>{(x.nom || "").toUpperCase()} {x.prenom}</strong>
+                      <span style={{ color: T.mut }}> — {x.type}</span>
+                    </span>
+                    <span style={{ fontSize: 12, color: T.mut, flexShrink: 0 }}>
+                      {String(x.debut).slice(0, 10).split("-").reverse().join("/")}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
@@ -450,6 +508,7 @@ export default function AppShell({ user, onLogout }) {
                 return (
                   <button
                     key={t.id}
+                    className="osrh-tuile"
                     onClick={() => inclus ? setTuile(t) : notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.")}
                     style={{
                       background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
@@ -518,7 +577,7 @@ export default function AppShell({ user, onLogout }) {
               ))}
             </div>
 
-            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+            <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 90px", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
                 <span>Nom</span><span>Modifié</span><span>Par</span><span>Actions</span>
               </div>
@@ -701,7 +760,7 @@ function AttestationEmployeur({ user, client, onRetour }) {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: T.mut }}>Votre email (accusé et réception du document) <span style={{ color: T.err }}>*</span></label>
             <input style={err.email ? inputInvalid : inputStyle} value={f.email} onChange={(e) => maj("email", e.target.value)} />
@@ -903,7 +962,7 @@ function DemandeAcompte({ user, client, onRetour }) {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <ChampReq large label="Votre email (accusé de traitement)" erreur={err.email && "Email invalide."}>
             <input style={err.email ? inputInvalid : inputStyle} value={f.email} onChange={(e) => maj("email", e.target.value)} />
           </ChampReq>
@@ -1070,7 +1129,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <ChampReq label="Type de contrat">
             <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
               <option value="CDI">CDI</option>
@@ -1239,7 +1298,7 @@ function DemandeAcces({ user, onLogout }) {
           </div>
         )}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <ChampReq label="Votre nom complet" erreur={err.nom && "Champ requis."}>
             <input style={err.nom ? inputInvalid : inputStyle} value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
           </ChampReq>
@@ -1300,7 +1359,7 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
         </div>
         <p style={{ margin: "0 0 18px", fontSize: 12, color: T.mut }}>{tuile.cible}</p>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           {tuile.champs.map((c) => (
             <div key={c.k} style={{ gridColumn: c.large ? "1 / -1" : "auto", display: "flex", flexDirection: "column", gap: 4 }}>
               <label style={{ fontSize: 12, color: T.mut }}>{c.l}</label>
