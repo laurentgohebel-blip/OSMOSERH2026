@@ -344,7 +344,7 @@ export default function AppShell({ user, onLogout }) {
       `}</style>
 
       {/* ---------- BARRE LATÉRALE (barre du haut sur mobile) ---------- */}
-      <aside className="osrh-aside" style={{ width: 200, flexShrink: 0, background: T.navy, display: "flex", flexDirection: "column", paddingTop: 24 }}>
+      <aside className="osrh-aside" style={{ width: 224, flexShrink: 0, background: T.navy, display: "flex", flexDirection: "column", paddingTop: 24 }}>
         <div className="osrh-logo" style={{ padding: "0 20px 26px", fontFamily: T.serif, fontSize: 19, color: "#fff" }}>
           Osmose <span style={{ fontStyle: "italic", color: T.accentSoft }}>RH</span>
         </div>
@@ -365,7 +365,10 @@ export default function AppShell({ user, onLogout }) {
       </aside>
 
       {/* ---------- CONTENU ---------- */}
-      <main className="osrh-main" style={{ flex: 1, minWidth: 0, padding: "26px 32px", maxWidth: 1000 }}>
+      {/* Colonne de contenu centrée : plafond 1360 px, marges auto — sur
+          grand écran le contenu occupe le cœur de la page au lieu de
+          rester collé à la barre latérale. */}
+      <main className="osrh-main" style={{ flex: 1, minWidth: 0, width: "100%", boxSizing: "border-box", padding: "26px 40px", maxWidth: 1360, margin: "0 auto" }}>
 
         {/* ===== TABLEAU DE BORD ===== */}
         {vue === "dash" && (() => {
@@ -497,7 +500,7 @@ export default function AppShell({ user, onLogout }) {
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Production</h1>
             <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Choisissez une démarche</p>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 14 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
               {TUILES.map((t) => {
                 const Icone = t.icone;
                 /* Opt-in contractuel : tuile grisée si l'option n'est pas
@@ -537,20 +540,23 @@ export default function AppShell({ user, onLogout }) {
           </>
         )}
 
-        {vue === "prod" && tuile && tuile.id === "attestation" && (
-          <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
-        )}
-
-        {vue === "prod" && tuile && tuile.id === "acompte" && (
-          <DemandeAcompte user={user} client={codeClient} onRetour={() => setTuile(null)} />
-        )}
-
-        {vue === "prod" && tuile && tuile.id === "embauche" && (
-          <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
-        )}
-
-        {vue === "prod" && tuile && !tuile.cablee && (
-          <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
+        {/* Formulaires : largeur volontairement contenue (~560 px, un champ
+            trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
+        {vue === "prod" && tuile && (
+          <div style={{ maxWidth: 560, margin: "0 auto" }}>
+            {tuile.id === "attestation" && (
+              <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "acompte" && (
+              <DemandeAcompte user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "embauche" && (
+              <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {!tuile.cablee && (
+              <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
+            )}
+          </div>
         )}
 
         {/* ===== DOCUMENTS ===== */}
@@ -714,7 +720,7 @@ function AttestationEmployeur({ user, client, onRetour }) {
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
           <ArrowLeft size={15} /> Retour aux tuiles
         </button>
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 520, textAlign: "center" }}>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 560, textAlign: "center" }}>
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <Check size={24} />
           </div>
@@ -745,7 +751,7 @@ function AttestationEmployeur({ user, client, onRetour }) {
         <ArrowLeft size={15} /> Retour aux tuiles
       </button>
 
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 520 }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <Award size={22} color={T.accent} strokeWidth={1.6} />
           <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Attestation employeur</h1>
@@ -916,7 +922,7 @@ function DemandeAcompte({ user, client, onRetour }) {
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
           <ArrowLeft size={15} /> Retour aux tuiles
         </button>
-        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 520, textAlign: "center" }}>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 560, textAlign: "center" }}>
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <Check size={24} />
           </div>
@@ -947,7 +953,7 @@ function DemandeAcompte({ user, client, onRetour }) {
         <ArrowLeft size={15} /> Retour aux tuiles
       </button>
 
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 520 }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <Banknote size={22} color={T.accent} strokeWidth={1.6} />
           <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Demande d'acompte</h1>
@@ -1352,7 +1358,7 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
         <ArrowLeft size={15} /> Retour aux tuiles
       </button>
 
-      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 520 }}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <Icone size={22} color={T.accent} strokeWidth={1.6} />
           <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>{tuile.titre}</h1>
