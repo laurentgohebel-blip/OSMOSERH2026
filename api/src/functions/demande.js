@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -25,9 +25,17 @@ app.http("demande", {
     if (d.xq_note || d.website) return { status: 202, jsonBody: { reference: "OK" } }; // on ne renseigne pas le bot
 
     // 2. Identité vérifiée puis résolution client — le verrou.
+    //    Cas particulier « acces » : la demande d'accès est LA démarche des
+    //    comptes pas encore rattachés — jeton valide exigé, résolution non.
     let email, clientInfo;
     try {
       ({ email } = await verifierJeton(request));
+      if (d.demarche === "acces") {
+        if (!d.entreprise || String(d.entreprise).trim().length < 2 || !d.nom || String(d.nom).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Entreprise et nom sont requis." } };
+        await creerDemandeAcces(email, d);
+        return { status: 202, jsonBody: { reference: `ACCES-${Date.now().toString(36).toUpperCase()}` } };
+      }
       clientInfo = await resoudreClient(email);
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };

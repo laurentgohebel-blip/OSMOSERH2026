@@ -124,4 +124,40 @@ async function resoudreClient(email) {
   };
 }
 
-module.exports = { verifierJeton, resoudreClient };
+/** Enregistre une demande d'accès (compte authentifié mais non rattaché).
+    Écrit dans la liste « Demandes d'accès portail » du site RH.
+    Lève 409 si une demande est déjà en attente pour cet email. */
+async function creerDemandeAcces(email, d) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Demandes d'accès portail"];
+  if (!listeId) throw { status: 502, erreur: "Liste des demandes d'accès introuvable." };
+
+  // Doublon ? (lecture directe, sans cache : il faut l'état réel)
+  let url = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items?$expand=fields($select=Email,Statut)&$top=200`;
+  while (url) {
+    const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}` } });
+    if (!r.ok) throw { status: 502, erreur: "Demandes d'accès injoignables (lecture)." };
+    const j = await r.json();
+    if (j.value.some((i) => (i.fields.Email || "").toLowerCase() === email && i.fields.Statut === "Nouvelle"))
+      throw { status: 409, erreur: "Votre demande d'accès est déjà en cours de traitement — vous serez prévenu par email." };
+    url = j["@odata.nextLink"] || null;
+  }
+
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: {
+      Title: email,
+      Email: email,
+      NomComplet: (d.nom || "").slice(0, 120),
+      Entreprise: (d.entreprise || "").slice(0, 120),
+      Telephone: (d.telephone || "").slice(0, 30),
+      Message: (d.message || "").slice(0, 1000),
+      Statut: "Nouvelle",
+    } }),
+  });
+  if (!r.ok) throw { status: 502, erreur: "Enregistrement de la demande impossible, réessayez." };
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces };

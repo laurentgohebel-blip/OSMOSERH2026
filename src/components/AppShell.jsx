@@ -186,7 +186,7 @@ export default function AppShell({ user, onLogout }) {
         if (r.ok) return setMoi(await r.json());
         if (r.status === 401 || r.status === 403) {
           const e = await r.json().catch(() => ({}));
-          return setMoi({ bloque: e.erreur || `Accès refusé (HTTP ${r.status}).` });
+          return setMoi({ bloque: e.erreur || `Accès refusé (HTTP ${r.status}).`, code: r.status });
         }
         setMoi({ client: CODE_CLIENT }); // API en difficulté : on n'enferme pas l'utilisateur
       })
@@ -240,29 +240,29 @@ export default function AppShell({ user, onLogout }) {
     ];
   }, [db]);
 
-  /* Compte connecté mais rattaché à aucun client : écran de blocage.
-     C'est le pendant visuel du verrou serveur — l'API refuse de toute
-     façon chaque demande (403) tant que le rattachement n'existe pas. */
-  if (moi?.bloque) {
+  /* 401 : la session côté API n'est pas exploitable — on propose de se
+     reconnecter. 403 : compte valide mais non rattaché — c'est le début
+     du parcours d'onboarding, on affiche le formulaire de demande d'accès. */
+  if (moi?.bloque && moi.code !== 403) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: T.sans }}>
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 30px", maxWidth: 460, textAlign: "center" }}>
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#FAEEDA", color: "#854F0B", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <AlertCircle size={24} />
           </div>
-          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Accès non disponible</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Reconnexion nécessaire</h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5, color: T.ink }}>
-            Compte connecté : <strong>{user?.email}</strong>
+            Compte : <strong>{user?.email}</strong>
           </p>
-          {/* Message exact renvoyé par l'API : distingue session expirée (401),
-              compte non rattaché (403), jeton sans email… — indispensable au diagnostic. */}
-          <p style={{ margin: "0 0 18px", fontSize: 13, color: T.mut }}>
-            {moi.bloque}
-          </p>
-          <Btn primary onClick={onLogout}><LogOut size={14} /> Se déconnecter</Btn>
+          <p style={{ margin: "0 0 18px", fontSize: 13, color: T.mut }}>{moi.bloque}</p>
+          <Btn primary onClick={onLogout}><LogOut size={14} /> Se reconnecter</Btn>
         </div>
       </div>
     );
+  }
+
+  if (moi?.bloque && moi.code === 403) {
+    return <DemandeAcces user={user} onLogout={onLogout} />;
   }
 
   if (!db) {
@@ -877,6 +877,129 @@ function DemandeAcompte({ user, client, onRetour }) {
         </p>
       </div>
     </>
+  );
+}
+
+/* ================================================================
+   ONBOARDING — DEMANDE D'ACCÈS
+   Affiché à la place du portail quand le compte connecté n'est
+   rattaché à aucun client (403 sur /api/me). L'email vient du compte
+   (vérifié) ; le gestionnaire traite la demande en ajoutant la ligne
+   Email → CodeClient dans « Utilisateurs portail ».
+   ================================================================ */
+function DemandeAcces({ user, onLogout }) {
+  const [f, setF] = useState({ nom: user?.displayName || "", entreprise: "", telephone: "", message: "" });
+  const [err, setErr] = useState({});
+  const [errbar, setErrbar] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [fini, setFini] = useState(null); // { ref } | { dejaEnCours: msg }
+
+  const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  const envoyer = async () => {
+    const e = { nom: f.nom.trim().length < 2, entreprise: f.entreprise.trim().length < 2 };
+    setErr(e);
+    if (Object.values(e).some(Boolean)) return;
+    setEnvoi(true);
+    setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          demarche: "acces",
+          nom: f.nom.trim(),
+          entreprise: f.entreprise.trim(),
+          telephone: f.telephone.trim(),
+          message: f.message.trim(),
+          xq_note: "", // honeypot : doit rester vide
+        }),
+      });
+      if (r.status === 409) {
+        const j = await r.json().catch(() => ({}));
+        setFini({ dejaEnCours: j.erreur || "Votre demande est déjà en cours de traitement." });
+        return;
+      }
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErrbar(j.erreur ? `${j.erreur} (HTTP ${r.status})` : `HTTP ${r.status}`);
+        setEnvoi(false);
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      setFini({ ref: j.reference || null });
+    } catch (_) {
+      setErrbar("API injoignable — réessayez dans un instant.");
+      setEnvoi(false);
+    }
+  };
+
+  const cadre = { minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: T.sans, padding: 20 };
+
+  if (fini) {
+    return (
+      <div style={cadre}>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "32px 28px", maxWidth: 480, textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: fini.dejaEnCours ? "#E6F1FB" : "#E1F5EE", color: fini.dejaEnCours ? "#0C447C" : T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            {fini.dejaEnCours ? <Clock size={24} /> : <Check size={24} />}
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>
+            {fini.dejaEnCours ? "Demande en cours" : "Demande transmise"}
+          </h1>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+            {fini.dejaEnCours || <>Votre gestionnaire Osmose RH va activer votre accès. Vous serez prévenu à <strong>{user?.email}</strong>, puis il suffira de vous reconnecter.</>}
+          </p>
+          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          <Btn onClick={onLogout}><LogOut size={14} /> Se déconnecter</Btn>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={cadre}>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 26px", maxWidth: 480, width: "100%" }}>
+        <h1 style={{ margin: "0 0 6px", fontSize: 21, fontFamily: T.serif, fontWeight: 600 }}>Bienvenue sur Osmose RH</h1>
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: T.mut }}>
+          Votre compte <strong>{user?.email}</strong> est créé. Dernière étape : demandez l'activation de votre accès — votre gestionnaire s'en charge rapidement.
+        </p>
+
+        {errbar && (
+          <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+            ✗ {errbar}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <ChampReq label="Votre nom complet" erreur={err.nom && "Champ requis."}>
+            <input style={err.nom ? inputInvalid : inputStyle} value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Votre entreprise" erreur={err.entreprise && "Champ requis."}>
+            <input style={err.entreprise ? inputInvalid : inputStyle} placeholder="Ex. ACME Propreté" value={f.entreprise} onChange={(e) => maj("entreprise", e.target.value)} />
+          </ChampReq>
+
+          <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Téléphone (facultatif)</label>
+            <input inputMode="tel" style={inputStyle} placeholder="Ex. 06 12 34 56 78" value={f.telephone} onChange={(e) => maj("telephone", e.target.value)} />
+          </div>
+
+          <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Message (facultatif)</label>
+            <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="Ex. Contact RH de l'agence de Montpellier" value={f.message} onChange={(e) => maj("message", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 20 }}>
+          <button onClick={onLogout} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, color: T.mut, display: "flex", alignItems: "center", gap: 6 }}>
+            <LogOut size={13} /> Se déconnecter
+          </button>
+          <Btn primary disabled={envoi} onClick={envoyer}>
+            {envoi ? "Envoi en cours…" : "Demander l'accès"}
+          </Btn>
+        </div>
+      </div>
+    </div>
   );
 }
 

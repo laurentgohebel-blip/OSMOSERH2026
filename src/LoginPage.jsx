@@ -1,8 +1,10 @@
 // src/LoginPage.jsx
 // ─────────────────────────────────────────────────────────────────────────────
-// Page de connexion Synapse RH
-//  - loginPopup MSAL  → App.jsx détecte isAuthenticated et redirige vers /dashboard
-//  - Gestion état (idle / loading / error)
+// Page d'accueil de l'espace client Osmose RH — UNE seule porte d'entrée :
+// le bouton ouvre la page External ID qui gère à la fois la connexion et la
+// création de compte (email + mot de passe, vérification par code).
+// Un compte fraîchement créé mais non rattaché arrive sur le formulaire de
+// demande d'accès (AppShell → DemandeAcces) : c'est le parcours d'onboarding.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import React, { useState } from "react";
@@ -40,9 +42,9 @@ export default function LoginPage() {
       <div style={s.card}>
         {/* ── Logo / Titre ── */}
         <div style={s.logoZone}>
-          <div style={s.logoMark}>S</div>
-          <h1 style={s.title}>Synapse RH</h1>
-          <p style={s.subtitle}>Votre espace RH digital & collaboratif</p>
+          <div style={s.logoMark}>O</div>
+          <h1 style={s.title}>Osmose <em style={{ fontStyle: "italic", color: "#60A5FA" }}>RH</em></h1>
+          <p style={s.subtitle}>Espace client — vos démarches RH en quelques clics</p>
         </div>
 
         {/* ── Bouton connexion ── */}
@@ -60,10 +62,7 @@ export default function LoginPage() {
               <Spinner /> Connexion en cours…
             </>
           ) : (
-            <>
-              <MicrosoftIcon />
-              Se connecter avec Microsoft
-            </>
+            "Se connecter ou créer un compte"
           )}
         </button>
 
@@ -76,14 +75,14 @@ export default function LoginPage() {
 
         {/* ── Note bas de page ── */}
         <p style={s.note}>
-          Connectez-vous avec votre compte professionnel Microsoft 365.
-          <br />
-          Aucun mot de passe supplémentaire requis.
+          Première visite ? Créez votre compte avec votre adresse email
+          professionnelle — votre gestionnaire Osmose RH activera ensuite
+          votre accès.
         </p>
       </div>
 
       {/* ── Baseline ── */}
-      <p style={s.footer}>Propulsé par Synapse · Microsoft Graph</p>
+      <p style={s.footer}>Osmose RH — données hébergées en Europe</p>
     </div>
   );
 }
@@ -118,8 +117,8 @@ const s = {
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    background: "linear-gradient(135deg, #1e0a3c 0%, #4c1d95 50%, #7c3aed 100%)",
-    fontFamily: "'Inter', system-ui, sans-serif",
+    background: "linear-gradient(160deg, #061840 0%, #0D1F33 60%, #0A1628 100%)",
+    fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif",
     padding: "24px",
   },
   card: {
@@ -144,22 +143,24 @@ const s = {
     width: 56,
     height: 56,
     borderRadius: "16px",
-    background: "linear-gradient(135deg, #7c3aed, #4c1d95)",
+    background: "linear-gradient(135deg, #1668D9, #061840)",
     color: "white",
     fontSize: "28px",
     fontWeight: "700",
+    fontFamily: "'Georgia', 'Times New Roman', serif",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
     marginBottom: "16px",
-    boxShadow: "0 8px 24px rgba(124,58,237,0.4)",
+    boxShadow: "0 8px 24px rgba(22,104,217,0.35)",
   },
   title: {
     margin: "0 0 6px 0",
     fontSize: "26px",
-    fontWeight: "700",
-    color: "#1e0a3c",
+    fontWeight: "600",
+    color: "#0A1628",
     letterSpacing: "-0.5px",
+    fontFamily: "'Georgia', 'Times New Roman', serif",
   },
   subtitle: {
     margin: 0,
@@ -174,14 +175,14 @@ const s = {
     gap: "10px",
     width: "100%",
     padding: "14px 20px",
-    background: "#0078d4",
+    background: "#1668D9",
     color: "white",
     border: "none",
     borderRadius: "10px",
     fontSize: "15px",
     fontWeight: "600",
     transition: "background .2s, transform .1s",
-    boxShadow: "0 4px 16px rgba(0,120,212,0.3)",
+    boxShadow: "0 4px 16px rgba(22,104,217,0.3)",
   },
   error: {
     marginTop: "16px",
