@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, creerDemandeAcces } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -37,6 +37,25 @@ app.http("demande", {
         return { status: 202, jsonBody: { reference: `ACCES-${Date.now().toString(36).toUpperCase()}` } };
       }
       clientInfo = await resoudreClient(email);
+
+      // Cas particulier « embauche » (contrat + DPAE) : pas de flux HTTP —
+      // l'API écrit dans « Production contrat » et le flux existant
+      // « Production contrat + AR » se déclenche à la création.
+      if (d.demarche === "embauche") {
+        const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle"];
+        for (const c of requis)
+          if (!d[c] || !String(d[c]).trim())
+            return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
+        if (!/^[12]\d{12}(\d{2})?$/.test(String(d.numeroSS).replace(/\s/g, "")))
+          return { status: 400, jsonBody: { erreur: "Numéro de sécurité sociale invalide (13 ou 15 chiffres)." } };
+        if (!["CDI", "CDD"].includes(d.typeContrat))
+          return { status: 400, jsonBody: { erreur: "Type de contrat non pris en charge." } };
+        if (d.typeContrat === "CDD" && !d.dateFin)
+          return { status: 400, jsonBody: { erreur: "Date de fin requise pour un CDD." } };
+        const reference = `EMB-${Date.now().toString(36).toUpperCase()}`;
+        await creerEmbauche(email, clientInfo, d, reference);
+        return { status: 202, jsonBody: { reference } };
+      }
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("Verrou :", e);

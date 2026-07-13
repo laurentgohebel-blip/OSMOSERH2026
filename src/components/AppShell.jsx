@@ -88,21 +88,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    TUILES — id "attestation" est câblée (ATT-01), les autres en démo
    ================================================================ */
 const TUILES = [
-  { id: "contrat", titre: "Contrat de travail", sous: "CDI, CDD, alternance", icone: FileText,
-    cible: "Démarche EMB-01 — à câbler (vague 3)",
-    champs: [
-      { k: "nom", l: "Nom" }, { k: "prenom", l: "Prénom" },
-      { k: "type", l: "Type de contrat", type: "select", opts: ["CDI", "CDD", "Alternance", "Stage"] },
-      { k: "debut", l: "Date de début", type: "date" },
-      { k: "poste", l: "Poste", large: true },
-    ] },
-  { id: "dpae", titre: "DPAE", sous: "Déclaration d'embauche", icone: Send,
-    cible: "Démarche EMB-01 — à câbler (vague 3)",
-    champs: [
-      { k: "nom", l: "Nom" }, { k: "prenom", l: "Prénom" },
-      { k: "naissance", l: "Date de naissance", type: "date" },
-      { k: "debut", l: "Date d'embauche", type: "date" },
-    ] },
+  { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "formation", titre: "Formation", sous: "Demande de formation", icone: GraduationCap,
@@ -445,6 +431,10 @@ export default function AppShell({ user, onLogout }) {
 
         {vue === "prod" && tuile && tuile.id === "acompte" && (
           <DemandeAcompte user={user} client={codeClient} onRetour={() => setTuile(null)} />
+        )}
+
+        {vue === "prod" && tuile && tuile.id === "embauche" && (
+          <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
         )}
 
         {vue === "prod" && tuile && !tuile.cablee && (
@@ -890,6 +880,216 @@ function DemandeAcompte({ user, client, onRetour }) {
         </div>
         <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
           Un accusé de traitement vous sera adressé. Données traitées par Osmose RH dans le cadre de la mission confiée par votre entreprise.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   EMB-01 — EMBAUCHE (contrat + DPAE), câblée sur /api/demande
+   Une seule déclaration du client alimente la production du contrat
+   ET la DPAE : l'API écrit dans la liste « Production contrat » du
+   site RH, dont le flux existant « Production contrat + AR » assure
+   l'accusé, l'approbation (gestionnaire du client) et la génération.
+   L'accusé part sur l'email du compte connecté — pas de champ email.
+   ================================================================ */
+function DemandeEmbauche({ user, client, onRetour }) {
+  const [f, setF] = useState({
+    type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
+    nationalite: "", numeroSS: "", adresse: "", emailSalarie: "",
+    telephone: "", debut: "", fin: "", poste: "", duree: "",
+  });
+  const [err, setErr] = useState({});
+  const [errbar, setErrbar] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [fini, setFini] = useState(null);
+
+  const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  const valider = () => {
+    const ss = f.numeroSS.replace(/\s/g, "");
+    const e = {
+      nom: f.nom.trim().length < 2,
+      prenom: f.prenom.trim().length < 2,
+      naissance: !f.naissance,
+      lieuNaissance: f.lieuNaissance.trim().length < 2,
+      nationalite: f.nationalite.trim().length < 2,
+      numeroSS: !/^[12]\d{12}(\d{2})?$/.test(ss),
+      adresse: f.adresse.trim().length < 8,
+      debut: !f.debut,
+      fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
+      poste: f.poste.trim().length < 2,
+      duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
+    };
+    setErr(e);
+    return !Object.values(e).some(Boolean);
+  };
+
+  const envoyer = async () => {
+    if (!valider()) return;
+    setEnvoi(true);
+    setErrbar("");
+    const payload = {
+      demarche: "embauche",
+      client, // indicatif : l'API impose le client résolu côté serveur
+      typeContrat: f.type,
+      nom: f.nom.trim(),
+      prenom: f.prenom.trim(),
+      dateNaissance: f.naissance,
+      lieuNaissance: f.lieuNaissance.trim(),
+      nationalite: f.nationalite.trim(),
+      numeroSS: f.numeroSS.replace(/\s/g, ""),
+      adressePostale: f.adresse.trim(),
+      emailSalarie: f.emailSalarie.trim(),
+      telephoneSalarie: f.telephone.trim(),
+      dateDebut: f.debut,
+      ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
+      poste: f.poste.trim(),
+      dureeMensuelle: f.duree.trim().replace(",", "."),
+      xq_note: "", // honeypot : doit rester vide
+    };
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErrbar(j.erreur ? `${j.erreur} (HTTP ${r.status})` : `HTTP ${r.status}`);
+        setEnvoi(false);
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      setFini({ ref: j.reference || null });
+    } catch (_) {
+      setFini({ demo: true });
+    }
+  };
+
+  if (fini) {
+    return (
+      <>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 560, textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <Check size={24} />
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Embauche déclarée</h1>
+          <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+            {f.type} pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong>, début le <strong>{f.debut.split("-").reverse().join("/")}</strong>.
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+            Votre gestionnaire prépare le contrat et la DPAE. Un accusé vous est adressé à <strong>{user?.email}</strong>.
+          </p>
+          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          {fini.demo && (
+            <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
+              Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <FileText size={22} color={T.accent} strokeWidth={1.6} />
+          <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une embauche</h1>
+        </div>
+        <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+          Client : {client} — votre gestionnaire produit le contrat et effectue la DPAE. Accusé envoyé à {user?.email}.
+        </p>
+
+        {errbar && (
+          <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+            ✗ Envoi refusé : {errbar}
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <ChampReq label="Type de contrat">
+            <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+              <option value="CDI">CDI</option>
+              <option value="CDD">CDD</option>
+            </select>
+          </ChampReq>
+
+          {f.type === "CDD" ? (
+            <ChampReq label="Date de fin (CDD)" erreur={err.fin && "Requise et postérieure au début."}>
+              <input type="date" style={err.fin ? inputInvalid : inputStyle} value={f.fin} onChange={(e) => maj("fin", e.target.value)} />
+            </ChampReq>
+          ) : <div />}
+
+          <ChampReq label="Nom de naissance" erreur={err.nom && "Champ requis."}>
+            <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. MARQUES" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Prénom" erreur={err.prenom && "Champ requis."}>
+            <input style={err.prenom ? inputInvalid : inputStyle} placeholder="Ex. Sofia" value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Date de naissance" erreur={err.naissance && "Date requise."}>
+            <input type="date" style={err.naissance ? inputInvalid : inputStyle} value={f.naissance} onChange={(e) => maj("naissance", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Lieu de naissance" erreur={err.lieuNaissance && "Champ requis."}>
+            <input style={err.lieuNaissance ? inputInvalid : inputStyle} placeholder="Ex. Montpellier" value={f.lieuNaissance} onChange={(e) => maj("lieuNaissance", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Nationalité" erreur={err.nationalite && "Champ requis."}>
+            <input style={err.nationalite ? inputInvalid : inputStyle} placeholder="Ex. Française" value={f.nationalite} onChange={(e) => maj("nationalite", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="N° de sécurité sociale" erreur={err.numeroSS && "13 ou 15 chiffres, commençant par 1 ou 2."}>
+            <input inputMode="numeric" style={err.numeroSS ? inputInvalid : inputStyle} placeholder="Ex. 2 90 05 34 172 118 90" value={f.numeroSS} onChange={(e) => maj("numeroSS", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq large label="Adresse postale du salarié" erreur={err.adresse && "Adresse complète requise."}>
+            <input style={err.adresse ? inputInvalid : inputStyle} placeholder="Ex. 12 rue des Lilas, 34000 Montpellier" value={f.adresse} onChange={(e) => maj("adresse", e.target.value)} />
+          </ChampReq>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Email du salarié (facultatif)</label>
+            <input style={inputStyle} value={f.emailSalarie} onChange={(e) => maj("emailSalarie", e.target.value)} />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Téléphone du salarié (facultatif)</label>
+            <input inputMode="tel" style={inputStyle} value={f.telephone} onChange={(e) => maj("telephone", e.target.value)} />
+          </div>
+
+          <ChampReq label="Date de début" erreur={err.debut && "Date requise."}>
+            <input type="date" style={err.debut ? inputInvalid : inputStyle} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Poste de travail" erreur={err.poste && "Champ requis."}>
+            <input style={err.poste ? inputInvalid : inputStyle} placeholder="Ex. Agent de service" value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Durée du travail (heures/mois)" erreur={err.duree && "Nombre d'heures invalide (ex. 151,67)."}>
+            <input inputMode="decimal" style={err.duree ? inputInvalid : inputStyle} placeholder="Ex. 151,67" value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
+          </ChampReq>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Btn onClick={onRetour}>Annuler</Btn>
+          <Btn primary disabled={envoi} onClick={envoyer}>
+            {envoi ? "Envoi en cours…" : "Déclarer l'embauche"}
+          </Btn>
+        </div>
+        <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
+          Données transmises à votre gestionnaire Osmose RH pour l'établissement du contrat de travail et de la déclaration préalable à l'embauche (DPAE).
         </p>
       </div>
     </>

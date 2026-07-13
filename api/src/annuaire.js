@@ -160,4 +160,43 @@ async function creerDemandeAcces(email, d) {
   if (!r.ok) throw { status: 502, erreur: "Enregistrement de la demande impossible, réessayez." };
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces };
+/** Crée la demande d'embauche (contrat + DPAE) dans « Production contrat ».
+    Le flux existant « Production contrat + AR » se déclenche à la création
+    de l'élément : accusé au demandeur (EmailDemandeur), approbation routée
+    (EmailGestionnaire), génération du contrat Word/PDF selon le type. */
+async function creerEmbauche(email, clientInfo, d, reference) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Production contrat"];
+  if (!listeId) throw { status: 502, erreur: "Liste de production des contrats introuvable." };
+
+  const fields = {
+    Title: reference,
+    CodeClient: clientInfo.codeClient,
+    EmailDemandeur: email,
+    EmailGestionnaire: clientInfo.emailGestionnaire,
+    "Type_x0020_contrat": d.typeContrat, // "CDI" | "CDD" (choix de la liste)
+    Nom: String(d.nom).trim().toUpperCase().slice(0, 120),
+    "Pr_x00e9_nom": String(d.prenom).trim().slice(0, 120),
+    Datedenaissance: d.dateNaissance,
+    Lieudenaissance: String(d.lieuNaissance).trim().slice(0, 120),
+    "Nationalit_x00e9_": String(d.nationalite).trim().slice(0, 80),
+    "N_x00b0_S_x00e9_curit_x00e9_Soci": Number(String(d.numeroSS).replace(/\s/g, "")), // colonne Nombre
+    "Adresse_x0020_postale": String(d.adressePostale).trim().slice(0, 250),
+    Email: String(d.emailSalarie || "").trim().slice(0, 120),
+    "Num_x00e9_rodet_x00e9_l_x00e9_ph": String(d.telephoneSalarie || "").trim().slice(0, 30),
+    "Dateded_x00e9_but": d.dateDebut,
+    Postedetravail: String(d.poste).trim().slice(0, 120), // choix à saisie libre
+    "Dur_x00e9_edutempsdetravail_x002": Number(String(d.dureeMensuelle).replace(",", ".")),
+  };
+  if (d.dateFin) fields.Datedefin = d.dateFin;
+
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!r.ok) throw { status: 502, erreur: "Enregistrement de la demande d'embauche impossible, réessayez." };
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche };
