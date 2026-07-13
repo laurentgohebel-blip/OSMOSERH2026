@@ -129,7 +129,7 @@ const Kpi = ({ label, val, warn, icon: Icon }) => (
       )}
       {label}
     </div>
-    <div style={{ fontSize: 26, fontWeight: 600, color: warn ? "#B45309" : T.ink, fontFamily: T.serif }}>{val}</div>
+    <div className="osrh-kpi-val" style={{ fontSize: 26, fontWeight: 600, color: warn ? "#B45309" : T.ink, fontFamily: T.serif }}>{val}</div>
   </div>
 );
 
@@ -344,6 +344,28 @@ export default function AppShell({ user, onLogout }) {
           ≤ 760 px : la barre latérale devient une barre de navigation
           horizontale collante, grilles et formulaires passent en 1 colonne. */}
       <style>{`
+        /* Tableau de bord : grille à zones nommées.
+           < 1500 px : 2 rangées (graphiques / listes) — ≥ 1500 px : 3 cartes
+           en rangée du milieu, « À traiter » pleine largeur. */
+        .osrh-dashgrid { display: grid; gap: 14px; grid-template-columns: repeat(6, 1fr); align-items: stretch;
+          grid-template-areas: "rep rep rep mois mois mois" "tra tra tra tra pro pro"; }
+        .osrh-b-rep { grid-area: rep; } .osrh-b-mois { grid-area: mois; }
+        .osrh-b-pro { grid-area: pro; } .osrh-b-tra { grid-area: tra; }
+        @media (min-width: 1500px) {
+          .osrh-dashgrid { grid-template-areas: "rep rep mois mois pro pro" "tra tra tra tra tra tra"; }
+          .osrh-main { padding: 34px 44px !important; }
+          .osrh-kpi { padding: 18px 20px !important; }
+          .osrh-kpi-val { font-size: 30px !important; }
+          .osrh-carte h2 { font-size: 15px; }
+          .osrh-barres { height: 170px !important; }
+          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; }
+          .osrh-tuile { padding: 32px 20px !important; }
+        }
+        @media (max-width: 760px) {
+          .osrh-dashgrid { grid-template-columns: 1fr; grid-template-areas: "rep" "mois" "pro" "tra"; }
+          .osrh-tuilegrid { min-height: 0 !important; grid-auto-rows: auto !important; }
+          .osrh-tuile { padding: 20px 16px !important; }
+        }
         .osrh-kpi { transition: transform .15s, box-shadow .15s; }
         .osrh-kpi:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(6,24,64,0.07); }
         .osrh-tuile { transition: transform .15s, box-shadow .15s, border-color .15s !important; }
@@ -392,7 +414,9 @@ export default function AppShell({ user, onLogout }) {
       {/* Colonne de contenu centrée : plafond 1360 px, marges auto — sur
           grand écran le contenu occupe le cœur de la page au lieu de
           rester collé à la barre latérale. */}
-      <main className="osrh-main" style={{ flex: 1, minWidth: 0, width: "100%", boxSizing: "border-box", padding: "26px 40px", maxWidth: 1360, margin: "0 auto" }}>
+      {/* Pleine largeur avec gouttières : les grilles habitent l'écran.
+          Garde-fou 1920 px pour les moniteurs ultra-larges. */}
+      <main className="osrh-main" style={{ flex: 1, minWidth: 0, width: "100%", boxSizing: "border-box", padding: "26px 32px", maxWidth: 1920, margin: "0 auto" }}>
 
         {/* ===== TABLEAU DE BORD ===== */}
         {vue === "dash" && (() => {
@@ -437,9 +461,12 @@ export default function AppShell({ user, onLogout }) {
               )}
             </div>
 
-            {avecGraphiques && (
-            <div className="osrh-grille2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+            {/* Grille unique aux zones nommées : la disposition change par
+                media query (voir <style>) — 2 rangées classiques sous 1500 px,
+                3 colonnes + « À traiter » pleine largeur au-delà. */}
+            {avecGraphiques ? (
+            <div className="osrh-dashgrid">
+              <div className="osrh-b-rep osrh-carte" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Répartition des contrats</h2>
                 {Object.keys(rep).length === 0 && (
                   <p style={{ fontSize: 12.5, color: T.mut, margin: 0 }}>Aucune embauche déclarée pour l'instant.</p>
@@ -458,38 +485,20 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               </div>
 
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
+              <div className="osrh-b-mois osrh-carte" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Embauches par mois</h2>
-                <div style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 120 }}>
+                <div className="osrh-barres" style={{ display: "flex", alignItems: "flex-end", gap: 10, height: 120 }}>
                   {mois.map((x, i) => (
-                    <div key={x.m + i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                    <div key={x.m + i} style={{ flex: 1, height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", gap: 4 }}>
                       <span style={{ fontSize: 11, color: T.mut }}>{x.n}</span>
-                      <div style={{ width: "100%", height: Math.max(6, (x.n / maxM) * 85), background: i >= mois.length - 2 ? "#378ADD" : "#B5D4F4", borderRadius: "3px 3px 0 0", transition: "height .4s" }} />
+                      <div style={{ width: "100%", height: `${Math.max(5, (x.n / maxM) * 72)}%`, background: i >= mois.length - 2 ? "#378ADD" : "#B5D4F4", borderRadius: "3px 3px 0 0", transition: "height .4s" }} />
                       <span style={{ fontSize: 11, color: T.mut }}>{x.m}</span>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
-            )}
 
-            <div className="osrh-grille2" style={{ display: "grid", gridTemplateColumns: "3fr 2fr", gap: 14, alignItems: "start" }}>
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
-                <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
-                {enAttente.length === 0 && (
-                  <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
-                )}
-                {enAttente.map((a, i) => (
-                  <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <AlertCircle size={15} color="#BA7517" style={{ flexShrink: 0 }} /> {a.t}
-                    </span>
-                    <Badge s={a.s} />
-                  </div>
-                ))}
-              </div>
-
-              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+              <div className="osrh-b-pro osrh-carte" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, alignSelf: "start" }}>
                 <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Prochaines embauches</div>
                 {prochaines.length === 0 && (
                   <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Aucune embauche planifiée.</div>
@@ -506,7 +515,38 @@ export default function AppShell({ user, onLogout }) {
                   </div>
                 ))}
               </div>
+
+              <div className="osrh-b-tra osrh-carte" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, alignSelf: "start" }}>
+                <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
+                {enAttente.length === 0 && (
+                  <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
+                )}
+                {enAttente.map((a, i) => (
+                  <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={15} color="#BA7517" style={{ flexShrink: 0 }} /> {a.t}
+                    </span>
+                    <Badge s={a.s} />
+                  </div>
+                ))}
+              </div>
             </div>
+            ) : (
+            <div className="osrh-carte" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
+              <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
+              {enAttente.length === 0 && (
+                <div style={{ padding: 20, textAlign: "center", fontSize: 13, color: T.mut }}>Rien en attente — tout est à jour.</div>
+              )}
+              {enAttente.map((a, i) => (
+                <div key={i} style={{ padding: "11px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderBottom: i < enAttente.length - 1 ? `1px solid ${T.border}` : "none", fontSize: 13 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <AlertCircle size={15} color="#BA7517" style={{ flexShrink: 0 }} /> {a.t}
+                  </span>
+                  <Badge s={a.s} />
+                </div>
+              ))}
+            </div>
+            )}
 
             <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
               <ShieldCheck size={13} />
@@ -524,7 +564,10 @@ export default function AppShell({ user, onLogout }) {
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Production</h1>
             <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Choisissez une démarche</p>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 14 }}>
+            {/* Les tuiles occupent l'écran : auto-fit étire les colonnes sur
+                toute la largeur, min-height + auto-rows remplissent la
+                hauteur restante. Compact sur mobile (voir media query). */}
+            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, minHeight: "calc(100vh - 175px)", gridAutoRows: "1fr" }}>
               {TUILES.map((t) => {
                 const Icone = t.icone;
                 /* Opt-in contractuel : tuile grisée si l'option n'est pas
@@ -538,9 +581,9 @@ export default function AppShell({ user, onLogout }) {
                     className="osrh-tuile"
                     onClick={() => inclus ? setTuile(t) : notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.")}
                     style={{
-                      background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
-                      padding: "22px 16px", cursor: "pointer", textAlign: "center",
-                      display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
+                      background: T.card, border: `1px solid ${T.border}`, borderRadius: 14,
+                      padding: "26px 18px", cursor: "pointer", textAlign: "center",
+                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12,
                       fontFamily: T.sans, transition: "border-color .15s", position: "relative",
                       opacity: inclus ? 1 : 0.45,
                     }}
@@ -548,11 +591,13 @@ export default function AppShell({ user, onLogout }) {
                     onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}
                   >
                     {t.cablee && inclus && (
-                      <span style={{ position: "absolute", top: 10, right: 10, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
+                      <span style={{ position: "absolute", top: 12, right: 12, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
                     )}
-                    <Icone size={28} color={T.accent} strokeWidth={1.6} />
-                    <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{t.titre}</span>
-                    <span style={{ fontSize: 11.5, color: T.mut }}>{t.sous}</span>
+                    <span style={{ width: 62, height: 62, borderRadius: 16, background: "#E6F1FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Icone size={30} color={T.accent} strokeWidth={1.6} />
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 600, color: T.ink }}>{t.titre}</span>
+                    <span style={{ fontSize: 12.5, color: T.mut }}>{t.sous}</span>
                     {!inclus && (
                       <span style={{ fontSize: 10.5, color: T.mut, fontStyle: "italic" }}>Option non incluse</span>
                     )}
