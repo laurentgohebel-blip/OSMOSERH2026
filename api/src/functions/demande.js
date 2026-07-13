@@ -1,16 +1,17 @@
 // api/src/functions/demande.js — Azure Functions v4 (fonctions managées Static Web Apps)
-// Rôle : point d'entrée UNIQUE de tous les formulaires du portail.
-// Il ne contient aucune logique métier : il filtre le bruit et relaie
-// au flux Power Automate dont l'URL (avec sa signature) reste secrète
-// dans la configuration de la Static Web App — jamais dans le HTML.
+// Point d'entrée UNIQUE des formulaires du portail, désormais VERROUILLÉ :
+//   1. le jeton External ID du navigateur est validé (annuaire.verifierJeton) ;
+//   2. l'email vérifié est résolu en client via les listes du site RH
+//      (annuaire.resoudreClient) — le payload n'est jamais cru sur parole ;
+//   3. le payload relayé au flux est enrichi de l'identité entreprise
+//      (raison sociale, SIRET…) et du gestionnaire : les flux Power Automate
+//      n'ont plus AUCUNE recherche SharePoint à faire, que des jetons.
 //
-// Configuration (portail Azure > Static Web App > Variables d'environnement) :
-//   FLOW_URL_ATTESTATION_EMPLOYEUR = https://prod-xx.westeurope.logic.azure.com/workflows/...
-//   (une variable par démarche : FLOW_URL_<DEMARCHE_EN_MAJUSCULES_SOULIGNEES>)
+// Configuration : FLOW_URL_<DEMARCHE> (une par démarche) + variables AUTH_*/GRAPH_*
+// (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-
-const CHAMPS_REQUIS = ["demarche", "client", "email"];
+const { verifierJeton, resoudreClient } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -23,16 +24,20 @@ app.http("demande", {
     // 1. Honeypot : un humain ne remplit jamais ce champ caché
     if (d.xq_note || d.website) return { status: 202, jsonBody: { reference: "OK" } }; // on ne renseigne pas le bot
 
-    // 2. Champs minimaux + email plausible
-    for (const c of CHAMPS_REQUIS) {
-      if (!d[c] || typeof d[c] !== "string" || !d[c].trim())
-        return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
+    // 2. Identité vérifiée puis résolution client — le verrou.
+    let email, clientInfo;
+    try {
+      ({ email } = await verifierJeton(request));
+      clientInfo = await resoudreClient(email);
+    } catch (e) {
+      if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+      context.error("Verrou :", e);
+      return { status: 502, jsonBody: { erreur: "Vérification du compte impossible, réessayez." } };
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email))
-      return { status: 400, jsonBody: { erreur: "Email invalide" } };
 
-    // 3. Résolution du flux cible à partir de la démarche
-    //    "attestation-employeur" -> FLOW_URL_ATTESTATION_EMPLOYEUR
+    // 3. Démarche requise et résolution du flux cible
+    if (!d.demarche || typeof d.demarche !== "string" || !d.demarche.trim())
+      return { status: 400, jsonBody: { erreur: "Champ manquant : demarche" } };
     const cle = "FLOW_URL_" + d.demarche.toUpperCase().replace(/[^A-Z0-9]+/g, "_");
     const flowUrl = process.env[cle];
     if (!flowUrl) {
@@ -43,13 +48,27 @@ app.http("demande", {
     // 4. Référence lisible, renvoyée au client et transmise au flux
     const reference = `${d.demarche.split("-")[0].toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
 
-    // 5. Relais vers Power Automate (le flux fait tout le reste :
-    //    liste blanche email, journal, approbation, Word, PDF, accusé)
+    // 5. Relais enrichi : identité et données entreprise imposées par le serveur.
+    //    Ce que le navigateur a déclaré pour email/client est écrasé.
     delete d.xq_note; delete d.website;
+    const enrichi = {
+      ...d,
+      email,                                    // email VÉRIFIÉ (jeton)
+      client: clientInfo.codeClient,            // client RÉSOLU (listes)
+      raisonSociale: clientInfo.raisonSociale,
+      adresseEntreprise: clientInfo.adresseEntreprise,
+      siret: clientInfo.siret,
+      representant: clientInfo.representant,
+      fonctionRepresentant: clientInfo.fonctionRepresentant,
+      lieuEdition: clientInfo.lieuEdition,
+      emailGestionnaire: clientInfo.emailGestionnaire,
+      reference,
+      recuLe: new Date().toISOString(),
+    };
     const r = await fetch(flowUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...d, reference, recuLe: new Date().toISOString() })
+      body: JSON.stringify(enrichi),
     });
 
     if (!r.ok) {

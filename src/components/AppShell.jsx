@@ -13,12 +13,14 @@ import {
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
   GraduationCap, AlertCircle, Check
 } from "lucide-react";
+import { apiFetch } from "../apiClient";
 
 /* ================================================================
    CONFIGURATION
-   CODE_CLIENT : doit correspondre à une ligne de la liste
-   « Paramètres clients » (colonne CodeClient) sur le site OsmoseRH.
-   "TEST" = la ligne de recette du kit. À terme : dérivé du tenant.
+   Le client est RÉSOLU CÔTÉ SERVEUR (/api/me : jeton vérifié →
+   listes « Utilisateurs portail » / « Paramètres clients » du site RH).
+   CODE_CLIENT ne sert plus que de repli d'affichage en dev local
+   sans API — le payload envoyé est de toute façon écrasé par l'API.
    ================================================================ */
 const CODE_CLIENT = "TEST";
 
@@ -170,12 +172,25 @@ export default function AppShell({ user, onLogout }) {
   const [dossierActif, setDossierActif] = useState("Contrats");
   const [db, setDb] = useState(null);
   const [toast, setToast] = useState(null);
+  // moi : { client, raisonSociale } résolu par l'API, { bloque } si compte
+  // non rattaché, { client: CODE_CLIENT } en repli dev local (API absente).
+  const [moi, setMoi] = useState(null);
 
   const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
 
   useEffect(() => {
     latence(500).then(() => setDb(JSON.parse(JSON.stringify(seed))));
+    apiFetch("/api/me")
+      .then(async (r) => {
+        if (r.ok) return setMoi(await r.json());
+        if (r.status === 401 || r.status === 403) {
+          const e = await r.json().catch(() => ({}));
+          return setMoi({ bloque: e.erreur || "Compte non rattaché à un client." });
+        }
+        setMoi({ client: CODE_CLIENT }); // API en difficulté : on n'enferme pas l'utilisateur
+      })
+      .catch(() => setMoi({ client: CODE_CLIENT, demo: true })); // dev local sans API
   }, []);
 
   const notifier = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
@@ -225,6 +240,29 @@ export default function AppShell({ user, onLogout }) {
     ];
   }, [db]);
 
+  /* Compte connecté mais rattaché à aucun client : écran de blocage.
+     C'est le pendant visuel du verrou serveur — l'API refuse de toute
+     façon chaque demande (403) tant que le rattachement n'existe pas. */
+  if (moi?.bloque) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: T.sans }}>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 30px", maxWidth: 460, textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#FAEEDA", color: "#854F0B", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <AlertCircle size={24} />
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Compte non rattaché</h1>
+          <p style={{ margin: "0 0 6px", fontSize: 13.5, color: T.ink }}>
+            Votre compte <strong>{user?.email}</strong> est bien créé, mais il n'est encore relié à aucune entreprise cliente.
+          </p>
+          <p style={{ margin: "0 0 18px", fontSize: 13, color: T.mut }}>
+            Contactez votre gestionnaire Osmose RH pour activer l'accès, puis reconnectez-vous.
+          </p>
+          <Btn primary onClick={onLogout}><LogOut size={14} /> Se déconnecter</Btn>
+        </div>
+      </div>
+    );
+  }
+
   if (!db) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg, fontFamily: T.sans, color: T.mut, fontSize: 14 }}>
@@ -232,6 +270,8 @@ export default function AppShell({ user, onLogout }) {
       </div>
     );
   }
+
+  const codeClient = moi?.client || CODE_CLIENT;
 
   const totalContrats = Object.values(db.repartition).reduce((a, b) => a + b, 0);
   const maxMois = Math.max(...db.embauchesParMois.map((x) => x.n), 1);
@@ -268,7 +308,7 @@ export default function AppShell({ user, onLogout }) {
           <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
             <div style={{ width: 30, height: 30, borderRadius: "50%", background: T.accentSoft, color: T.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>{initiales}</div>
             <div style={{ fontSize: 11.5, color: "#9FB2C9", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {user?.displayName}<br />{CODE_CLIENT}
+              {user?.displayName}<br />{moi?.raisonSociale || codeClient}
             </div>
           </div>
           <button onClick={onLogout} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, fontSize: 12, color: "#9FB2C9", fontFamily: T.sans }}>
@@ -284,7 +324,7 @@ export default function AppShell({ user, onLogout }) {
         {vue === "dash" && (
           <>
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Bonjour {prenom}</h1>
-            <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Tableau de bord — {CODE_CLIENT}</p>
+            <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Tableau de bord — {moi?.raisonSociale || codeClient}</p>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
               <Kpi label="Effectif" val={db.effectif} icon={Users} />
@@ -382,11 +422,11 @@ export default function AppShell({ user, onLogout }) {
         )}
 
         {vue === "prod" && tuile && tuile.id === "attestation" && (
-          <AttestationEmployeur user={user} onRetour={() => setTuile(null)} />
+          <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
         )}
 
         {vue === "prod" && tuile && tuile.id === "acompte" && (
-          <DemandeAcompte user={user} onRetour={() => setTuile(null)} />
+          <DemandeAcompte user={user} client={codeClient} onRetour={() => setTuile(null)} />
         )}
 
         {vue === "prod" && tuile && !tuile.cablee && (
@@ -461,7 +501,7 @@ export default function AppShell({ user, onLogout }) {
    Différences app authentifiée : email pré-rempli (compte
    Microsoft), client = CODE_CLIENT (pas de paramètre d'URL).
    ================================================================ */
-function AttestationEmployeur({ user, onRetour }) {
+function AttestationEmployeur({ user, client, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     civilite: "", nom: "", naissance: "", entree: "", poste: "", contrat: "",
@@ -495,7 +535,7 @@ function AttestationEmployeur({ user, onRetour }) {
 
     const payload = {
       demarche: "attestation-employeur",
-      client: CODE_CLIENT,
+      client, // indicatif : l'API impose le client résolu côté serveur
       email: f.email.trim(),
       civilite: f.civilite,
       nomSalarie: f.nom.trim(),
@@ -509,7 +549,7 @@ function AttestationEmployeur({ user, onRetour }) {
 
     let ref = null, demo = false;
     try {
-      const r = await fetch("/api/demande", {
+      const r = await apiFetch("/api/demande", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -591,7 +631,7 @@ function AttestationEmployeur({ user, onRetour }) {
           <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Attestation employeur</h1>
         </div>
         <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
-          Client : {CODE_CLIENT} — traitée après validation par votre gestionnaire.
+          Client : {client} — traitée après validation par votre gestionnaire.
         </p>
 
         {errbar && (
@@ -685,7 +725,7 @@ const ChampReq = ({ label, erreur, large, children }) => (
   </div>
 );
 
-function DemandeAcompte({ user, onRetour }) {
+function DemandeAcompte({ user, client, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     nom: "", prenom: "", matricule: "", montant: "",
@@ -716,7 +756,7 @@ function DemandeAcompte({ user, onRetour }) {
 
     const payload = {
       demarche: "acompte",
-      client: CODE_CLIENT,
+      client, // indicatif : l'API impose le client résolu côté serveur
       email: f.email.trim(),
       nom: f.nom.trim().toUpperCase(),
       prenom: f.prenom.trim(),
@@ -727,7 +767,7 @@ function DemandeAcompte({ user, onRetour }) {
 
     let ref = null, demo = false;
     try {
-      const r = await fetch("/api/demande", {
+      const r = await apiFetch("/api/demande", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -793,7 +833,7 @@ function DemandeAcompte({ user, onRetour }) {
           <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Demande d'acompte</h1>
         </div>
         <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
-          Client : {CODE_CLIENT} — versée après validation par votre gestionnaire.
+          Client : {client} — versée après validation par votre gestionnaire.
         </p>
 
         {errbar && (

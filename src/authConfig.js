@@ -22,3 +22,7 @@ export const msalConfig = {
 
 // Scopes MINIMAUX pour le sign-in (le front ne demande pas Graph)
 export const loginRequest = { scopes: ["openid", "profile", "offline_access"] };
+
+// Scope de l'API du portail (/api/*) — exposé par la même app, pré-autorisé :
+// aucun écran de consentement supplémentaire pour l'utilisateur.
+export const apiRequest = { scopes: ["api://09b5b72f-45e9-44cc-bd35-4472cf480c16/access_as_user"] };
