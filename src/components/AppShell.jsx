@@ -358,7 +358,7 @@ export default function AppShell({ user, onLogout }) {
           .osrh-kpi-val { font-size: 30px !important; }
           .osrh-carte h2 { font-size: 15px; }
           .osrh-barres { height: 170px !important; }
-          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; }
+          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; grid-auto-rows: minmax(260px, 330px) !important; }
           .osrh-tuile { padding: 32px 20px !important; }
         }
         @media (max-width: 760px) {
@@ -415,8 +415,8 @@ export default function AppShell({ user, onLogout }) {
           grand écran le contenu occupe le cœur de la page au lieu de
           rester collé à la barre latérale. */}
       {/* Pleine largeur avec gouttières : les grilles habitent l'écran.
-          Garde-fou 1920 px pour les moniteurs ultra-larges. */}
-      <main className="osrh-main" style={{ flex: 1, minWidth: 0, width: "100%", boxSizing: "border-box", padding: "26px 32px", maxWidth: 1920, margin: "0 auto" }}>
+          Garde-fou 2240 px : rempli sur un 2560, borné sur les ultra-larges. */}
+      <main className="osrh-main" style={{ flex: 1, minWidth: 0, width: "100%", boxSizing: "border-box", padding: "26px 32px", maxWidth: 2240, margin: "0 auto" }}>
 
         {/* ===== TABLEAU DE BORD ===== */}
         {vue === "dash" && (() => {
@@ -564,10 +564,11 @@ export default function AppShell({ user, onLogout }) {
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Production</h1>
             <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Choisissez une démarche</p>
 
-            {/* Les tuiles occupent l'écran : auto-fit étire les colonnes sur
-                toute la largeur, min-height + auto-rows remplissent la
-                hauteur restante. Compact sur mobile (voir media query). */}
-            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, minHeight: "calc(100vh - 175px)", gridAutoRows: "1fr" }}>
+            {/* Grands panneaux à hauteur BORNÉE : auto-fit étire en largeur,
+                les rangées vont de 230 à 300 px (une rangée unique sur très
+                grand écran ne doit pas s'étirer sur toute la page).
+                Compact sur mobile (voir media query). */}
+            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, gridAutoRows: "minmax(230px, 300px)" }}>
               {TUILES.map((t) => {
                 const Icone = t.icone;
                 /* Opt-in contractuel : tuile grisée si l'option n'est pas
