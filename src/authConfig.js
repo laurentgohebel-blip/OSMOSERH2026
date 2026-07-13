@@ -1,17 +1,20 @@
 // src/authConfig.js
+// Authentification : tenant Microsoft Entra External ID « Osmose RH »
+// (osmoserh.onmicrosoft.com). Les clients créent leur compte eux-mêmes
+// (email + mot de passe) sur la page de connexion aux couleurs Osmose RH ;
+// l'accès réel est contrôlé côté serveur par la liste « Utilisateurs portail ».
+// Client ID et authority ne sont pas des secrets pour une SPA publique.
 export const msalConfig = {
   auth: {
-    // ⚠️ mets ici le Client ID de l'App SPA créée dans ton tenant interne (pas celui de CIAM)
-    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "835bfda1-14c6-4a76-8a73-d1dcbe81efe8",
+    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "09b5b72f-45e9-44cc-bd35-4472cf480c16", // app « Portail Osmose RH » (tenant External ID)
+    authority: "https://osmoserh.ciamlogin.com/da198f21-6842-4cd2-91fb-72e91195d784",
+    knownAuthorities: ["osmoserh.ciamlogin.com"],
 
-    // Authority = ton tenant interne (remplace par ton TENANT_ID interne)
-    authority: "https://login.microsoftonline.com/b9cfc83f-9274-459b-a7ea-62dca3451e8c",
-
-    // Redirection locale (aligne EXACTEMENT avec ce que tu as enregistré dans l'app)
-    redirectUri: import.meta.env.VITE_REDIRECT_URI || "http://localhost:5173",
+    // En prod : l'URL de la Static Web App ; en dev : http://localhost:5173.
+    // Les deux sont déclarées dans l'inscription d'application.
+    redirectUri: import.meta.env.VITE_REDIRECT_URI || window.location.origin,
 
     postLogoutRedirectUri: "/",
-    // knownAuthorities n'est pas nécessaire avec login.microsoftonline.com
     navigateToLoginRequestUrl: false
   },
   cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
