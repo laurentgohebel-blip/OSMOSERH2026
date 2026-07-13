@@ -172,6 +172,8 @@ export default function AppShell({ user, onLogout }) {
   const [moi, setMoi] = useState(null);
   // stats : KPI réels par client (/api/dashboard) ; null = repli démo (dev local).
   const [stats, setStats] = useState(null);
+  // docs : documents réels (/api/documents) ; { demo } = maquette dev local.
+  const [docs, setDocs] = useState(null);
 
   const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
@@ -199,7 +201,29 @@ export default function AppShell({ user, onLogout }) {
     apiFetch("/api/dashboard")
       .then(async (r) => { if (r.ok) setStats(await r.json()); })
       .catch(() => {});
+    // Documents réels — maquette uniquement en dev local, message en prod
+    apiFetch("/api/documents")
+      .then(async (r) => {
+        if (r.ok) return setDocs(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setDocs(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Documents indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setDocs(import.meta.env.DEV ? { demo: true } : { erreur: "Documents momentanément indisponibles — réessayez." }));
   }, []);
+
+  /* Téléchargement via l'API (jeton + contrôle d'appartenance côté serveur),
+     puis déclenchement du « Enregistrer sous » du navigateur. */
+  const telechargerDoc = async (d) => {
+    try {
+      const r = await apiFetch(`/api/document?id=${encodeURIComponent(d.id)}`);
+      if (!r.ok) { notifier("Téléchargement refusé — rechargez la page et réessayez."); return; }
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = d.nom;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+    } catch { notifier("Téléchargement impossible — vérifiez votre connexion."); }
+  };
 
   const notifier = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
 
@@ -560,53 +584,123 @@ export default function AppShell({ user, onLogout }) {
         )}
 
         {/* ===== DOCUMENTS ===== */}
-        {vue === "docs" && (
-          <>
-            <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
-            <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>Bibliothèque Documents RH</p>
+        {vue === "docs" && (() => {
+          /* Documents RÉELS (bibliothèque « Documents clients », dossier du
+             client résolu) — la maquette ne subsiste qu'en dev local. */
+          if (docs === null || docs.demo) {
+            return (
+              <>
+                <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
+                <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+                  {docs === null ? "Chargement de vos documents…" : "Maquette de démonstration (dev local)"}
+                </p>
+                {docs?.demo && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+                    {DOSSIERS.map((f) => (
+                      <button key={f} onClick={() => setDossierActif(f)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7,
+                          border: `1px solid ${dossierActif === f ? T.accent : T.border}`,
+                          background: dossierActif === f ? "#E6F1FB" : T.card,
+                          color: dossierActif === f ? "#0C447C" : T.ink,
+                          borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: T.sans,
+                        }}>
+                        <Folder size={15} color={dossierActif === f ? T.accent : T.mut} /> {f}
+                        <span style={{ fontSize: 11, color: T.mut }}>
+                          {db.documents.filter((d) => d.dossier === f).length}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {docs?.demo && (
+                  <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                    {db.documents.filter((d) => d.dossier === dossierActif).map((d) => (
+                      <div key={d.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 90px", gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: `1px solid ${T.border}`, alignItems: "center" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8 }}><FileText size={15} color={T.mut} /> {d.nom}</span>
+                        <span style={{ color: T.mut }}>{d.modif.split("-").reverse().join("/")}</span>
+                        <span style={{ color: T.mut }}><Download size={16} /></span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            );
+          }
+          if (docs.erreur) {
+            return (
+              <>
+                <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
+                <p style={{ margin: "12px 0", fontSize: 13, color: T.mut }}>{docs.erreur}</p>
+                <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+              </>
+            );
+          }
+          const reels = docs.documents || [];
+          const ordre = ["Attestations", "Contrats", "Paie", "Général"];
+          const cats = [...new Set(reels.map((d) => d.categorie))]
+            .sort((a, b) => (ordre.indexOf(a) + 99 * (ordre.indexOf(a) < 0)) - (ordre.indexOf(b) + 99 * (ordre.indexOf(b) < 0)));
+          const catActive = cats.includes(dossierActif) ? dossierActif : cats[0];
+          const visibles = reels.filter((d) => d.categorie === catActive);
+          const taille = (o) => (o >= 1048576 ? `${(o / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
+          return (
+            <>
+              <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
+              <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+                Vos documents — déposés par votre gestionnaire ou générés par vos démarches.
+              </p>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
-              {DOSSIERS.map((f) => (
-                <button key={f} onClick={() => setDossierActif(f)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 7,
-                    border: `1px solid ${dossierActif === f ? T.accent : T.border}`,
-                    background: dossierActif === f ? "#E6F1FB" : T.card,
-                    color: dossierActif === f ? "#0C447C" : T.ink,
-                    borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: T.sans,
-                  }}>
-                  <Folder size={15} color={dossierActif === f ? T.accent : T.mut} /> {f}
-                  <span style={{ fontSize: 11, color: T.mut }}>
-                    {db.documents.filter((d) => d.dossier === f).length}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 90px", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
-                <span>Nom</span><span>Modifié</span><span>Par</span><span>Actions</span>
-              </div>
-              {db.documents.filter((d) => d.dossier === dossierActif).map((d) => (
-                <div key={d.id} style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr 90px", gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: `1px solid ${T.border}`, alignItems: "center" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}><FileText size={15} color={T.mut} /> {d.nom}</span>
-                  <span style={{ color: T.mut }}>{d.modif.split("-").reverse().join("/")}</span>
-                  <span style={{ color: T.mut }}>{d.par}</span>
-                  <span style={{ display: "flex", gap: 10, color: T.mut }}>
-                    <Eye size={16} style={{ cursor: "pointer" }} />
-                    <Download size={16} style={{ cursor: "pointer" }} />
-                  </span>
-                </div>
-              ))}
-              {db.documents.filter((d) => d.dossier === dossierActif).length === 0 && (
-                <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: T.mut }}>
-                  Dossier vide.
+              {reels.length === 0 && (
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+                  Aucun document pour l'instant.<br />
+                  Vos attestations et contrats générés apparaîtront ici automatiquement.
                 </div>
               )}
-            </div>
-            <Btn primary onClick={deposerFichierDemo}><Upload size={15} /> Déposer un fichier</Btn>
-          </>
-        )}
+
+              {reels.length > 0 && (
+                <>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 18 }}>
+                    {cats.map((f) => (
+                      <button key={f} onClick={() => setDossierActif(f)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 7,
+                          border: `1px solid ${catActive === f ? T.accent : T.border}`,
+                          background: catActive === f ? "#E6F1FB" : T.card,
+                          color: catActive === f ? "#0C447C" : T.ink,
+                          borderRadius: 8, padding: "8px 14px", fontSize: 13, cursor: "pointer", fontFamily: T.sans,
+                        }}>
+                        <Folder size={15} color={catActive === f ? T.accent : T.mut} /> {f}
+                        <span style={{ fontSize: 11, color: T.mut }}>{reels.filter((d) => d.categorie === f).length}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 110px", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                      <span>Nom</span><span>Modifié</span><span>Taille</span><span>Action</span>
+                    </div>
+                    {visibles.map((d) => (
+                      <div key={d.id} style={{ display: "grid", gridTemplateColumns: "3fr 1fr 1fr 110px", gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: `1px solid ${T.border}`, alignItems: "center" }}>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                          <FileText size={15} color={T.mut} style={{ flexShrink: 0 }} />
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.nom}</span>
+                        </span>
+                        <span style={{ color: T.mut }}>{String(d.modifie).slice(0, 10).split("-").reverse().join("/")}</span>
+                        <span style={{ color: T.mut }}>{taille(d.taille)}</span>
+                        <Btn small onClick={() => telechargerDoc(d)}>
+                          <Download size={13} /> Télécharger
+                        </Btn>
+                      </div>
+                    ))}
+                    {visibles.length === 0 && (
+                      <div style={{ padding: 24, textAlign: "center", fontSize: 13, color: T.mut }}>Dossier vide.</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          );
+        })()}
       </main>
 
       {/* ---------- TOAST ---------- */}

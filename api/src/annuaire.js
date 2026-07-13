@@ -202,4 +202,93 @@ async function creerEmbauche(email, clientInfo, d, reference) {
   if (!r.ok) throw { status: 502, erreur: "Enregistrement de la demande d'embauche impossible, réessayez." };
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items };
+/* ---------------- Documents clients (bibliothèque dédiée) ----------------
+   Un dossier par CodeClient — TOUT son contenu est visible par ce client.
+   L'API crée le dossier (et les sous-dossiers standards) à la première
+   résolution : les flux qui y archivent ne tombent jamais sur un dossier
+   manquant. Lecture seule côté client (v1). */
+
+let driveDocs; // id du drive « Documents clients », mis en cache
+async function driveDocuments(tok) {
+  if (driveDocs) return driveDocs;
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/drives?$select=id,name`,
+    { headers: { Authorization: `Bearer ${tok}` } });
+  if (!r.ok) throw { status: 502, erreur: "Espace documentaire injoignable." };
+  const j = await r.json();
+  const dv = j.value.find((x) => x.name === "Documents clients");
+  if (!dv) throw { status: 502, erreur: "Bibliothèque Documents clients introuvable." };
+  driveDocs = dv.id;
+  return driveDocs;
+}
+
+const dossiersAssures = new Set(); // codes client dont le dossier est garanti (instance chaude)
+async function assurerDossierClient(tok, codeClient) {
+  if (dossiersAssures.has(codeClient)) return;
+  const drive = await driveDocuments(tok);
+  const creer = async (parent, nom) => {
+    const url = parent
+      ? `https://graph.microsoft.com/v1.0/drives/${drive}/root:/${encodeURIComponent(parent)}:/children`
+      : `https://graph.microsoft.com/v1.0/drives/${drive}/root/children`;
+    const r = await fetch(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ name: nom, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+    });
+    if (!r.ok && r.status !== 409) throw { status: 502, erreur: "Préparation de l'espace documentaire impossible." };
+  };
+  await creer(null, codeClient);
+  for (const sous of ["Attestations", "Contrats", "Paie"]) await creer(codeClient, sous);
+  dossiersAssures.add(codeClient);
+}
+
+/** Liste les documents du client : sous-dossiers = catégories.
+    Renvoie [{ id, nom, categorie, taille, modifie }]. */
+async function listerDocuments(codeClient) {
+  const tok = await tokenGraph();
+  const drive = await driveDocuments(tok);
+  await assurerDossierClient(tok, codeClient);
+  const lire = async (chemin) => {
+    const r = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive}/root:/${encodeURIComponent(chemin).replace(/%2F/g, "/")}:/children?$select=id,name,size,lastModifiedDateTime,folder,file&$top=200`,
+      { headers: { Authorization: `Bearer ${tok}` } });
+    if (!r.ok) throw { status: 502, erreur: "Lecture des documents impossible." };
+    return (await r.json()).value;
+  };
+  const racine = await lire(codeClient);
+  const docs = [];
+  for (const e of racine) {
+    if (e.file) docs.push({ id: e.id, nom: e.name, categorie: "Général", taille: e.size, modifie: e.lastModifiedDateTime });
+    else if (e.folder) {
+      for (const f of await lire(`${codeClient}/${e.name}`)) {
+        if (f.file) docs.push({ id: f.id, nom: f.name, categorie: e.name, taille: f.size, modifie: f.lastModifiedDateTime });
+      }
+    }
+  }
+  return docs;
+}
+
+/** Télécharge un document APRÈS vérification qu'il appartient bien au
+    dossier du client — c'est le contrôle qui interdit de télécharger le
+    document d'un autre client en devinant un id. */
+async function telechargerDocument(codeClient, itemId) {
+  if (!/^[A-Za-z0-9!_-]{10,}$/.test(itemId || "")) throw { status: 400, erreur: "Identifiant de document invalide." };
+  const tok = await tokenGraph();
+  const drive = await driveDocuments(tok);
+  const r = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive}/items/${itemId}?$select=id,name,size,parentReference,file`,
+    { headers: { Authorization: `Bearer ${tok}` } });
+  if (!r.ok) throw { status: 404, erreur: "Document introuvable." };
+  const meta = await r.json();
+  const chemin = decodeURIComponent(meta.parentReference?.path || "");
+  const prefixe = `/drives/${drive}/root:/${codeClient}`;
+  if (!meta.file || (chemin !== prefixe && !chemin.startsWith(prefixe + "/")))
+    throw { status: 403, erreur: "Ce document n'appartient pas à votre espace." };
+  const rc = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive}/items/${itemId}/content`,
+    { headers: { Authorization: `Bearer ${tok}` } });
+  if (!rc.ok) throw { status: 502, erreur: "Téléchargement impossible, réessayez." };
+  return {
+    nom: meta.name,
+    contentType: meta.file.mimeType || "application/octet-stream",
+    contenu: Buffer.from(await rc.arrayBuffer()),
+  };
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument };
