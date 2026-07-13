@@ -53,6 +53,7 @@ const seed = {
 };
 
 const DOSSIERS = ["Contrats", "Paie", "Attestations", "DPAE", "Sécurité", "Formations"];
+
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
 /* ================================================================
@@ -568,7 +569,7 @@ export default function AppShell({ user, onLogout }) {
                 les rangées vont de 230 à 300 px (une rangée unique sur très
                 grand écran ne doit pas s'étirer sur toute la page).
                 Compact sur mobile (voir media query). */}
-            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, gridAutoRows: "minmax(230px, 300px)" }}>
+            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, gridAutoRows: "auto" }}>
               {TUILES.map((t) => {
                 const Icone = t.icone;
                 /* Opt-in contractuel : tuile grisée si l'option n'est pas
