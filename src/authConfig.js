@@ -20,8 +20,10 @@ export const msalConfig = {
   cache: { cacheLocation: "sessionStorage", storeAuthStateInCookie: false }
 };
 
-// Scopes MINIMAUX pour le sign-in (le front ne demande pas Graph)
-export const loginRequest = { scopes: ["openid", "profile", "offline_access"] };
+// Scopes MINIMAUX pour le sign-in (le front ne demande pas Graph).
+// "email" garantit la présence du claim email dans les jetons — c'est
+// l'identité que l'API utilise pour résoudre le client.
+export const loginRequest = { scopes: ["openid", "profile", "email", "offline_access"] };
 
 // Scope de l'API du portail (/api/*) — exposé par la même app, pré-autorisé :
 // aucun écran de consentement supplémentaire pour l'utilisateur.

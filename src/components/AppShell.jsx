@@ -186,7 +186,7 @@ export default function AppShell({ user, onLogout }) {
         if (r.ok) return setMoi(await r.json());
         if (r.status === 401 || r.status === 403) {
           const e = await r.json().catch(() => ({}));
-          return setMoi({ bloque: e.erreur || "Compte non rattaché à un client." });
+          return setMoi({ bloque: e.erreur || `Accès refusé (HTTP ${r.status}).` });
         }
         setMoi({ client: CODE_CLIENT }); // API en difficulté : on n'enferme pas l'utilisateur
       })
@@ -250,12 +250,14 @@ export default function AppShell({ user, onLogout }) {
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#FAEEDA", color: "#854F0B", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <AlertCircle size={24} />
           </div>
-          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Compte non rattaché</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Accès non disponible</h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5, color: T.ink }}>
-            Votre compte <strong>{user?.email}</strong> est bien créé, mais il n'est encore relié à aucune entreprise cliente.
+            Compte connecté : <strong>{user?.email}</strong>
           </p>
+          {/* Message exact renvoyé par l'API : distingue session expirée (401),
+              compte non rattaché (403), jeton sans email… — indispensable au diagnostic. */}
           <p style={{ margin: "0 0 18px", fontSize: 13, color: T.mut }}>
-            Contactez votre gestionnaire Osmose RH pour activer l'accès, puis reconnectez-vous.
+            {moi.bloque}
           </p>
           <Btn primary onClick={onLogout}><LogOut size={14} /> Se déconnecter</Btn>
         </div>
