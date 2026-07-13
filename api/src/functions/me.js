@@ -13,7 +13,7 @@ app.http("me", {
     try {
       const { email } = await verifierJeton(request);
       const c = await resoudreClient(email);
-      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale } };
+      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("me :", e);

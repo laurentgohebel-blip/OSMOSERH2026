@@ -87,6 +87,10 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
 /* ================================================================
    TUILES — id "attestation" est câblée (ATT-01), les autres en démo
    ================================================================ */
+/* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
+   (démos formation/sécurité) restent librement accessibles. */
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche" };
+
 const TUILES = [
   { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
@@ -332,17 +336,22 @@ export default function AppShell({ user, onLogout }) {
 
         {/* ===== TABLEAU DE BORD ===== */}
         {vue === "dash" && (() => {
-          /* KPI réels (/api/dashboard) quand disponibles, maquette sinon (dev local) */
-          const rep = stats ? stats.embauches.repartition : db.repartition;
+          /* KPI réels (/api/dashboard) quand disponibles, maquette sinon (dev
+             local). Un bloc null = option non souscrite : ni carte ni graphique. */
+          const emb = stats ? stats.embauches : null;
+          const rep = stats ? (emb?.repartition || {}) : db.repartition;
           const totalRep = Object.values(rep).reduce((a, b) => a + b, 0) || 1;
-          const mois = stats ? stats.embauches.parMois : db.embauchesParMois;
+          const mois = stats ? (emb?.parMois || []) : db.embauchesParMois;
           const maxM = Math.max(...mois.map((x) => x.n), 1);
           const enAttente = stats ? stats.aTraiter : aTraiter;
+          const avecGraphiques = !stats || !!emb;
           const kpis = stats ? [
-            { label: "Embauches en attente", val: stats.embauches.enAttente, warn: stats.embauches.enAttente > 0, icon: Users },
-            { label: "Acomptes à traiter", val: stats.acomptes.enAttente, warn: stats.acomptes.enAttente > 0, icon: Banknote },
-            { label: "Montant acomptes (€)", val: stats.acomptes.montantEnAttente, icon: Clock },
-            { label: "Attestations ce mois-ci", val: stats.attestations.moisCourant, icon: FileText },
+            ...(emb ? [{ label: "Embauches en attente", val: emb.enAttente, warn: emb.enAttente > 0, icon: Users }] : []),
+            ...(stats.acomptes ? [
+              { label: "Acomptes à traiter", val: stats.acomptes.enAttente, warn: stats.acomptes.enAttente > 0, icon: Banknote },
+              { label: "Montant acomptes (€)", val: stats.acomptes.montantEnAttente, icon: Clock },
+            ] : []),
+            ...(stats.attestations ? [{ label: "Attestations ce mois-ci", val: stats.attestations.moisCourant, icon: FileText }] : []),
           ] : [
             { label: "Effectif", val: db.effectif, icon: Users },
             { label: "Embauches 2026", val: embauches2026, icon: FileText },
@@ -356,8 +365,14 @@ export default function AppShell({ user, onLogout }) {
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
               {kpis.map((k) => <Kpi key={k.label} label={k.label} val={k.val} warn={k.warn} icon={k.icon} />)}
+              {kpis.length === 0 && (
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", fontSize: 13, color: T.mut }}>
+                  Aucune option active sur votre contrat — contactez votre gestionnaire Osmose RH pour ouvrir vos démarches.
+                </div>
+              )}
             </div>
 
+            {avecGraphiques && (
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
               <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 18px" }}>
                 <h2 style={{ margin: "0 0 12px", fontSize: 14, fontFamily: T.serif }}>Répartition des contrats</h2>
@@ -391,6 +406,7 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               </div>
             </div>
+            )}
 
             <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12 }}>
               <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>À traiter</div>
@@ -426,25 +442,34 @@ export default function AppShell({ user, onLogout }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 14 }}>
               {TUILES.map((t) => {
                 const Icone = t.icone;
+                /* Opt-in contractuel : tuile grisée si l'option n'est pas
+                   souscrite (le refus réel est côté API — ceci n'est que
+                   l'affichage). moi absent (dev local) = tout ouvert. */
+                const opt = OPTION_TUILE[t.id];
+                const inclus = !opt || !moi?.options || moi.options.includes(opt);
                 return (
                   <button
                     key={t.id}
-                    onClick={() => setTuile(t)}
+                    onClick={() => inclus ? setTuile(t) : notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.")}
                     style={{
                       background: T.card, border: `1px solid ${T.border}`, borderRadius: 12,
                       padding: "22px 16px", cursor: "pointer", textAlign: "center",
                       display: "flex", flexDirection: "column", alignItems: "center", gap: 10,
                       fontFamily: T.sans, transition: "border-color .15s", position: "relative",
+                      opacity: inclus ? 1 : 0.45,
                     }}
-                    onMouseEnter={(e) => (e.currentTarget.style.borderColor = T.accent)}
+                    onMouseEnter={(e) => { if (inclus) e.currentTarget.style.borderColor = T.accent; }}
                     onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}
                   >
-                    {t.cablee && (
+                    {t.cablee && inclus && (
                       <span style={{ position: "absolute", top: 10, right: 10, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
                     )}
                     <Icone size={28} color={T.accent} strokeWidth={1.6} />
                     <span style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{t.titre}</span>
                     <span style={{ fontSize: 11.5, color: T.mut }}>{t.sous}</span>
+                    {!inclus && (
+                      <span style={{ fontSize: 10.5, color: T.mut, fontStyle: "italic" }}>Option non incluse</span>
+                    )}
                   </button>
                 );
               })}

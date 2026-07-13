@@ -108,11 +108,14 @@ async function resoudreClient(email) {
   if (!u || !u.CodeClient) throw { status: 403, erreur: "Compte non rattaché à un client — contactez votre gestionnaire Osmose RH." };
 
   const clients = await items(tok, ids["Paramètres clients"],
-    "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif");
+    "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options");
   const c = clients.find((x) => x.CodeClient === u.CodeClient && x.Actif !== false);
   if (!c) throw { status: 403, erreur: "Client inactif ou inconnu — contactez votre gestionnaire Osmose RH." };
 
   return {
+    // Options souscrites (opt-in : vide = rien d'ouvert) — pilote le verrou
+    // par démarche et l'affichage des tuiles/KPI.
+    options: Array.isArray(c.Options) ? c.Options : [],
     codeClient: c.CodeClient,
     raisonSociale: c.RaisonSociale || "",
     adresseEntreprise: c.AdresseEntreprise || "",

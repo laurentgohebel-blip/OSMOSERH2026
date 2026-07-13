@@ -38,6 +38,13 @@ app.http("demande", {
       }
       clientInfo = await resoudreClient(email);
 
+      // Verrou d'option : une démarche non souscrite est refusée côté
+      // serveur, même si l'appel contourne l'interface (tuiles grisées).
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche" };
+      const option = OPTION_PAR_DEMARCHE[d.demarche];
+      if (option && !clientInfo.options.includes(option))
+        return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+
       // Cas particulier « embauche » (contrat + DPAE) : pas de flux HTTP —
       // l'API écrit dans « Production contrat » et le flux existant
       // « Production contrat + AR » se déclenche à la création.

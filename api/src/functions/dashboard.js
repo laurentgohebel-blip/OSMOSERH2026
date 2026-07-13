@@ -65,25 +65,32 @@ app.http("dashboard", {
         })),
       ];
 
+      // Chaque bloc n'est renvoyé que si l'option est souscrite : le front
+      // n'affiche que ce qui existe, et les compteurs d'options non incluses
+      // ne fuient pas.
       return { status: 200, jsonBody: {
         client: c.codeClient,
         raisonSociale: c.raisonSociale,
-        embauches: {
+        options: c.options,
+        embauches: !c.options.includes("embauche") ? null : {
           total: emb.length,
           enAttente: embEnAttente.length,
           moisCourant: emb.filter((x) => new Date(x.Created) >= debutMoisCourant).length,
           parMois, repartition, prochaines,
         },
-        acomptes: {
+        acomptes: !c.options.includes("acompte") ? null : {
           enAttente: acoEnAttente.length,
           montantEnAttente: Math.round(acoEnAttente.reduce((s, x) => s + (Number(x.Montantdemand_x00e9_) || 0), 0) * 100) / 100,
           traites: aco.filter((x) => x.Statut === "Traité").length,
         },
-        attestations: {
+        attestations: !c.options.includes("attestation") ? null : {
           total: att.length,
           moisCourant: att.filter((x) => new Date(x.Created) >= debutMoisCourant).length,
         },
-        aTraiter,
+        aTraiter: [
+          ...(c.options.includes("embauche") ? aTraiter.filter((x) => x.t.startsWith("Embauche")) : []),
+          ...(c.options.includes("acompte") ? aTraiter.filter((x) => x.t.startsWith("Acompte")) : []),
+        ],
       } };
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
