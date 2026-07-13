@@ -188,9 +188,16 @@ export default function AppShell({ user, onLogout }) {
           const e = await r.json().catch(() => ({}));
           return setMoi({ bloque: e.erreur || `Accès refusé (HTTP ${r.status}).`, code: r.status });
         }
-        setMoi({ client: CODE_CLIENT }); // API en difficulté : on n'enferme pas l'utilisateur
+        // Panne API : on N'ENTRE PAS avec un client de repli (affichage
+        // trompeur). Le verrou serveur bloquerait de toute façon les envois.
+        setMoi({ bloque: `Service momentanément indisponible (HTTP ${r.status}) — réessayez dans quelques minutes.`, code: r.status });
       })
-      .catch(() => setMoi({ client: CODE_CLIENT, demo: true })); // dev local sans API
+      .catch(() => {
+        // Échec réseau : API absente en dev local (mode démo assumé) ;
+        // en production, indisponibilité réelle → écran d'attente.
+        if (import.meta.env.DEV) return setMoi({ client: CODE_CLIENT, demo: true });
+        setMoi({ bloque: "Service momentanément indisponible — vérifiez votre connexion et réessayez.", code: 0 });
+      });
   }, []);
 
   const notifier = (msg) => { setToast(msg); setTimeout(() => setToast(null), 2600); };
@@ -250,12 +257,21 @@ export default function AppShell({ user, onLogout }) {
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#FAEEDA", color: "#854F0B", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <AlertCircle size={24} />
           </div>
-          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Reconnexion nécessaire</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>
+            {moi.code === 401 ? "Reconnexion nécessaire" : "Service momentanément indisponible"}
+          </h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5, color: T.ink }}>
             Compte : <strong>{user?.email}</strong>
           </p>
           <p style={{ margin: "0 0 18px", fontSize: 13, color: T.mut }}>{moi.bloque}</p>
-          <Btn primary onClick={onLogout}><LogOut size={14} /> Se reconnecter</Btn>
+          {moi.code === 401 ? (
+            <Btn primary onClick={onLogout}><LogOut size={14} /> Se reconnecter</Btn>
+          ) : (
+            <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+              <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+              <Btn onClick={onLogout}><LogOut size={14} /> Se déconnecter</Btn>
+            </div>
+          )}
         </div>
       </div>
     );
