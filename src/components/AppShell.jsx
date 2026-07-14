@@ -178,6 +178,68 @@ const inputStyle = {
 const inputInvalid = { ...inputStyle, border: `1px solid ${T.err}` };
 
 /* ================================================================
+   SÉLECTION D'UN SALARIÉ (référentiel /api/personnel)
+   Deux variantes, au niveau module (règle anti-remount) :
+   — ChampSalarie : remplace un champ « Salarié » texte ; liste déroulante
+     des actifs + bascule saisie libre ; simple input si pas de référentiel.
+   — SelectSalarie : sélecteur optionnel qui PRÉ-REMPLIT des champs
+     détaillés existants (nom, prénom, matricule…) sans les remplacer.
+   ================================================================ */
+const nomComplet = (s) => `${s.nom} ${s.prenom}`.trim();
+
+function ChampSalarie({ salaries, valeur, onChange, invalide }) {
+  const [libre, setLibre] = useState(false);
+  const liste = (salaries || []).filter((s) => s.statut !== "Sorti");
+  if (liste.length === 0 || libre) {
+    return (
+      <>
+        <input type="text" style={{ ...inputStyle, borderColor: invalide ? T.err : T.border }} placeholder="Nom Prénom" value={valeur} onChange={(e) => onChange(e.target.value)} />
+        {liste.length > 0 && (
+          <button type="button" onClick={() => { setLibre(false); onChange(""); }} style={{ all: "unset", cursor: "pointer", fontSize: 11.5, color: T.accent, marginTop: 4 }}>
+            ← Choisir dans votre effectif
+          </button>
+        )}
+      </>
+    );
+  }
+  return (
+    <select style={{ ...inputStyle, borderColor: invalide ? T.err : T.border }} value={valeur}
+      onChange={(e) => {
+        if (e.target.value === "__libre") { setLibre(true); onChange(""); return; }
+        onChange(e.target.value);
+      }}>
+      <option value="">— Choisir un salarié —</option>
+      {liste.map((s, i) => (
+        <option key={s.cle + i} value={nomComplet(s)}>{nomComplet(s)}{s.poste ? ` — ${s.poste}` : ""}</option>
+      ))}
+      <option value="__libre">Autre salarié (saisie libre)…</option>
+    </select>
+  );
+}
+
+function SelectSalarie({ salaries, onSelection }) {
+  const [choix, setChoix] = useState("");
+  const liste = (salaries || []).filter((s) => s.statut !== "Sorti");
+  if (liste.length === 0) return null;
+  return (
+    <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
+      <label style={{ fontSize: 12, color: T.mut }}>Salarié de votre effectif <span style={{ fontStyle: "italic" }}>(pré-remplit les champs)</span></label>
+      <select style={inputStyle} value={choix}
+        onChange={(e) => {
+          setChoix(e.target.value);
+          const s = liste[Number(e.target.value)];
+          if (s) onSelection(s);
+        }}>
+        <option value="">— Choisir pour pré-remplir —</option>
+        {liste.map((s, i) => (
+          <option key={s.cle + i} value={i}>{nomComplet(s)}{s.poste ? ` — ${s.poste}` : ""}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+/* ================================================================
    APPLICATION
    ================================================================ */
 export default function AppShell({ user, onLogout }) {
@@ -198,6 +260,10 @@ export default function AppShell({ user, onLogout }) {
   const [docs, setDocs] = useState(null);
   // eches : fins de CDD réelles (/api/echeances) ; { demo } = maquette dev local.
   const [eches, setEches] = useState(null);
+  // refSal : effectif du client (référentiel Salariés fusionné aux embauches)
+  // pour les listes déroulantes des formulaires ; null = indisponible
+  // (option absente, panne) → les formulaires retombent en saisie libre.
+  const [refSal, setRefSal] = useState(null);
 
   const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
@@ -226,6 +292,13 @@ export default function AppShell({ user, onLogout }) {
       .then(async (r) => { if (r.ok) setStats(await r.json()); })
       .catch(() => {});
     chargerDocs();
+    // Effectif pour les listes déroulantes — silencieux en cas d'échec.
+    apiFetch("/api/personnel")
+      .then(async (r) => {
+        if (r.ok) { const j = await r.json(); return setRefSal(j.salaries || []); }
+        if (import.meta.env.DEV) setRefSal(DEMO_PERSONNEL.salaries);
+      })
+      .catch(() => { if (import.meta.env.DEV) setRefSal(DEMO_PERSONNEL.salaries); });
     // Échéances réelles — maquette uniquement en dev local, message en prod.
     apiFetch("/api/echeances")
       .then(async (r) => {
@@ -718,28 +791,28 @@ export default function AppShell({ user, onLogout }) {
         {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
-              <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "acompte" && (
-              <DemandeAcompte user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <DemandeAcompte user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "embauche" && (
               <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "fin" && (
-              <DemandeFinContrat user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <DemandeFinContrat user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "contact" && (
               <ContactGestionnaire user={user} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "absences" && (
-              <DemandeAbsence user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <DemandeAbsence user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "visite" && (
-              <DemandeVisite user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <DemandeVisite user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "mutuelle" && (
-              <Demandemutuelle user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <Demandemutuelle user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
@@ -1004,7 +1077,7 @@ export default function AppShell({ user, onLogout }) {
    Différences app authentifiée : email pré-rempli (compte
    Microsoft), client = CODE_CLIENT (pas de paramètre d'URL).
    ================================================================ */
-function AttestationEmployeur({ user, client, onRetour }) {
+function AttestationEmployeur({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     civilite: "", nom: "", naissance: "", entree: "", poste: "", contrat: "",
@@ -1139,6 +1212,16 @@ function AttestationEmployeur({ user, client, onRetour }) {
             {err.email && <span style={{ fontSize: 11, color: T.err }}>Email invalide.</span>}
           </div>
 
+          <SelectSalarie salaries={salaries} onSelection={(s) => {
+            setF((p) => ({ ...p,
+              nom: `${s.prenom} ${s.nom}`.trim(),
+              entree: s.debut || p.entree,
+              poste: s.poste || p.poste,
+              contrat: s.type === "CDI" ? "contrat à durée indéterminée (CDI)" : s.type === "CDD" ? "contrat à durée déterminée (CDD)" : p.contrat,
+            }));
+            setErr((p) => ({ ...p, nom: false, entree: false, poste: false, contrat: false }));
+          }} />
+
           <ChampReq label="Civilité" erreur={err.civilite && "Champ requis."}>
             <select style={err.civilite ? inputInvalid : inputStyle} value={f.civilite} onChange={(e) => maj("civilite", e.target.value)}>
               <option value="">—</option>
@@ -1217,7 +1300,7 @@ const ChampReq = ({ label, erreur, large, children }) => (
   </div>
 );
 
-function DemandeAcompte({ user, client, onRetour }) {
+function DemandeAcompte({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     nom: "", prenom: "", matricule: "", montant: "",
@@ -1338,6 +1421,11 @@ function DemandeAcompte({ user, client, onRetour }) {
           <ChampReq large label="Votre email (accusé de traitement)" erreur={err.email && "Email invalide."}>
             <input style={err.email ? inputInvalid : inputStyle} value={f.email} onChange={(e) => maj("email", e.target.value)} />
           </ChampReq>
+
+          <SelectSalarie salaries={salaries} onSelection={(s) => {
+            setF((p) => ({ ...p, nom: s.nom, prenom: s.prenom, matricule: s.matricule || p.matricule }));
+            setErr((p) => ({ ...p, nom: false, prenom: false, matricule: false }));
+          }} />
 
           <ChampReq label="Nom du salarié" erreur={err.nom && "Champ requis."}>
             <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. MARQUES" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
@@ -1589,7 +1677,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
    ================================================================ */
 const MOTIFS_FIN = ["Démission", "Rupture conventionnelle", "Licenciement pour motif personnel", "Licenciement pour motif économique", "Fin de CDD (terme prévu)", "Rupture anticipée de CDD", "Rupture période d'essai (employeur)", "Rupture période d'essai (salarié)", "Départ à la retraite", "Mise à la retraite", "Décès", "Autre"];
 
-function DemandeFinContrat({ user, client, salarieInitial, onRetour }) {
+function DemandeFinContrat({ user, client, salaries, salarieInitial, onRetour }) {
   // salarieInitial (« NOM Prénom ») vient de la fiche salarié : premier mot
   // = nom, le reste = prénom — modifiable librement dans le formulaire.
   const initSal = String(salarieInitial || "").trim().split(/\s+/);
@@ -1703,6 +1791,14 @@ function DemandeFinContrat({ user, client, salarieInitial, onRetour }) {
         )}
 
         <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <SelectSalarie salaries={salaries} onSelection={(s) => {
+            setF((p) => ({ ...p,
+              nom: s.nom, prenom: s.prenom, matricule: s.matricule || p.matricule,
+              typeContrat: ["CDI", "CDD"].includes(s.type) ? s.type : p.typeContrat,
+            }));
+            setErr((p) => ({ ...p, nom: false, prenom: false }));
+          }} />
+
           <ChampReq label="Type de contrat">
             <select style={inputStyle} value={f.typeContrat} onChange={(e) => maj("typeContrat", e.target.value)}>
               <option value="CDI">CDI</option>
@@ -2201,7 +2297,7 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
 /* ================================================================
    ABSENCES
    ================================================================ */
-function DemandeAbsence({ user, client, salarieInitial, onRetour }) {
+function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   const VIDE = { salarie: salarieInitial || "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
@@ -2233,7 +2329,7 @@ function DemandeAbsence({ user, client, salarieInitial, onRetour }) {
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
         </div>
         <div>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Du *</label>
@@ -2267,7 +2363,7 @@ function DemandeAbsence({ user, client, salarieInitial, onRetour }) {
 /* ================================================================
    VISITE MÉDICALE
    ================================================================ */
-function DemandeVisite({ user, client, salarieInitial, onRetour }) {
+function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
   const VIDE = { salarie: salarieInitial || "", dateVisite: "" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
@@ -2299,7 +2395,7 @@ function DemandeVisite({ user, client, salarieInitial, onRetour }) {
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date souhaitée *</label>
@@ -2321,7 +2417,7 @@ function DemandeVisite({ user, client, salarieInitial, onRetour }) {
 /* ================================================================
    MUTUELLE
    ================================================================ */
-function Demandemutuelle({ user, client, salarieInitial, onRetour }) {
+function Demandemutuelle({ user, client, salaries, salarieInitial, onRetour }) {
   const VIDE = { salarie: salarieInitial || "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
@@ -2353,7 +2449,7 @@ function Demandemutuelle({ user, client, salarieInitial, onRetour }) {
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Mutuelle / demande *</label>

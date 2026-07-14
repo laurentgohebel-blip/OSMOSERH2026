@@ -23,7 +23,8 @@ app.http("personnel", {
 
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
-      const [contrats, absences, visites, mutuelles, fins] = await Promise.all([
+      const [registre, contrats, absences, visites, mutuelles, fins] = await Promise.all([
+        items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone"),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
         items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),
@@ -32,16 +33,36 @@ app.http("personnel", {
       ]);
       const du = (liste) => liste.filter((x) => x.CodeClient === c.codeClient);
 
-      const salaries = du(contrats)
+      // Effectif = RÉFÉRENTIEL « Salariés » (stock importé + tenu par le
+      // gestionnaire) FUSIONNÉ avec les embauches du pipeline « Production
+      // contrat » (nouveaux entrants pas encore au référentiel) — le
+      // référentiel fait foi en cas de doublon (clé nom+prénom).
+      const duRegistre = du(registre).map((x) => ({
+        cle: cle(x.Nom, x.Prenom),
+        nom: String(x.Nom || "").toUpperCase(),
+        prenom: x.Prenom || "",
+        matricule: x.Matricule || "",
+        type: x.TypeContrat || "",
+        poste: x.Poste || "",
+        debut: dateParis(x.DateEntree),
+        fin: dateParis(x.DateSortie),
+        statut: x.Statut || "Actif",
+      }));
+      const clesRegistre = new Set(duRegistre.map((x) => x.cle));
+      const duPipeline = du(contrats)
+        .filter((x) => !clesRegistre.has(cle(x.Nom, x.Pr_x00e9_nom)))
         .map((x) => ({
           cle: cle(x.Nom, x.Pr_x00e9_nom),
           nom: String(x.Nom || "").toUpperCase(),
           prenom: x.Pr_x00e9_nom || "",
+          matricule: "",
           type: x.Type_x0020_contrat || "",
           poste: x.Postedetravail || "",
           debut: dateParis(x.Dateded_x00e9_but),
           fin: dateParis(x.Datedefin),
-        }))
+          statut: "Actif",
+        }));
+      const salaries = [...duRegistre, ...duPipeline]
         .sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
 
       return { status: 200, jsonBody: {
