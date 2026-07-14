@@ -2297,6 +2297,28 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
 /* ================================================================
    ABSENCES
    ================================================================ */
+/* Motifs d'absence — nomenclature inspirée de la DSN (arrêts de travail
+   S21.G00.60 + autres suspensions S21.G00.65), libellés client.
+   justif = pièce justificative EXIGÉE à la déclaration (arrêt de travail,
+   certificat…). Tenir demande.js (API) en miroir : le verrou réel est là. */
+const MOTIFS_ABSENCE = [
+  { m: "Maladie (arrêt de travail)", justif: true },
+  { m: "Maladie professionnelle", justif: true },
+  { m: "Accident du travail", justif: true },
+  { m: "Accident de trajet", justif: true },
+  { m: "Congé maternité", justif: true },
+  { m: "Congé paternité / accueil de l'enfant", justif: true },
+  { m: "Congé d'adoption", justif: true },
+  { m: "Temps partiel thérapeutique", justif: true },
+  { m: "Enfant malade", justif: true },
+  { m: "Congés payés", justif: false },
+  { m: "Congé sans solde", justif: false },
+  { m: "Congé parental d'éducation", justif: false },
+  { m: "Événement familial (mariage, naissance, décès…)", justif: false },
+  { m: "Absence injustifiée", justif: false },
+  { m: "Autre absence", justif: false },
+];
+
 function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   const VIDE = { salarie: salarieInitial || "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
   const [f, setF] = useState(VIDE);
@@ -2304,8 +2326,10 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   const [msg, setMsg] = useState(null); // { ok } | { erreur }
   const [envoi, setEnvoi] = useState(false);
 
+  const justifRequis = MOTIFS_ABSENCE.find((x) => x.m === f.motif)?.justif === true;
+
   const envoyer = async () => {
-    if (!f.salarie.trim() || !f.dateDebut || !f.motif.trim()) { setErr(true); return; }
+    if (!f.salarie.trim() || !f.dateDebut || !f.motif || (justifRequis && !f.justificatifUrl.trim())) { setErr(true); return; }
     setEnvoi(true); setMsg(null);
     try {
       const r = await apiFetch("/api/demande?demarche=absences", { method: "POST", body: JSON.stringify({ demarche: "absences", ...f }) });
@@ -2341,16 +2365,30 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Motif *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.motif.trim() ? T.err : T.border }} placeholder="Maladie, congés, absence injustifiée…" value={f.motif} onChange={(e) => setF({ ...f, motif: e.target.value })} />
+          <select style={{ ...inputStyle, borderColor: err && !f.motif ? T.err : T.border }} value={f.motif}
+            onChange={(e) => setF({ ...f, motif: e.target.value })}>
+            <option value="">— Choisir un motif —</option>
+            {MOTIFS_ABSENCE.map((x) => <option key={x.m} value={x.m}>{x.m}</option>)}
+          </select>
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Justificatif (lien optionnel)</label>
-          <input type="text" style={inputStyle} placeholder="Ex. lien vers l'arrêt déposé dans Documents" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
+            Justificatif {justifRequis ? <span style={{ color: T.err }}>*</span> : <span style={{ fontWeight: 400 }}>(lien optionnel)</span>}
+          </label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border }}
+            placeholder="Lien vers le document déposé dans l'onglet Documents" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+          {justifRequis && (
+            <p style={{ margin: "5px 0 0", fontSize: 11.5, color: err && !f.justificatifUrl.trim() ? T.err : T.mut }}>
+              Ce motif exige un justificatif (arrêt de travail, certificat…) : déposez-le dans l'onglet <strong>Documents</strong> puis collez son lien ici.
+            </p>
+          )}
         </div>
       </div>
-      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
-        Un justificatif papier ? Déposez-le dans l'onglet Documents puis collez le lien ici — ou transmettez-le à votre gestionnaire.
-      </p>
+      {!justifRequis && (
+        <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+          Un justificatif papier ? Déposez-le dans l'onglet Documents puis collez le lien ici — ou transmettez-le à votre gestionnaire.
+        </p>
+      )}
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>

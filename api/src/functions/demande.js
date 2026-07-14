@@ -121,19 +121,40 @@ app.http("demande", {
       // attaché à chaque liste envoie l'accusé de réception au demandeur et
       // la notification au gestionnaire — l'API écrit donc les emails requis.
       if (d.demarche === "absences") {
+        // Motifs fermés (nomenclature DSN, miroir de MOTIFS_ABSENCE du front) ;
+        // true = justificatif exigé (arrêt, certificat…) dès la déclaration.
+        const MOTIFS_ABSENCE = {
+          "Maladie (arrêt de travail)": true,
+          "Maladie professionnelle": true,
+          "Accident du travail": true,
+          "Accident de trajet": true,
+          "Congé maternité": true,
+          "Congé paternité / accueil de l'enfant": true,
+          "Congé d'adoption": true,
+          "Temps partiel thérapeutique": true,
+          "Enfant malade": true,
+          "Congés payés": false,
+          "Congé sans solde": false,
+          "Congé parental d'éducation": false,
+          "Événement familial (mariage, naissance, décès…)": false,
+          "Absence injustifiée": false,
+          "Autre absence": false,
+        };
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateDebut || "")))
           return { status: 400, jsonBody: { erreur: "Date de début requise." } };
         if (d.dateFin && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateFin)))
           return { status: 400, jsonBody: { erreur: "Date de fin invalide." } };
-        if (!d.motif || String(d.motif).trim().length < 1)
-          return { status: 400, jsonBody: { erreur: "Motif requis." } };
+        if (!(d.motif in MOTIFS_ABSENCE))
+          return { status: 400, jsonBody: { erreur: "Motif d'absence invalide — choisissez un motif de la liste." } };
+        if (MOTIFS_ABSENCE[d.motif] && !String(d.justificatifUrl || "").trim())
+          return { status: 400, jsonBody: { erreur: "Justificatif requis pour ce motif (arrêt de travail, certificat…)." } };
         const reference = `ABS-${Date.now().toString(36).toUpperCase()}`;
         await creerElementPersonnel("Absences", email, clientInfo, d, reference, {
           DateDebut: d.dateDebut,
           ...(d.dateFin ? { DateFin: d.dateFin } : {}),
-          Motif: String(d.motif).trim().slice(0, 255),
+          Motif: d.motif,
           JustificatifUrl: String(d.justificatifUrl || "").trim().slice(0, 500),
           Statut: "Nouvelle",
         });
