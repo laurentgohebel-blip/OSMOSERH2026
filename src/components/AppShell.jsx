@@ -2331,13 +2331,13 @@ function Demandemutuelle({ user, client, onRetour }) {
    ================================================================ */
 function GestionPersonnel({ user, client, db, onRetour }) {
   const [salSelId, setSalSelId] = useState(null);
+  const [ong, setOng] = useState("Contrat");
   const salaries = db?.contrats || [];
   const sal = salaries.find((s) => s.id === salSelId);
 
   if (salSelId && sal) {
     const nom = `${(sal.nom || "").toUpperCase()} ${sal.prenom || ""}`.trim();
     const onglets = ["Contrat", "Absences", "Visite", "Mutuelle", "Fin"];
-    const [ong, setOng] = useState("Contrat");
 
     return (
       <>
