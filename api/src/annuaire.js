@@ -348,4 +348,41 @@ async function creerVariablesPaie(email, clientInfo, mois, lignes) {
   }
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie };
+/** Enregistre une déclaration de fin de contrat dans « Fins de contrat ».
+    Le gestionnaire produit ensuite STC, certificat de travail et
+    attestation France Travail (Statut : Nouvelle → En cours → Traitée). */
+async function creerFinContrat(email, clientInfo, d, reference) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Fins de contrat"];
+  if (!listeId) throw { status: 502, erreur: "Liste des fins de contrat introuvable." };
+  const fields = {
+    Title: reference,
+    CodeClient: clientInfo.codeClient,
+    EmailDemandeur: email,
+    EmailGestionnaire: clientInfo.emailGestionnaire,
+    Matricule: String(d.matricule || "").trim().slice(0, 30),
+    Nom: String(d.nom).trim().toUpperCase().slice(0, 120),
+    Prenom: String(d.prenom || "").trim().slice(0, 120),
+    TypeContrat: d.typeContrat,
+    Motif: d.motif,
+    DateFin: d.dateFin,
+    Preavis: d.preavis || undefined,
+    DernierJourTravaille: d.dernierJourTravaille || undefined,
+    CongesRestants: (() => {
+      const n = Number(String(d.congesRestants ?? "").replace(",", "."));
+      return Number.isFinite(n) && String(d.congesRestants ?? "").trim() !== "" ? n : undefined;
+    })(),
+    Commentaire: String(d.commentaire || "").trim().slice(0, 1000) || undefined,
+    Statut: "Nouvelle",
+  };
+  Object.keys(fields).forEach((k) => fields[k] === undefined && delete fields[k]);
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!r.ok) throw { status: 502, erreur: "Enregistrement de la fin de contrat impossible, réessayez." };
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat };

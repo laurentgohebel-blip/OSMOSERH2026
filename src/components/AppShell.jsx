@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
@@ -90,10 +90,11 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche" };
 
 const TUILES = [
   { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
+  { id: "fin", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
   { id: "variables", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
@@ -631,6 +632,9 @@ export default function AppShell({ user, onLogout }) {
             )}
             {tuile.id === "embauche" && (
               <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "fin" && (
+              <DemandeFinContrat user={user} client={codeClient} onRetour={() => setTuile(null)} />
             )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
@@ -1346,6 +1350,199 @@ function DemandeEmbauche({ user, client, onRetour }) {
         </div>
         <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
           Données transmises à votre gestionnaire Osmose RH pour l'établissement du contrat de travail et de la déclaration préalable à l'embauche (DPAE).
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   FIN-01 — FIN DE CONTRAT (câblée sur /api/demande)
+   Symétrique de l'embauche : le client déclare un départ, le gestionnaire
+   produit STC, certificat de travail et attestation France Travail.
+   Écrit dans la liste « Fins de contrat » (Nouvelle → En cours → Traitée).
+   Gouvernée par l'option 'embauche' (le cycle contrat, entrées ET sorties).
+   ================================================================ */
+const MOTIFS_FIN = ["Démission", "Rupture conventionnelle", "Licenciement pour motif personnel", "Licenciement pour motif économique", "Fin de CDD (terme prévu)", "Rupture anticipée de CDD", "Rupture période d'essai (employeur)", "Rupture période d'essai (salarié)", "Départ à la retraite", "Mise à la retraite", "Décès", "Autre"];
+
+function DemandeFinContrat({ user, client, onRetour }) {
+  const [f, setF] = useState({
+    typeContrat: "CDI", motif: "", nom: "", prenom: "", matricule: "",
+    dateFin: "", dernierJour: "", preavis: "", congesRestants: "", commentaire: "",
+  });
+  const [err, setErr] = useState({});
+  const [errbar, setErrbar] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [fini, setFini] = useState(null);
+
+  const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  const valider = () => {
+    const e = {
+      motif: !f.motif,
+      nom: f.nom.trim().length < 2,
+      prenom: f.prenom.trim().length < 2,
+      dateFin: !f.dateFin,
+      congesRestants: f.congesRestants.trim() !== "" && !/^\d{1,3}([.,]\d{1,2})?$/.test(f.congesRestants.trim()),
+    };
+    setErr(e);
+    return !Object.values(e).some(Boolean);
+  };
+
+  const envoyer = async () => {
+    if (!valider()) return;
+    setEnvoi(true);
+    setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          demarche: "fin-contrat",
+          client, // indicatif : l'API impose le client résolu côté serveur
+          typeContrat: f.typeContrat,
+          motif: f.motif,
+          nom: f.nom.trim(),
+          prenom: f.prenom.trim(),
+          matricule: f.matricule.trim(),
+          dateFin: f.dateFin,
+          ...(f.dernierJour ? { dernierJourTravaille: f.dernierJour } : {}),
+          ...(f.preavis ? { preavis: f.preavis } : {}),
+          ...(f.congesRestants.trim() ? { congesRestants: f.congesRestants.trim().replace(",", ".") } : {}),
+          commentaire: f.commentaire.trim(),
+          xq_note: "", // honeypot : doit rester vide
+        }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErrbar(j.erreur ? `${j.erreur} (HTTP ${r.status})` : `HTTP ${r.status}`);
+        setEnvoi(false);
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      setFini({ ref: j.reference || null });
+    } catch (_) {
+      setFini({ demo: true });
+    }
+  };
+
+  if (fini) {
+    return (
+      <>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <Check size={24} />
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Départ déclaré</h1>
+          <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+            {f.motif} — <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong>, fin de contrat le <strong>{f.dateFin.split("-").reverse().join("/")}</strong>.
+          </p>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+            Votre gestionnaire prépare le solde de tout compte, le certificat de travail et l'attestation France Travail. Un accusé vous est adressé à <strong>{user?.email}</strong>.
+          </p>
+          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          {fini.demo && (
+            <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
+              Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <UserMinus size={22} color={T.accent} strokeWidth={1.6} />
+          <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une fin de contrat</h1>
+        </div>
+        <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+          Client : {client} — votre gestionnaire produit le solde de tout compte, le certificat de travail et l'attestation France Travail. Accusé envoyé à {user?.email}.
+        </p>
+
+        {errbar && (
+          <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+            ✗ Envoi refusé : {errbar}
+          </div>
+        )}
+
+        <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <ChampReq label="Type de contrat">
+            <select style={inputStyle} value={f.typeContrat} onChange={(e) => maj("typeContrat", e.target.value)}>
+              <option value="CDI">CDI</option>
+              <option value="CDD">CDD</option>
+              <option value="Autre">Autre</option>
+            </select>
+          </ChampReq>
+
+          <ChampReq label="Motif de fin de contrat" erreur={err.motif && "Champ requis."}>
+            <select style={err.motif ? inputInvalid : inputStyle} value={f.motif} onChange={(e) => maj("motif", e.target.value)}>
+              <option value="">—</option>
+              {MOTIFS_FIN.map((m) => <option key={m}>{m}</option>)}
+            </select>
+          </ChampReq>
+
+          <ChampReq label="Nom du salarié" erreur={err.nom && "Champ requis."}>
+            <input style={err.nom ? inputInvalid : inputStyle} placeholder="Ex. MARQUES" value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Prénom du salarié" erreur={err.prenom && "Champ requis."}>
+            <input style={err.prenom ? inputInvalid : inputStyle} placeholder="Ex. Sofia" value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+          </ChampReq>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Matricule (facultatif)</label>
+            <input style={inputStyle} value={f.matricule} onChange={(e) => maj("matricule", e.target.value)} />
+          </div>
+
+          <ChampReq label="Date de fin de contrat" erreur={err.dateFin && "Date requise."}>
+            <input type="date" style={err.dateFin ? inputInvalid : inputStyle} value={f.dateFin} onChange={(e) => maj("dateFin", e.target.value)} />
+          </ChampReq>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Dernier jour travaillé (si différent)</label>
+            <input type="date" style={inputStyle} value={f.dernierJour} onChange={(e) => maj("dernierJour", e.target.value)} />
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Préavis</label>
+            <select style={inputStyle} value={f.preavis} onChange={(e) => maj("preavis", e.target.value)}>
+              <option value="">—</option>
+              <option>Effectué</option>
+              <option>Non effectué</option>
+              <option>Dispensé</option>
+            </select>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Congés restants (jours, facultatif)</label>
+            <input inputMode="decimal" style={err.congesRestants ? inputInvalid : inputStyle} placeholder="Ex. 4,5" value={f.congesRestants} onChange={(e) => maj("congesRestants", e.target.value)} />
+            {err.congesRestants && <span style={{ fontSize: 11, color: T.err }}>Nombre de jours invalide.</span>}
+          </div>
+
+          <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 4 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Commentaire (facultatif)</label>
+            <textarea rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="Ex. précisions sur le motif, adresse d'envoi des documents…" value={f.commentaire} onChange={(e) => maj("commentaire", e.target.value)} />
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 20 }}>
+          <Btn onClick={onRetour}>Annuler</Btn>
+          <Btn primary disabled={envoi} onClick={envoyer}>
+            {envoi ? "Envoi en cours…" : "Déclarer le départ"}
+          </Btn>
+        </div>
+        <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
+          Données transmises à votre gestionnaire Osmose RH pour l'établissement des documents de fin de contrat.
         </p>
       </div>
     </>

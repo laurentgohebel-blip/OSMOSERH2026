@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -40,10 +40,30 @@ app.http("demande", {
 
       // Verrou d'option : une démarche non souscrite est refusée côté
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie" };
+      // fin-contrat relève de l'option 'embauche' : elle couvre le cycle
+      // contrat complet (entrées ET sorties).
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+
+      // Cas particulier « fin-contrat » : déclaration de départ — écrite
+      // dans la liste « Fins de contrat », production documentaire par le
+      // gestionnaire (STC, certificat, attestation France Travail).
+      if (d.demarche === "fin-contrat") {
+        const MOTIFS = ["Démission", "Rupture conventionnelle", "Licenciement pour motif personnel", "Licenciement pour motif économique", "Fin de CDD (terme prévu)", "Rupture anticipée de CDD", "Rupture période d'essai (employeur)", "Rupture période d'essai (salarié)", "Départ à la retraite", "Mise à la retraite", "Décès", "Autre"];
+        if (!d.nom || String(d.nom).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Nom du salarié requis." } };
+        if (!["CDI", "CDD", "Autre"].includes(d.typeContrat))
+          return { status: 400, jsonBody: { erreur: "Type de contrat invalide." } };
+        if (!MOTIFS.includes(d.motif))
+          return { status: 400, jsonBody: { erreur: "Motif de fin de contrat invalide." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateFin || "")))
+          return { status: 400, jsonBody: { erreur: "Date de fin de contrat requise." } };
+        const reference = `FIN-${Date.now().toString(36).toUpperCase()}`;
+        await creerFinContrat(email, clientInfo, d, reference);
+        return { status: 202, jsonBody: { reference } };
+      }
 
       // Cas particulier « variables-paie » : la grille mensuelle. Pas de
       // flux HTTP — l'API écrit une ligne de liste par salarié transmis.
