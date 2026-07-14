@@ -107,11 +107,15 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
 const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche" };
 
 const TUILES = [
+  { id: "personnel", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
   { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
   { id: "fin", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
   { id: "variables", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
+  { id: "absences", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
+  { id: "visite", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
+  { id: "mutuelle", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
   { id: "formation", titre: "Formation", sous: "Demande de formation", icone: GraduationCap,
     cible: "Hors catalogue v1 — démo",
     champs: [
@@ -696,6 +700,18 @@ export default function AppShell({ user, onLogout }) {
             )}
             {tuile.id === "fin" && (
               <DemandeFinContrat user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "personnel" && (
+              <GestionPersonnel user={user} client={codeClient} db={db} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "absences" && (
+              <DemandeAbsence user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "visite" && (
+              <DemandeVisite user={user} client={codeClient} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "mutuelle" && (
+              <Demandemutuelle user={user} client={codeClient} onRetour={() => setTuile(null)} />
             )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
@@ -2147,6 +2163,267 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
           </Btn>
         </div>
       </div>
+    </>
+  );
+}
+
+/* ================================================================
+   ABSENCES
+   ================================================================ */
+function DemandeAbsence({ user, client, onRetour }) {
+  const [f, setF] = useState({ salarie: "", date: "", motif: "", justificatifUrl: "" });
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !f.date || !f.motif.trim()) { setErr(true); return; }
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande?demarche=absences", { method: "POST", body: JSON.stringify(f) });
+      const j = await r.json();
+      if (r.ok) { setMsg(`Absence déclarée — réf. ${j.reference}`); onRetour(); }
+      else setMsg(j.erreur || "Erreur");
+    } catch { setMsg("Erreur réseau"); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une absence</h2>
+      </div>
+
+      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.date ? T.err : T.border }} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Motif *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.motif ? T.err : T.border }} placeholder="Maladie, congés…" value={f.motif} onChange={(e) => setF({ ...f, motif: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Justificatif (URL optionnel)</label>
+          <input type="text" style={inputStyle} placeholder="Lien vers le document…" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>Annuler</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Déclarer"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   VISITE MÉDICALE
+   ================================================================ */
+function DemandeVisite({ user, client, onRetour }) {
+  const [f, setF] = useState({ salarie: "", date: "" });
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !f.date) { setErr(true); return; }
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande?demarche=visite-medicale", { method: "POST", body: JSON.stringify(f) });
+      const j = await r.json();
+      if (r.ok) { setMsg(`Visite médicale programmée — réf. ${j.reference}`); onRetour(); }
+      else setMsg(j.erreur || "Erreur");
+    } catch { setMsg("Erreur réseau"); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Visite médicale</h2>
+      </div>
+
+      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date prévue *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.date ? T.err : T.border }} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>Annuler</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Valider"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   MUTUELLE
+   ================================================================ */
+function Demandemutuelle({ user, client, onRetour }) {
+  const [f, setF] = useState({ salarie: "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) });
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !f.mutuelle.trim()) { setErr(true); return; }
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande?demarche=mutuelle", { method: "POST", body: JSON.stringify(f) });
+      const j = await r.json();
+      if (r.ok) { setMsg(`Adhésion enregistrée — réf. ${j.reference}`); onRetour(); }
+      else setMsg(j.erreur || "Erreur");
+    } catch { setMsg("Erreur réseau"); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Adhésion mutuelle</h2>
+      </div>
+
+      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Mutuelle *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.mutuelle ? T.err : T.border }} placeholder="Nom de la mutuelle ou du régime…" value={f.mutuelle} onChange={(e) => setF({ ...f, mutuelle: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'adhésion</label>
+          <input type="date" style={inputStyle} value={f.dateAdhesion} onChange={(e) => setF({ ...f, dateAdhesion: e.target.value })} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>Annuler</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Valider"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   GESTION DU PERSONNEL — dossier salarié centralisé
+   ================================================================ */
+function GestionPersonnel({ user, client, db, onRetour }) {
+  const [salSelId, setSalSelId] = useState(null);
+  const salaries = db?.contrats || [];
+  const sal = salaries.find((s) => s.id === salSelId);
+
+  if (salSelId && sal) {
+    const nom = `${(sal.nom || "").toUpperCase()} ${sal.prenom || ""}`.trim();
+    const onglets = ["Contrat", "Absences", "Visite", "Mutuelle", "Fin"];
+    const [ong, setOng] = useState("Contrat");
+
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+          <button onClick={() => setSalSelId(null)} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+          <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>{nom}</h2>
+        </div>
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+          {onglets.map((o) => (
+            <button key={o} onClick={() => setOng(o)} style={{
+              all: "unset", cursor: "pointer", padding: "6px 14px", fontSize: 13, fontFamily: T.sans,
+              color: ong === o ? T.accent : T.mut, borderBottom: ong === o ? `2px solid ${T.accent}` : "none",
+              fontWeight: ong === o ? 600 : 400,
+            }}>{o}</button>
+          ))}
+        </div>
+
+        {ong === "Contrat" && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
+            <div style={{ marginBottom: 10 }}><strong>Type :</strong> {sal.type}</div>
+            <div style={{ marginBottom: 10 }}><strong>Poste :</strong> {sal.poste}</div>
+            <div style={{ marginBottom: 10 }}><strong>Début :</strong> {sal.debut?.split("-").reverse().join("/")}</div>
+            {sal.type === "CDD" && <div><strong>Fin :</strong> prévue</div>}
+            <Btn primary small style={{ marginTop: 14 }} onClick={() => alert("Édition contrat — bientôt")}>Modifier</Btn>
+          </div>
+        )}
+        {ong === "Absences" && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
+            <div style={{ marginBottom: 14, color: T.mut }}>Aucune absence déclarée.</div>
+            <Btn primary small onClick={() => alert("Ajouter une absence via la tuile rapide")}>+ Déclarer une absence</Btn>
+          </div>
+        )}
+        {ong === "Visite" && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
+            <div style={{ marginBottom: 14, color: T.mut }}>Aucune visite programmée.</div>
+            <Btn primary small onClick={() => alert("Ajouter une visite via la tuile rapide")}>+ Programmer une visite</Btn>
+          </div>
+        )}
+        {ong === "Mutuelle" && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
+            <div style={{ marginBottom: 14, color: T.mut }}>Aucune mutuelle enregistrée.</div>
+            <Btn primary small onClick={() => alert("Ajouter une mutuelle via la tuile rapide")}>+ Ajouter une mutuelle</Btn>
+          </div>
+        )}
+        {ong === "Fin" && (
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
+            <div style={{ marginBottom: 14, color: T.mut }}>Contrat actif — pas de fin programmée.</div>
+            <Btn primary small onClick={() => alert("Déclarer une fin via la tuile rapide")}>+ Déclarer une fin</Btn>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Gestion du personnel</h2>
+      </div>
+
+      {salaries.length === 0 && (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucun salarié déclaré.<br />
+          Débutez par une embauche pour créer le premier dossier.
+        </div>
+      )}
+
+      {salaries.length > 0 && (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          {salaries.map((s, i) => (
+            <button key={i} onClick={() => setSalSelId(s.id)} style={{
+              all: "unset", display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "12px 16px", borderBottom: i < salaries.length - 1 ? `1px solid ${T.border}` : "none",
+              cursor: "pointer", fontSize: 13, fontFamily: T.sans, color: T.ink,
+            }}>
+              <div>
+                <div style={{ fontWeight: 600, marginBottom: 3 }}>{(s.nom || "").toUpperCase()} {s.prenom}</div>
+                <div style={{ fontSize: 12, color: T.mut }}>{s.poste} • {s.type}</div>
+              </div>
+              <div style={{ fontSize: 12, color: T.mut, flexShrink: 0 }}>→</div>
+            </button>
+          ))}
+        </div>
+      )}
     </>
   );
 }

@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat, tokenGraph, idsListes } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -101,6 +101,38 @@ app.http("demande", {
         await creerEmbauche(email, clientInfo, d, reference);
         return { status: 202, jsonBody: { reference } };
       }
+
+      // Cas particulier « absences » : crée dans la liste Absences
+      if (d.demarche === "absences") {
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")))
+          return { status: 400, jsonBody: { erreur: "Date requise (AAAA-MM-JJ)." } };
+        if (!d.motif || String(d.motif).trim().length < 1)
+          return { status: 400, jsonBody: { erreur: "Motif requis." } };
+        await creerAbsence(clientInfo, d);
+        return { status: 202, jsonBody: { reference: `ABS-${Date.now().toString(36).toUpperCase()}` } };
+      }
+
+      // Cas particulier « visite-medicale » : crée dans la liste Visites médicales
+      if (d.demarche === "visite-medicale") {
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")))
+          return { status: 400, jsonBody: { erreur: "Date requise (AAAA-MM-JJ)." } };
+        await creerVisite(clientInfo, d);
+        return { status: 202, jsonBody: { reference: `VIS-${Date.now().toString(36).toUpperCase()}` } };
+      }
+
+      // Cas particulier « mutuelle » : crée dans la liste Adhésions mutuelles
+      if (d.demarche === "mutuelle") {
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!d.mutuelle || String(d.mutuelle).trim().length < 1)
+          return { status: 400, jsonBody: { erreur: "Mutuelle requise." } };
+        await creerMutuelle(clientInfo, d);
+        return { status: 202, jsonBody: { reference: `MUT-${Date.now().toString(36).toUpperCase()}` } };
+      }
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("Verrou :", e);
@@ -152,3 +184,71 @@ app.http("demande", {
     return { status: 202, jsonBody: { reference } };
   }
 });
+
+/* Créer une ligne Absences */
+async function creerAbsence(clientInfo, d) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Absences"];
+  const nomPrenom = String(d.salarie).trim().split(/\s+/);
+  const body = {
+    fields: {
+      "CodeClient": clientInfo.codeClient,
+      "SalarieNom": nomPrenom[0] || "",
+      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
+      "Date": d.date,
+      "Motif": d.motif || "",
+      "JustificatifUrl": d.justificatifUrl || "",
+    }
+  };
+  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/* Créer une ligne Visites médicales */
+async function creerVisite(clientInfo, d) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Visites médicales"];
+  const nomPrenom = String(d.salarie).trim().split(/\s+/);
+  const body = {
+    fields: {
+      "CodeClient": clientInfo.codeClient,
+      "SalarieNom": nomPrenom[0] || "",
+      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
+      "Date": d.date,
+      "Statut": "À planifier",
+    }
+  };
+  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/* Créer une ligne Adhésions mutuelles */
+async function creerMutuelle(clientInfo, d) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Adhésions mutuelles"];
+  const nomPrenom = String(d.salarie).trim().split(/\s+/);
+  const body = {
+    fields: {
+      "CodeClient": clientInfo.codeClient,
+      "SalarieNom": nomPrenom[0] || "",
+      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
+      "Mutuelle": d.mutuelle || "",
+      "DateAdhesion": d.dateAdhesion || new Date().toISOString().slice(0, 10),
+      "Statut": "Demande",
+    }
+  };
+  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
