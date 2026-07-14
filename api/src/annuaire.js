@@ -291,4 +291,61 @@ async function telechargerDocument(codeClient, itemId) {
   };
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument };
+/** Enregistre les variables de paie du mois : une ligne = un salarié
+    (un salarié peut occuper plusieurs lignes, ex. deux absences).
+    Écrit un élément par ligne dans la liste « Variables de paie ». */
+async function creerVariablesPaie(email, clientInfo, mois, lignes) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Variables de paie"];
+  if (!listeId) throw { status: 502, erreur: "Liste des variables de paie introuvable." };
+
+  const num = (v) => {
+    if (v === undefined || v === null || String(v).trim() === "") return undefined;
+    const n = Number(String(v).replace(",", "."));
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const txt = (v, max) => {
+    const s = String(v ?? "").trim();
+    return s ? s.slice(0, max) : undefined;
+  };
+
+  for (let i = 0; i < lignes.length; i++) {
+    const l = lignes[i];
+    const fields = {
+      Title: `${mois} — ${String(l.nom || "").trim().toUpperCase()} ${String(l.prenom || "").trim()}`.trim(),
+      CodeClient: clientInfo.codeClient,
+      EmailDemandeur: email,
+      Mois: mois,
+      Matricule: txt(l.matricule, 30),
+      Nom: txt(l.nom, 120) && txt(l.nom, 120).toUpperCase(),
+      Prenom: txt(l.prenom, 120),
+      HeuresNormales: num(l.heuresNormales),
+      HeuresComplementaires: num(l.heuresComplementaires),
+      HeuresSup25: num(l.heuresSup25),
+      HeuresSup50: num(l.heuresSup50),
+      HeuresNuit: num(l.heuresNuit),
+      HeuresDimancheFerie: num(l.heuresDimancheFerie),
+      AbsenceType: txt(l.absenceType, 40),
+      AbsenceDu: txt(l.absenceDu, 10),
+      AbsenceAu: txt(l.absenceAu, 10),
+      PrimeLibelle: txt(l.primeLibelle, 120),
+      PrimeMontant: num(l.primeMontant),
+      Acompte: num(l.acompte),
+      TitresResto: num(l.titresResto),
+      FraisPro: num(l.fraisPro),
+      AvantagesNature: num(l.avantagesNature),
+      Commentaire: txt(l.commentaire, 1000),
+      Statut: "Nouvelle",
+    };
+    Object.keys(fields).forEach((k) => fields[k] === undefined && delete fields[k]);
+    const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    });
+    if (!r.ok) throw { status: 502, erreur: `Enregistrement de la ligne ${i + 1} impossible — aucune ligne suivante n'a été transmise, réessayez.` };
+  }
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie };

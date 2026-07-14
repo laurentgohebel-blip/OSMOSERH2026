@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
@@ -90,10 +90,11 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie" };
 
 const TUILES = [
   { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
+  { id: "variables", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "formation", titre: "Formation", sous: "Demande de formation", icone: GraduationCap,
@@ -613,9 +614,14 @@ export default function AppShell({ user, onLogout }) {
           </>
         )}
 
+        {/* La grille des variables de paie occupe toute la largeur. */}
+        {vue === "prod" && tuile && tuile.id === "variables" && (
+          <VariablesPaie user={user} client={codeClient} onRetour={() => setTuile(null)} />
+        )}
+
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
@@ -1340,6 +1346,208 @@ function DemandeEmbauche({ user, client, onRetour }) {
         </div>
         <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
           Données transmises à votre gestionnaire Osmose RH pour l'établissement du contrat de travail et de la déclaration préalable à l'embauche (DPAE).
+        </p>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   PAI-01 — VARIABLES DE PAIE (grille mensuelle, câblée sur /api/demande)
+   Une ligne = un salarié pour le mois (un salarié peut occuper plusieurs
+   lignes, ex. deux absences). Colonnes volontairement LARGES multi-secteurs
+   — TOUT s'ajuste dans COLONNES_VARIABLES ci-dessous, rien d'autre à
+   toucher. Brouillon auto-sauvegardé en local par client et par mois.
+   L'API écrit une ligne de liste SharePoint par salarié transmis.
+   ================================================================ */
+const COLONNES_VARIABLES = [
+  { k: "matricule", l: "Matricule", type: "text", w: 90 },
+  { k: "nom", l: "Nom *", type: "text", w: 130 },
+  { k: "prenom", l: "Prénom", type: "text", w: 110 },
+  { k: "heuresNormales", l: "H. normales", type: "nombre", w: 78 },
+  { k: "heuresComplementaires", l: "H. compl.", type: "nombre", w: 78 },
+  { k: "heuresSup25", l: "H. sup 25%", type: "nombre", w: 78 },
+  { k: "heuresSup50", l: "H. sup 50%", type: "nombre", w: 78 },
+  { k: "heuresNuit", l: "H. nuit", type: "nombre", w: 70 },
+  { k: "heuresDimancheFerie", l: "H. dim/férié", type: "nombre", w: 80 },
+  { k: "absenceType", l: "Absence", type: "choix", w: 150,
+    opts: ["", "Maladie", "Accident du travail", "Congés payés", "Congé sans solde", "Absence injustifiée", "Maternité / Paternité", "Formation", "Activité partielle", "Autre"] },
+  { k: "absenceDu", l: "Abs. du", type: "date", w: 128 },
+  { k: "absenceAu", l: "Abs. au", type: "date", w: 128 },
+  { k: "primeLibelle", l: "Prime (libellé)", type: "text", w: 130 },
+  { k: "primeMontant", l: "Prime (€)", type: "nombre", w: 80 },
+  { k: "acompte", l: "Acompte (€)", type: "nombre", w: 84 },
+  { k: "titresResto", l: "Titres resto", type: "nombre", w: 78 },
+  { k: "fraisPro", l: "Frais pro (€)", type: "nombre", w: 84 },
+  { k: "avantagesNature", l: "Avantages (€)", type: "nombre", w: 88 },
+  { k: "commentaire", l: "Commentaire", type: "text", w: 190 },
+];
+const LIGNE_VIDE = () => Object.fromEntries(COLONNES_VARIABLES.map((c) => [c.k, ""]));
+const MOIS_COURANT = () => new Date().toISOString().slice(0, 7);
+
+function VariablesPaie({ user, client, onRetour }) {
+  const [mois, setMois] = useState(MOIS_COURANT());
+  const [lignes, setLignes] = useState([LIGNE_VIDE()]);
+  const [errbar, setErrbar] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+  const [fini, setFini] = useState(null);
+
+  const cleBrouillon = `osrh-variables-${client}-${mois}`;
+
+  /* Brouillon local : rechargé au changement de mois, sauvegardé à chaque
+     modification — on peut remplir la grille en plusieurs fois. */
+  useEffect(() => {
+    try {
+      const brut = localStorage.getItem(cleBrouillon);
+      setLignes(brut ? JSON.parse(brut) : [LIGNE_VIDE()]);
+    } catch { setLignes([LIGNE_VIDE()]); }
+  }, [cleBrouillon]);
+  useEffect(() => {
+    try { localStorage.setItem(cleBrouillon, JSON.stringify(lignes)); } catch (_) {}
+  }, [lignes, cleBrouillon]);
+
+  const majCellule = (i, k, v) => setLignes(lignes.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+  const ajouterLigne = () => setLignes([...lignes, LIGNE_VIDE()]);
+  const dupliquerLigne = (i) => setLignes([...lignes.slice(0, i + 1), { ...lignes[i] }, ...lignes.slice(i + 1)]);
+  const supprimerLigne = (i) => setLignes(lignes.length > 1 ? lignes.filter((_, j) => j !== i) : [LIGNE_VIDE()]);
+
+  const celluleStyle = (large) => ({
+    ...inputStyle, padding: "6px 8px", fontSize: 12.5, borderRadius: 6, minWidth: large,
+  });
+
+  const envoyer = async () => {
+    setErrbar("");
+    const remplies = lignes.filter((l) => Object.values(l).some((v) => String(v).trim() !== ""));
+    if (remplies.length === 0) { setErrbar("La grille est vide."); return; }
+    const sansNom = remplies.findIndex((l) => String(l.nom).trim().length < 2);
+    if (sansNom >= 0) { setErrbar(`Ligne ${sansNom + 1} : le nom du salarié est requis.`); return; }
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ demarche: "variables-paie", client, mois, lignes: remplies, xq_note: "" }),
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setErrbar(j.erreur ? `${j.erreur} (HTTP ${r.status})` : `HTTP ${r.status}`);
+        setEnvoi(false);
+        return;
+      }
+      const j = await r.json().catch(() => ({}));
+      try { localStorage.removeItem(cleBrouillon); } catch (_) {}
+      setFini({ ref: j.reference || null, nb: remplies.length });
+    } catch (_) {
+      setFini({ demo: true, nb: remplies.length });
+    }
+  };
+
+  if (fini) {
+    return (
+      <div style={{ maxWidth: 560, margin: "0 auto" }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", textAlign: "center" }}>
+          <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <Check size={24} />
+          </div>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Variables transmises</h1>
+          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+            <strong>{fini.nb} ligne{fini.nb > 1 ? "s" : ""}</strong> transmise{fini.nb > 1 ? "s" : ""} pour <strong>{mois.split("-").reverse().join("/")}</strong>. Votre gestionnaire les intègre à la paie du mois ; un complément reste possible en renvoyant la grille.
+          </p>
+          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          {fini.demo && (
+            <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
+              Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <CalendarDays size={22} color={T.accent} strokeWidth={1.6} />
+            <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Variables de paie</h1>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={{ fontSize: 12, color: T.mut }}>Mois concerné</label>
+            <input type="month" style={{ ...inputStyle, width: 160 }} value={mois} onChange={(e) => setMois(e.target.value)} />
+          </div>
+        </div>
+        <p style={{ margin: "0 0 14px", fontSize: 12, color: T.mut }}>
+          Client : {client} — une ligne par salarié (plusieurs lignes possibles pour un même salarié, ex. deux absences).
+          Brouillon enregistré automatiquement sur ce poste. Accusé envoyé à {user?.email}.
+        </p>
+
+        {errbar && (
+          <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+            ✗ {errbar}
+          </div>
+        )}
+
+        <div className="osrh-table" style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 10 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>
+                {COLONNES_VARIABLES.map((c) => (
+                  <th key={c.k} style={{ padding: "8px 6px", fontSize: 11, color: T.mut, fontWeight: 600, textAlign: "left", borderBottom: `1px solid ${T.border}`, background: "#FAFBFD", whiteSpace: "nowrap", minWidth: c.w }}>
+                    {c.l}
+                  </th>
+                ))}
+                <th style={{ borderBottom: `1px solid ${T.border}`, background: "#FAFBFD", minWidth: 66 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {lignes.map((ligne, i) => (
+                <tr key={i}>
+                  {COLONNES_VARIABLES.map((c) => (
+                    <td key={c.k} style={{ padding: 4, borderBottom: `1px solid ${T.border}` }}>
+                      {c.type === "choix" ? (
+                        <select style={celluleStyle(c.w)} value={ligne[c.k]} onChange={(e) => majCellule(i, c.k, e.target.value)}>
+                          {c.opts.map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                        </select>
+                      ) : (
+                        <input
+                          type={c.type === "date" ? "date" : "text"}
+                          inputMode={c.type === "nombre" ? "decimal" : undefined}
+                          style={celluleStyle(c.w)}
+                          value={ligne[c.k]}
+                          onChange={(e) => majCellule(i, c.k, e.target.value)}
+                        />
+                      )}
+                    </td>
+                  ))}
+                  <td style={{ padding: 4, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>
+                    <button title="Dupliquer la ligne" onClick={() => dupliquerLigne(i)} style={{ all: "unset", cursor: "pointer", padding: 5, color: T.mut }}><Copy size={14} /></button>
+                    <button title="Supprimer la ligne" onClick={() => supprimerLigne(i)} style={{ all: "unset", cursor: "pointer", padding: 5, color: T.err }}><X size={15} /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 14, flexWrap: "wrap", gap: 10 }}>
+          <Btn onClick={ajouterLigne}><Plus size={14} /> Ajouter un salarié</Btn>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn onClick={onRetour}>Fermer (brouillon conservé)</Btn>
+            <Btn primary disabled={envoi} onClick={envoyer}>
+              {envoi ? "Transmission…" : `Transmettre ${lignes.filter((l) => Object.values(l).some((v) => String(v).trim() !== "")).length} ligne(s)`}
+            </Btn>
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: T.mut, marginTop: 12, marginBottom: 0 }}>
+          Transmises à votre gestionnaire Osmose RH pour l'établissement de la paie de {mois.split("-").reverse().join("/")}. Les acomptes demandés via le portail sont déjà connus de votre gestionnaire.
         </p>
       </div>
     </>

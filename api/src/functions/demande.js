@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -40,10 +40,28 @@ app.http("demande", {
 
       // Verrou d'option : une démarche non souscrite est refusée côté
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche" };
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+
+      // Cas particulier « variables-paie » : la grille mensuelle. Pas de
+      // flux HTTP — l'API écrit une ligne de liste par salarié transmis.
+      if (d.demarche === "variables-paie") {
+        if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(d.mois || "")))
+          return { status: 400, jsonBody: { erreur: "Mois invalide (format AAAA-MM)." } };
+        const lignes = Array.isArray(d.lignes) ? d.lignes : [];
+        if (lignes.length === 0)
+          return { status: 400, jsonBody: { erreur: "Aucune ligne à transmettre." } };
+        if (lignes.length > 100)
+          return { status: 400, jsonBody: { erreur: "Trop de lignes (100 maximum par envoi)." } };
+        for (let i = 0; i < lignes.length; i++)
+          if (!lignes[i] || String(lignes[i].nom || "").trim().length < 2)
+            return { status: 400, jsonBody: { erreur: `Ligne ${i + 1} : le nom du salarié est requis.` } };
+        const reference = `VAR-${Date.now().toString(36).toUpperCase()}`;
+        await creerVariablesPaie(email, clientInfo, d.mois, lignes);
+        return { status: 202, jsonBody: { reference, lignes: lignes.length } };
+      }
 
       // Cas particulier « embauche » (contrat + DPAE) : pas de flux HTTP —
       // l'API écrit dans « Production contrat » et le flux existant
