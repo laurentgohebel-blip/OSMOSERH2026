@@ -106,31 +106,28 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    (démos formation/sécurité) restent librement accessibles. */
 const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche" };
 
+/* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
+   « bientot » est affiché grisé, non cliquable (feuille de route visible). */
+const BLOCS_TUILES = [
+  { id: "salaries", titre: "Vos salariés" },
+  { id: "paie", titre: "Votre paie" },
+  { id: "echanges", titre: "Vos échanges" },
+  { id: "bientot", titre: "Bientôt disponible" },
+];
+
 const TUILES = [
-  { id: "personnel", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
-  { id: "embauche", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
-  { id: "fin", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
-  { id: "variables", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
-  { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
-  { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
-  { id: "contact", titre: "Mon gestionnaire", sous: "Poser une question, transmettre", icone: Send, cablee: true },
-  { id: "absences", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
-  { id: "visite", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
-  { id: "mutuelle", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
-  { id: "formation", titre: "Formation", sous: "Demande de formation", icone: GraduationCap,
-    cible: "Hors catalogue v1 — démo",
-    champs: [
-      { k: "salarie", l: "Salarié", large: true },
-      { k: "intitule", l: "Intitulé", large: true },
-      { k: "organisme", l: "Organisme" },
-      { k: "date", l: "Date souhaitée", type: "date" },
-    ] },
-  { id: "securite", titre: "Sécurité", sous: "DUERP, registres", icone: ShieldCheck,
-    cible: "Hors catalogue v1 — démo",
-    champs: [
-      { k: "type", l: "Document", type: "select", opts: ["DUERP", "Registre du personnel", "Registre sécurité", "Affichage obligatoire"], large: true },
-      { k: "commentaire", l: "Commentaire", large: true },
-    ] },
+  { id: "personnel", bloc: "salaries", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
+  { id: "embauche", bloc: "salaries", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
+  { id: "fin", bloc: "salaries", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
+  { id: "absences", bloc: "salaries", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
+  { id: "visite", bloc: "salaries", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
+  { id: "mutuelle", bloc: "salaries", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
+  { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
+  { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
+  { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
+  { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Poser une question, transmettre", icone: Send, cablee: true },
+  { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
+  { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "DUERP, registres, affichages", icone: ShieldCheck },
 ];
 
 /* ================================================================
@@ -428,8 +425,9 @@ export default function AppShell({ user, onLogout }) {
           .osrh-carte h2 { font-size: 15px; }
           .osrh-barres { height: 170px !important; }
           /* Hauteur des tuiles : naturelle à toutes les tailles (correctif
-             Laurent — ne pas forcer les hauteurs, le padding suffit). */
-          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; }
+             Laurent — ne pas forcer les hauteurs, le padding suffit).
+             auto-FILL : une section peu remplie ne s'étire pas. */
+          .osrh-tuilegrid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; }
           .osrh-tuile { padding: 40px 20px !important; }
         }
         @media (max-width: 760px) {
@@ -638,48 +636,68 @@ export default function AppShell({ user, onLogout }) {
             <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Production</h1>
             <p style={{ margin: "4px 0 20px", fontSize: 13, color: T.mut }}>Choisissez une démarche</p>
 
-            {/* Grands panneaux à hauteur BORNÉE : auto-fit étire en largeur,
-                les rangées vont de 230 à 300 px (une rangée unique sur très
-                grand écran ne doit pas s'étirer sur toute la page).
-                Compact sur mobile (voir media query). */}
-            <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 16, gridAutoRows: "auto" }}>
-              {TUILES.map((t) => {
-                const Icone = t.icone;
-                /* Opt-in contractuel : tuile grisée si l'option n'est pas
-                   souscrite (le refus réel est côté API — ceci n'est que
-                   l'affichage). moi absent (dev local) = tout ouvert. */
-                const opt = OPTION_TUILE[t.id];
-                const inclus = !opt || !moi?.options || moi.options.includes(opt);
-                return (
-                  <button
-                    key={t.id}
-                    className="osrh-tuile"
-                    onClick={() => { if (!inclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH."); setSalariePrerempli(""); setTuile(t); }}
-                    style={{
-                      background: T.card, border: `1px solid ${T.border}`, borderRadius: 14,
-                      padding: "26px 18px", cursor: "pointer", textAlign: "center",
-                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12,
-                      fontFamily: T.sans, transition: "border-color .15s", position: "relative",
-                      opacity: inclus ? 1 : 0.45,
-                    }}
-                    onMouseEnter={(e) => { if (inclus) e.currentTarget.style.borderColor = T.accent; }}
-                    onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}
-                  >
-                    {t.cablee && inclus && (
-                      <span style={{ position: "absolute", top: 12, right: 12, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
-                    )}
-                    <span style={{ width: 62, height: 62, borderRadius: 16, background: "#E6F1FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Icone size={30} color={T.accent} strokeWidth={1.6} />
-                    </span>
-                    <span style={{ fontSize: 16, fontWeight: 600, color: T.ink }}>{t.titre}</span>
-                    <span style={{ fontSize: 12.5, color: T.mut }}>{t.sous}</span>
-                    {!inclus && (
-                      <span style={{ fontSize: 10.5, color: T.mut, fontStyle: "italic" }}>Option non incluse</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Tuiles groupées par bloc métier, avec titres de section.
+                auto-FILL (pas auto-fit) : une section d'une seule tuile garde
+                une tuile de largeur normale au lieu de s'étirer sur l'écran.
+                Hauteurs naturelles ; compact sur mobile (voir media query). */}
+            {BLOCS_TUILES.map((b) => {
+              const tuilesBloc = TUILES.filter((t) => t.bloc === b.id);
+              if (tuilesBloc.length === 0) return null;
+              return (
+                <div key={b.id} style={{ marginBottom: 26 }}>
+                  <h2 style={{ margin: "0 0 12px", fontSize: 15, fontFamily: T.serif, fontWeight: 600, color: T.navy, display: "flex", alignItems: "center", gap: 10 }}>
+                    {b.titre}
+                    <span style={{ flex: 1, height: 1, background: T.border }} />
+                  </h2>
+                  <div className="osrh-tuilegrid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16, gridAutoRows: "auto" }}>
+                    {tuilesBloc.map((t) => {
+                      const Icone = t.icone;
+                      /* Deux raisons d'être grisée : option non souscrite
+                         (opt-in contractuel — le refus réel est côté API) ou
+                         démarche pas encore ouverte (bloc « bientot »). */
+                      const aVenir = b.id === "bientot";
+                      const opt = OPTION_TUILE[t.id];
+                      const inclus = !aVenir && (!opt || !moi?.options || moi.options.includes(opt));
+                      return (
+                        <button
+                          key={t.id}
+                          className="osrh-tuile"
+                          onClick={() => {
+                            if (aVenir) return notifier("Cette démarche arrive prochainement — parlez-en à votre gestionnaire si vous êtes intéressé.");
+                            if (!inclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.");
+                            setSalariePrerempli(""); setTuile(t);
+                          }}
+                          style={{
+                            background: T.card, border: `1px solid ${T.border}`, borderRadius: 14,
+                            padding: "26px 18px", cursor: "pointer", textAlign: "center",
+                            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12,
+                            fontFamily: T.sans, transition: "border-color .15s", position: "relative",
+                            opacity: inclus ? 1 : 0.45,
+                          }}
+                          onMouseEnter={(e) => { if (inclus) e.currentTarget.style.borderColor = T.accent; }}
+                          onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}
+                        >
+                          {t.cablee && inclus && (
+                            <span style={{ position: "absolute", top: 12, right: 12, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
+                          )}
+                          <span style={{ width: 62, height: 62, borderRadius: 16, background: "#E6F1FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Icone size={30} color={T.accent} strokeWidth={1.6} />
+                          </span>
+                          <span style={{ fontSize: 16, fontWeight: 600, color: T.ink }}>{t.titre}</span>
+                          <span style={{ fontSize: 12.5, color: T.mut }}>{t.sous}</span>
+                          {aVenir && (
+                            <span style={{ fontSize: 10.5, color: T.mut, fontStyle: "italic" }}>Bientôt disponible</span>
+                          )}
+                          {!aVenir && !inclus && (
+                            <span style={{ fontSize: 10.5, color: T.mut, fontStyle: "italic" }}>Option non incluse</span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
 
           </>
         )}
