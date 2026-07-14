@@ -54,6 +54,20 @@ const seed = {
 
 const DOSSIERS = ["Contrats", "Paie", "Attestations", "DPAE", "Sécurité", "Formations"];
 
+/* Échéances de démonstration (dev local sans API) — dates relatives au jour
+   courant pour que badges et compteurs restent réalistes. */
+const dansNJours = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const DEMO_ECHEANCES = {
+  echeances: [
+    { salarie: "MARTIN Paul", poste: "Assistant RH", dateFin: dansNJours(12), joursRestants: 12, alerte: new Date().toISOString() },
+    { salarie: "BERNARD Luc", poste: "Agent logistique", dateFin: dansNJours(26), joursRestants: 26, alerte: new Date().toISOString() },
+    { salarie: "PETIT Chloé", poste: "Hôtesse d'accueil", dateFin: dansNJours(74), joursRestants: 74, alerte: null },
+  ],
+  recentes: [
+    { salarie: "LEROY Anne", poste: "Chargée de com", dateFin: dansNJours(-9), joursRestants: -9, alerte: dansNJours(-40) },
+  ],
+};
+
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
 
 /* ================================================================
@@ -177,6 +191,8 @@ export default function AppShell({ user, onLogout }) {
   const [stats, setStats] = useState(null);
   // docs : documents réels (/api/documents) ; { demo } = maquette dev local.
   const [docs, setDocs] = useState(null);
+  // eches : fins de CDD réelles (/api/echeances) ; { demo } = maquette dev local.
+  const [eches, setEches] = useState(null);
 
   const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
@@ -205,6 +221,14 @@ export default function AppShell({ user, onLogout }) {
       .then(async (r) => { if (r.ok) setStats(await r.json()); })
       .catch(() => {});
     chargerDocs();
+    // Échéances réelles — maquette uniquement en dev local, message en prod.
+    apiFetch("/api/echeances")
+      .then(async (r) => {
+        if (r.ok) return setEches(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setEches(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Échéances indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setEches(import.meta.env.DEV ? { demo: true } : { erreur: "Échéances momentanément indisponibles — réessayez." }));
   }, []);
 
   // Documents réels — maquette uniquement en dev local, message en prod.
@@ -435,6 +459,7 @@ export default function AppShell({ user, onLogout }) {
         </div>
         <NavBtn id="dash" icon={ChartBar} label="Tableau de bord" />
         <NavBtn id="prod" icon={FileText} label="Production" />
+        <NavBtn id="eche" icon={Clock} label="Échéances" />
         <NavBtn id="docs" icon={Folder} label="Documents" />
         <div className="osrh-user" style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
           <div className="osrh-user-info" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
@@ -677,6 +702,112 @@ export default function AppShell({ user, onLogout }) {
             )}
           </div>
         )}
+
+        {/* ===== ÉCHÉANCES ===== */}
+        {vue === "eche" && (() => {
+          if (eches === null) {
+            return (
+              <>
+                <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Échéances</h1>
+                <p style={{ margin: "12px 0", fontSize: 13, color: T.mut }}>Chargement de vos échéances…</p>
+              </>
+            );
+          }
+          if (eches.erreur) {
+            return (
+              <>
+                <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Échéances</h1>
+                <p style={{ margin: "12px 0", fontSize: 13, color: T.mut }}>{eches.erreur}</p>
+                <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+              </>
+            );
+          }
+          const src = eches.demo ? DEMO_ECHEANCES : eches;
+          const aVenir = src.echeances || [];
+          const recentes = src.recentes || [];
+          const sous30 = aVenir.filter((x) => x.joursRestants <= 30).length;
+          const sous90 = aVenir.filter((x) => x.joursRestants <= 90).length;
+          const finInclus = !moi?.options || moi.options.includes("embauche");
+          const fr = (d) => String(d).slice(0, 10).split("-").reverse().join("/");
+          const BadgeJours = (j) => {
+            const c = j <= 7 ? { bg: "#FCEBEB", fg: "#791F1F" } : j <= 30 ? { bg: "#FAEEDA", fg: "#854F0B" } : { bg: "#E6F1FB", fg: "#0C447C" };
+            const txt = j <= 0 ? "Aujourd'hui" : j === 1 ? "Demain" : `Dans ${j} j`;
+            return <span style={{ background: c.bg, color: c.fg, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>{txt}</span>;
+          };
+          const grille = "2fr 2fr 100px 110px 1.4fr";
+          return (
+            <>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Échéances</h1>
+                  <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+                    Fins de CDD à venir — anticipez le renouvellement, la transformation en CDI ou la fin au terme prévu.
+                  </p>
+                </div>
+                <Btn primary onClick={() => {
+                  if (!finInclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.");
+                  setVue("prod"); setTuile(TUILES.find((t) => t.id === "fin"));
+                }}>
+                  <UserMinus size={15} /> Déclarer une fin de contrat
+                </Btn>
+              </div>
+
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+                <Kpi label="Fins sous 30 jours" val={sous30} warn={sous30 > 0} icon={AlertCircle} />
+                <Kpi label="Fins sous 90 jours" val={sous90} icon={Clock} />
+                <Kpi label="CDD suivis" val={aVenir.length} icon={Users} />
+              </div>
+
+              {aVenir.length === 0 ? (
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+                  Aucune fin de CDD à venir.<br />
+                  Les CDD déclarés via la démarche Embauche apparaissent ici automatiquement, avec leur date de fin.
+                </div>
+              ) : (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Fin le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {aVenir.map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < aVenir.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.dateFin)}</span>
+                      {BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée le {fr(x.alerte)}</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-30</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {recentes.length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Terminés récemment</div>
+                  {recentes.map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < recentes.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center", opacity: 0.75 }}>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.dateFin)}</span>
+                      <Badge s="Terminé" />
+                      <span style={{ fontSize: 12, color: T.mut }}>—</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut, flexWrap: "wrap" }}>
+                <ShieldCheck size={13} />
+                {eches.demo
+                  ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
+                  : "En complément, un rappel automatique par e-mail est envoyé 30 jours avant chaque fin de CDD."}
+              </div>
+            </>
+          );
+        })()}
 
         {/* ===== DOCUMENTS ===== */}
         {vue === "docs" && (() => {
