@@ -346,6 +346,7 @@ async function creerVariablesPaie(email, clientInfo, mois, lignes) {
     });
     if (!r.ok) throw { status: 502, erreur: `Enregistrement de la ligne ${i + 1} impossible — aucune ligne suivante n'a été transmise, réessayez.` };
   }
+  await majCyclePaie(clientInfo.codeClient, mois, "Variables reçues");
 }
 
 /** Enregistre une déclaration de fin de contrat dans « Fins de contrat ».
@@ -385,6 +386,49 @@ async function creerFinContrat(email, clientInfo, d, reference) {
   if (!r.ok) throw { status: 502, erreur: "Enregistrement de la fin de contrat impossible, réessayez." };
 }
 
+/* ---------------- Cycle de paie (pilotage interne) ----------------
+   Une ligne par client × mois. Le portail la crée et la fait avancer
+   automatiquement jusqu'à « Variables reçues » ; les statuts suivants
+   (Saisie Cegid, Contrôlée, Bulletins déposés) appartiennent aux
+   gestionnaires — on ne rétrograde JAMAIS un statut. */
+const STATUTS_CYCLE = ["En attente variables", "Variables reçues", "Saisie Cegid", "Contrôlée", "Bulletins déposés"];
+
+async function majCyclePaie(codeClient, mois, statutCible) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const listeId = ids["Cycle de paie"];
+  if (!listeId) return; // liste absente : le pilotage est optionnel, ne jamais bloquer la démarche
+
+  // lecture directe (sans cache) : il faut l'id d'élément pour la mise à jour
+  const rl = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items?$select=id&$expand=fields($select=CodeClient,Mois,Statut)&$top=500`,
+    { headers: { Authorization: `Bearer ${tok}` } });
+  if (!rl.ok) return;
+  const existante = (await rl.json()).value.find((x) => x.fields.CodeClient === codeClient && x.fields.Mois === mois);
+
+  const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale");
+  const raisonSociale = clients.find((c) => c.CodeClient === codeClient)?.RaisonSociale || codeClient;
+
+  const corps = {
+    Title: `${mois} — ${codeClient}`,
+    CodeClient: codeClient, Mois: mois, RaisonSociale: raisonSociale,
+    Statut: statutCible,
+    ...(statutCible === "Variables reçues" ? { VariablesRecuesLe: new Date().toISOString() } : {}),
+  };
+  try {
+    if (!existante) {
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+        method: "POST", headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: corps }),
+      });
+    } else if (STATUTS_CYCLE.indexOf(statutCible) > STATUTS_CYCLE.indexOf(existante.fields.Statut || "En attente variables")) {
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items/${existante.id}/fields`, {
+        method: "PATCH", headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ Statut: statutCible, ...(statutCible === "Variables reçues" ? { VariablesRecuesLe: new Date().toISOString() } : {}) }),
+      });
+    }
+  } catch (_) { /* pilotage best-effort : jamais bloquant */ }
+}
+
 const EXTENSIONS_DEPOT = ["pdf", "jpg", "jpeg", "png", "heic", "xlsx", "xls", "csv", "docx", "doc", "odt", "ods", "txt", "zip"];
 const TAILLE_MAX_DEPOT = 10 * 1024 * 1024; // 10 Mo
 
@@ -412,7 +456,10 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
       body: contenu,
     });
     if (!r.ok) throw { status: 502, erreur: "Dépôt impossible, réessayez." };
-    return (await r.json()).name;
+    const nomFinal = (await r.json()).name;
+    const m = nomFinal.match(/^Variables_(\d{4}-\d{2})_/);
+    if (m) await majCyclePaie(codeClient, m[1], "Variables reçues");
+    return nomFinal;
   }
 
   // au-delà : session de téléversement (un seul segment suffit sous 10 Mo)
@@ -432,7 +479,10 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
     body: contenu,
   });
   if (!r.ok) throw { status: 502, erreur: "Dépôt interrompu, réessayez." };
-  return (await r.json()).name;
+  const nomFinal = (await r.json()).name;
+  const m = nomFinal.match(/^Variables_(\d{4}-\d{2})_/);
+  if (m) await majCyclePaie(codeClient, m[1], "Variables reçues");
+  return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie };

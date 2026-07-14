@@ -7,7 +7,7 @@
 // L'API calcule, le flux envoie les e-mails (SMTP) — aucune logique côté flux.
 
 const { app } = require("@azure/functions");
-const { tokenGraph, idsListes, items, listerDocuments } = require("../annuaire");
+const { tokenGraph, idsListes, items, listerDocuments, majCyclePaie } = require("../annuaire");
 
 app.http("rappel-variables", {
   methods: ["GET"],
@@ -40,6 +40,8 @@ app.http("rappel-variables", {
           fichierDepose = docs.some((d) => d.categorie === "Dépôts" && d.nom.startsWith(`Variables_${mois}_`));
         }
         if (grilleTransmise || fichierDepose) continue;
+        // ligne de pilotage : le mois en retard apparaît dans « Cycle de paie »
+        await majCyclePaie(c.CodeClient, mois, "En attente variables");
         for (const u of utilisateurs.filter((x) => x.CodeClient === c.CodeClient && x.Actif !== false && x.Email)) {
           rappels.push({
             email: u.Email,
