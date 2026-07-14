@@ -1762,6 +1762,11 @@ function VariablesPaie({ user, client, onRetour }) {
         {/* Alternative : dépôt du fichier Excel de variables (transition) */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#F4F8FD", border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12.5 }}>
           <span style={{ color: T.mut }}>Vous tenez vos variables dans un fichier Excel ?</span>
+          <a href="/modeles/Modele_variables_paie.xlsx" download
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, color: T.accent, fontWeight: 600, textDecoration: "none", fontSize: 12.5 }}>
+            <Download size={13} /> Télécharger le modèle
+          </a>
+          <span style={{ color: T.border }}>|</span>
           <input ref={refXls} type="file" accept=".xlsx,.xls,.csv,.ods" style={{ display: "none" }}
             onChange={(e) => { deposerExcel(e.target.files?.[0]); e.target.value = ""; }} />
           <Btn small onClick={() => refXls.current?.click()} disabled={depotXls === "en cours"}>
