@@ -587,11 +587,13 @@ export default function AppShell({ user, onLogout }) {
             </div>
             )}
 
-            <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+            <div style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut, flexWrap: "wrap" }}>
               <ShieldCheck size={13} />
               {stats
-                ? "Indicateurs calculés en direct depuis vos démarches — données hébergées en Europe, conformes RGPD"
+                ? "Indicateurs calculés en direct depuis vos démarches — données hébergées en Europe"
                 : "Données de démonstration — connectez-vous en production pour vos indicateurs réels"}
+              <span>·</span>
+              <a href="/mentions-legales.html" target="_blank" rel="noopener" style={{ color: T.mut }}>Mentions légales &amp; confidentialité</a>
             </div>
           </>
           );

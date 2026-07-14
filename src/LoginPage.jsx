@@ -122,6 +122,9 @@ export default function LoginPage() {
             professionnelle — votre gestionnaire Osmose RH activera ensuite
             votre accès.
           </p>
+          <p className="osrh-login-note" style={{ marginTop: 10 }}>
+            <a href="/mentions-legales.html" style={{ color: "#8794A8" }}>Mentions légales &amp; confidentialité</a>
+          </p>
         </div>
       </div>
     </div>
