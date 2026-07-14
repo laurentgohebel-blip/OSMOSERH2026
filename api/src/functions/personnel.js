@@ -6,7 +6,7 @@
 // normalisée (les démarches saisissent le salarié en texte libre).
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
 
 const cle = (nom, prenom) =>
   `${String(nom || "").trim().toUpperCase()} ${String(prenom || "").trim().toUpperCase()}`.trim();
@@ -39,8 +39,8 @@ app.http("personnel", {
           prenom: x.Pr_x00e9_nom || "",
           type: x.Type_x0020_contrat || "",
           poste: x.Postedetravail || "",
-          debut: x.Dateded_x00e9_but || null,
-          fin: x.Datedefin || null,
+          debut: dateParis(x.Dateded_x00e9_but),
+          fin: dateParis(x.Datedefin),
         }))
         .sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
 
@@ -48,23 +48,23 @@ app.http("personnel", {
         salaries,
         absences: du(absences).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
-          du: x.DateDebut || null, au: x.DateFin || null,
+          du: dateParis(x.DateDebut), au: dateParis(x.DateFin),
           motif: x.Motif || "", justificatifUrl: x.JustificatifUrl || "",
           statut: x.Statut || "Nouvelle", reference: x.Reference || "",
         })).sort((a, b) => String(b.du).localeCompare(String(a.du))),
         visites: du(visites).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
-          date: x.DateVisite || null, statut: x.Statut || "À planifier", reference: x.Reference || "",
+          date: dateParis(x.DateVisite), statut: x.Statut || "À planifier", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
         mutuelles: du(mutuelles).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
-          mutuelle: x.Mutuelle || "", date: x.DateAdhesion || null,
+          mutuelle: x.Mutuelle || "", date: dateParis(x.DateAdhesion),
           statut: x.Statut || "Demande", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
         fins: du(fins).map((x) => ({
           cle: cle(x.Nom, x.Prenom), salarie: cle(x.Nom, x.Prenom),
           type: x.TypeContrat || "", motif: x.Motif || "",
-          date: x.DateFin || null, statut: x.Statut || "Nouvelle", reference: x.Title || "",
+          date: dateParis(x.DateFin), statut: x.Statut || "Nouvelle", reference: x.Title || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
       } };
     } catch (e) {

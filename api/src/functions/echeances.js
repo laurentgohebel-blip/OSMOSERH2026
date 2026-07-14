@@ -9,7 +9,7 @@
 //    la consultation ne consomme pas l'alerte e-mail.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
 
 const FENETRE_JOURS = 30;   // fenêtre d'alerte e-mail
 const RECENT_JOURS = 60;    // fins passées encore affichées sur le portail
@@ -44,26 +44,29 @@ async function modePortail(request) {
   const contrats = await items(tok, ids["Production contrat"],
     "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Datedefin,AlerteFinCDD,Postedetravail");
 
-  const aujourdhui = new Date(); aujourdhui.setHours(0, 0, 0, 0);
+  // Comparaisons en « date vue de Paris » (AAAA-MM-JJ) : les colonnes date
+  // stockent minuit Paris (22:00Z la veille), l'ISO brut décale d'un jour.
+  const aujourdhui = dateParis(new Date());
+  const jourFin = (x) => dateParis(x.Datedefin);
   const ligne = (x) => ({
     salarie: `${(x.Nom || "").toUpperCase()} ${x.Pr_x00e9_nom || ""}`.trim(),
     poste: x.Postedetravail || "",
-    dateFin: x.Datedefin,
-    joursRestants: Math.round((new Date(x.Datedefin) - aujourdhui) / 86400000),
+    dateFin: jourFin(x),
+    joursRestants: Math.round((new Date(jourFin(x)) - new Date(aujourdhui)) / 86400000),
     alerte: x.AlerteFinCDD || null,
   });
 
   const cdd = contrats.filter((x) =>
     x.CodeClient === c.codeClient && x.Type_x0020_contrat === "CDD" && x.Datedefin);
 
+  const borneRecent = dateParis(new Date(Date.now() - RECENT_JOURS * 86400000));
   const echeances = cdd
-    .filter((x) => new Date(x.Datedefin) >= aujourdhui)
-    .sort((a, b) => new Date(a.Datedefin) - new Date(b.Datedefin))
+    .filter((x) => jourFin(x) >= aujourdhui)
+    .sort((a, b) => jourFin(a).localeCompare(jourFin(b)))
     .map(ligne);
   const recentes = cdd
-    .filter((x) => new Date(x.Datedefin) < aujourdhui &&
-      new Date(x.Datedefin) >= new Date(aujourdhui.getTime() - RECENT_JOURS * 86400000))
-    .sort((a, b) => new Date(b.Datedefin) - new Date(a.Datedefin))
+    .filter((x) => jourFin(x) < aujourdhui && jourFin(x) >= borneRecent)
+    .sort((a, b) => jourFin(b).localeCompare(jourFin(a)))
     .slice(0, 10)
     .map(ligne);
 

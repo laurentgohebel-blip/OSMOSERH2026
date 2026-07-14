@@ -5,7 +5,7 @@
 // d'un autre, même en bricolant les appels.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
 
 const MOIS_COURTS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
 
@@ -50,7 +50,7 @@ app.http("dashboard", {
         .filter((x) => x.Dateded_x00e9_but && new Date(x.Dateded_x00e9_but) >= maintenant)
         .sort((a, b) => new Date(a.Dateded_x00e9_but) - new Date(b.Dateded_x00e9_but))
         .slice(0, 3)
-        .map((x) => ({ nom: x.Nom || "", prenom: x.Pr_x00e9_nom || "", type: x.Type_x0020_contrat || "", debut: x.Dateded_x00e9_but }));
+        .map((x) => ({ nom: x.Nom || "", prenom: x.Pr_x00e9_nom || "", type: x.Type_x0020_contrat || "", debut: dateParis(x.Dateded_x00e9_but) }));
 
       const acoEnAttente = aco.filter((x) => x.Statut === "Nouveau");
       const embEnAttente = emb.filter((x) => x.Approuv_x00e9_ !== true);

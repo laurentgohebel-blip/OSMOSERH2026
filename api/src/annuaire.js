@@ -79,6 +79,17 @@ async function idsListes(tok) {
   return listeIds;
 }
 
+/** Date « AAAA-MM-JJ » VUE DE PARIS pour une valeur datetime SharePoint.
+    Piège : les colonnes « date seule » sont stockées à minuit heure de Paris,
+    soit 22:00Z (ou 23:00Z l'hiver) LA VEILLE — tronquer l'ISO UTC recule
+    donc d'un jour. fr-CA donne directement le format AAAA-MM-JJ. */
+function dateParis(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toLocaleDateString("fr-CA", { timeZone: "Europe/Paris" });
+}
+
 // Les deux listes restent petites : on les lit en entier (pagination suivie)
 // et on filtre en code — aucun besoin de colonnes indexées. Cache 60 s.
 const cacheItems = new Map();
@@ -485,4 +496,4 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
   return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie };
