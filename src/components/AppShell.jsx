@@ -1635,6 +1635,32 @@ function VariablesPaie({ user, client, onRetour }) {
   const [errbar, setErrbar] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [fini, setFini] = useState(null);
+  // Alternative transition : déposer son fichier Excel de variables plutôt
+  // que saisir la grille — même /api/depot que l'onglet Documents, nom
+  // préfixé du mois pour que le gestionnaire s'y retrouve.
+  const [depotXls, setDepotXls] = useState(null); // null | "en cours" | { ok } | { erreur }
+  const refXls = useRef(null);
+  const deposerExcel = async (fichier) => {
+    if (!fichier) return;
+    const ext = (fichier.name.split(".").pop() || "").toLowerCase();
+    if (!["xlsx", "xls", "csv", "ods"].includes(ext)) { setDepotXls({ erreur: "Fichier Excel ou CSV attendu (.xlsx, .xls, .csv, .ods)." }); return; }
+    if (fichier.size > 10 * 1024 * 1024) { setDepotXls({ erreur: "10 Mo maximum." }); return; }
+    setDepotXls("en cours");
+    try {
+      const r = await apiFetch(`/api/depot?nom=${encodeURIComponent(`Variables_${mois}_${fichier.name}`)}`, {
+        method: "POST",
+        headers: { "Content-Type": fichier.type || "application/octet-stream" },
+        body: fichier,
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        setDepotXls({ erreur: j.erreur || `Échec du dépôt (HTTP ${r.status}).` });
+      } else {
+        const j = await r.json().catch(() => ({}));
+        setDepotXls({ ok: j.nom || fichier.name });
+      }
+    } catch (_) { setDepotXls({ erreur: "Dépôt impossible — vérifiez votre connexion." }); }
+  };
 
   const cleBrouillon = `osrh-variables-${client}-${mois}`;
 
@@ -1728,10 +1754,22 @@ function VariablesPaie({ user, client, onRetour }) {
             <input type="month" style={{ ...inputStyle, width: 160 }} value={mois} onChange={(e) => setMois(e.target.value)} />
           </div>
         </div>
-        <p style={{ margin: "0 0 14px", fontSize: 12, color: T.mut }}>
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: T.mut }}>
           Client : {client} — une ligne par salarié (plusieurs lignes possibles pour un même salarié, ex. deux absences).
           Brouillon enregistré automatiquement sur ce poste. Accusé envoyé à {user?.email}.
         </p>
+
+        {/* Alternative : dépôt du fichier Excel de variables (transition) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#F4F8FD", border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 12px", marginBottom: 14, fontSize: 12.5 }}>
+          <span style={{ color: T.mut }}>Vous tenez vos variables dans un fichier Excel ?</span>
+          <input ref={refXls} type="file" accept=".xlsx,.xls,.csv,.ods" style={{ display: "none" }}
+            onChange={(e) => { deposerExcel(e.target.files?.[0]); e.target.value = ""; }} />
+          <Btn small onClick={() => refXls.current?.click()} disabled={depotXls === "en cours"}>
+            <Upload size={13} /> {depotXls === "en cours" ? "Dépôt en cours…" : `Déposer le fichier de ${mois.split("-").reverse().join("/")}`}
+          </Btn>
+          {depotXls?.ok && <span style={{ color: T.ok }}>✓ « {depotXls.ok} » transmis à votre gestionnaire.</span>}
+          {depotXls?.erreur && <span style={{ color: T.err }}>✗ {depotXls.erreur}</span>}
+        </div>
 
         {errbar && (
           <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
