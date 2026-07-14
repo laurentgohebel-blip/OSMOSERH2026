@@ -42,7 +42,7 @@ app.http("demande", {
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
       // fin-contrat relève de l'option 'embauche' : elle couvre le cycle
       // contrat complet (entrées ET sorties).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche" };
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
@@ -102,36 +102,57 @@ app.http("demande", {
         return { status: 202, jsonBody: { reference } };
       }
 
-      // Cas particulier « absences » : crée dans la liste Absences
+      // Cas particuliers « gestion du personnel » (absences, visite médicale,
+      // mutuelle) : écriture directe dans la liste dédiée. Le flux « + AR »
+      // attaché à chaque liste envoie l'accusé de réception au demandeur et
+      // la notification au gestionnaire — l'API écrit donc les emails requis.
       if (d.demarche === "absences") {
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")))
-          return { status: 400, jsonBody: { erreur: "Date requise (AAAA-MM-JJ)." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateDebut || "")))
+          return { status: 400, jsonBody: { erreur: "Date de début requise." } };
+        if (d.dateFin && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateFin)))
+          return { status: 400, jsonBody: { erreur: "Date de fin invalide." } };
         if (!d.motif || String(d.motif).trim().length < 1)
           return { status: 400, jsonBody: { erreur: "Motif requis." } };
-        await creerAbsence(clientInfo, d);
-        return { status: 202, jsonBody: { reference: `ABS-${Date.now().toString(36).toUpperCase()}` } };
+        const reference = `ABS-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Absences", email, clientInfo, d, reference, {
+          DateDebut: d.dateDebut,
+          ...(d.dateFin ? { DateFin: d.dateFin } : {}),
+          Motif: String(d.motif).trim().slice(0, 255),
+          JustificatifUrl: String(d.justificatifUrl || "").trim().slice(0, 500),
+          Statut: "Nouvelle",
+        });
+        return { status: 202, jsonBody: { reference } };
       }
 
-      // Cas particulier « visite-medicale » : crée dans la liste Visites médicales
       if (d.demarche === "visite-medicale") {
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.date || "")))
-          return { status: 400, jsonBody: { erreur: "Date requise (AAAA-MM-JJ)." } };
-        await creerVisite(clientInfo, d);
-        return { status: 202, jsonBody: { reference: `VIS-${Date.now().toString(36).toUpperCase()}` } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateVisite || "")))
+          return { status: 400, jsonBody: { erreur: "Date souhaitée requise." } };
+        const reference = `VIS-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Visites médicales", email, clientInfo, d, reference, {
+          DateVisite: d.dateVisite,
+          Statut: "À planifier",
+        });
+        return { status: 202, jsonBody: { reference } };
       }
 
-      // Cas particulier « mutuelle » : crée dans la liste Adhésions mutuelles
       if (d.demarche === "mutuelle") {
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
         if (!d.mutuelle || String(d.mutuelle).trim().length < 1)
           return { status: 400, jsonBody: { erreur: "Mutuelle requise." } };
-        await creerMutuelle(clientInfo, d);
-        return { status: 202, jsonBody: { reference: `MUT-${Date.now().toString(36).toUpperCase()}` } };
+        if (d.dateAdhesion && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateAdhesion)))
+          return { status: 400, jsonBody: { erreur: "Date d'adhésion invalide." } };
+        const reference = `MUT-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Adhésions mutuelles", email, clientInfo, d, reference, {
+          Mutuelle: String(d.mutuelle).trim().slice(0, 120),
+          DateAdhesion: d.dateAdhesion || new Date().toISOString().slice(0, 10),
+          Statut: "Demande",
+        });
+        return { status: 202, jsonBody: { reference } };
       }
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
@@ -185,70 +206,33 @@ app.http("demande", {
   }
 });
 
-/* Créer une ligne Absences */
-async function creerAbsence(clientInfo, d) {
+/* Écrit une ligne « gestion du personnel » (Absences, Visites médicales,
+   Adhésions mutuelles) : socle commun imposé par le serveur (identité client,
+   référence, emails pour le flux d'accusé de réception) + champs spécifiques.
+   Toute réponse non-2xx de Graph LÈVE une erreur : le client ne reçoit
+   jamais une référence pour une ligne qui n'a pas été écrite. */
+async function creerElementPersonnel(liste, email, clientInfo, d, reference, champs) {
   const tok = await tokenGraph();
   const ids = await idsListes(tok);
-  const listeId = ids["Absences"];
-  const nomPrenom = String(d.salarie).trim().split(/\s+/);
-  const body = {
-    fields: {
-      "CodeClient": clientInfo.codeClient,
-      "SalarieNom": nomPrenom[0] || "",
-      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
-      "Date": d.date,
-      "Motif": d.motif || "",
-      "JustificatifUrl": d.justificatifUrl || "",
-    }
-  };
-  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
+  if (!ids[liste]) throw { status: 502, erreur: `Liste « ${liste} » introuvable.` };
+  const mots = String(d.salarie).trim().split(/\s+/);
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids[liste]}/items`, {
     method: "POST",
     headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ fields: {
+      Title: String(d.salarie).trim().slice(0, 255),
+      Reference: reference,
+      CodeClient: clientInfo.codeClient,
+      RaisonSociale: clientInfo.raisonSociale || "",
+      SalarieNom: (mots[0] || "").toUpperCase(),
+      SalariePrenom: mots.slice(1).join(" "),
+      EmailDemandeur: email,
+      EmailGestionnaire: clientInfo.emailGestionnaire || "",
+      ...champs,
+    } }),
   });
-}
-
-/* Créer une ligne Visites médicales */
-async function creerVisite(clientInfo, d) {
-  const tok = await tokenGraph();
-  const ids = await idsListes(tok);
-  const listeId = ids["Visites médicales"];
-  const nomPrenom = String(d.salarie).trim().split(/\s+/);
-  const body = {
-    fields: {
-      "CodeClient": clientInfo.codeClient,
-      "SalarieNom": nomPrenom[0] || "",
-      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
-      "Date": d.date,
-      "Statut": "À planifier",
-    }
-  };
-  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-}
-
-/* Créer une ligne Adhésions mutuelles */
-async function creerMutuelle(clientInfo, d) {
-  const tok = await tokenGraph();
-  const ids = await idsListes(tok);
-  const listeId = ids["Adhésions mutuelles"];
-  const nomPrenom = String(d.salarie).trim().split(/\s+/);
-  const body = {
-    fields: {
-      "CodeClient": clientInfo.codeClient,
-      "SalarieNom": nomPrenom[0] || "",
-      "SalariePrenom": nomPrenom.slice(1).join(" ") || "",
-      "Mutuelle": d.mutuelle || "",
-      "DateAdhesion": d.dateAdhesion || new Date().toISOString().slice(0, 10),
-      "Statut": "Demande",
-    }
-  };
-  await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  if (!r.ok) {
+    const corps = (await r.text().catch(() => "")).slice(0, 300);
+    throw { status: 502, erreur: `Enregistrement dans « ${liste} » impossible — réessayez.`, detail: corps };
+  }
 }

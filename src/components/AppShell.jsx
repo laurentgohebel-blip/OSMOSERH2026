@@ -104,7 +104,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche" };
 
 const TUILES = [
   { id: "personnel", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
@@ -2171,20 +2171,21 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
    ABSENCES
    ================================================================ */
 function DemandeAbsence({ user, client, onRetour }) {
-  const [f, setF] = useState({ salarie: "", date: "", motif: "", justificatifUrl: "" });
+  const VIDE = { salarie: "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
+  const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(null); // { ok } | { erreur }
   const [envoi, setEnvoi] = useState(false);
 
   const envoyer = async () => {
-    if (!f.salarie.trim() || !f.date || !f.motif.trim()) { setErr(true); return; }
-    setEnvoi(true);
+    if (!f.salarie.trim() || !f.dateDebut || !f.motif.trim()) { setErr(true); return; }
+    setEnvoi(true); setMsg(null);
     try {
-      const r = await apiFetch("/api/demande?demarche=absences", { method: "POST", body: JSON.stringify(f) });
-      const j = await r.json();
-      if (r.ok) { setMsg(`Absence déclarée — réf. ${j.reference}`); onRetour(); }
-      else setMsg(j.erreur || "Erreur");
-    } catch { setMsg("Erreur réseau"); }
+      const r = await apiFetch("/api/demande?demarche=absences", { method: "POST", body: JSON.stringify({ demarche: "absences", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Absence déclarée — réf. ${j.reference}. Un accusé de réception vous est adressé ; votre gestionnaire est prévenu.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
     setEnvoi(false);
   };
 
@@ -2195,30 +2196,38 @@ function DemandeAbsence({ user, client, onRetour }) {
         <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une absence</h2>
       </div>
 
-      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
 
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date *</label>
-          <input type="date" style={{ ...inputStyle, borderColor: err && !f.date ? T.err : T.border }} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Du *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateDebut ? T.err : T.border }} value={f.dateDebut} onChange={(e) => setF({ ...f, dateDebut: e.target.value })} />
         </div>
         <div>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Motif *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.motif ? T.err : T.border }} placeholder="Maladie, congés…" value={f.motif} onChange={(e) => setF({ ...f, motif: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Au (si connu)</label>
+          <input type="date" style={inputStyle} value={f.dateFin} onChange={(e) => setF({ ...f, dateFin: e.target.value })} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Justificatif (URL optionnel)</label>
-          <input type="text" style={inputStyle} placeholder="Lien vers le document…" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Motif *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.motif.trim() ? T.err : T.border }} placeholder="Maladie, congés, absence injustifiée…" value={f.motif} onChange={(e) => setF({ ...f, motif: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Justificatif (lien optionnel)</label>
+          <input type="text" style={inputStyle} placeholder="Ex. lien vers l'arrêt déposé dans Documents" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
         </div>
       </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Un justificatif papier ? Déposez-le dans l'onglet Documents puis collez le lien ici — ou transmettez-le à votre gestionnaire.
+      </p>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn onClick={onRetour}>Annuler</Btn>
-        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Déclarer"}</Btn>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Déclarer l'absence"}</Btn>
       </div>
     </>
   );
@@ -2228,20 +2237,21 @@ function DemandeAbsence({ user, client, onRetour }) {
    VISITE MÉDICALE
    ================================================================ */
 function DemandeVisite({ user, client, onRetour }) {
-  const [f, setF] = useState({ salarie: "", date: "" });
+  const VIDE = { salarie: "", dateVisite: "" };
+  const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(null);
   const [envoi, setEnvoi] = useState(false);
 
   const envoyer = async () => {
-    if (!f.salarie.trim() || !f.date) { setErr(true); return; }
-    setEnvoi(true);
+    if (!f.salarie.trim() || !f.dateVisite) { setErr(true); return; }
+    setEnvoi(true); setMsg(null);
     try {
-      const r = await apiFetch("/api/demande?demarche=visite-medicale", { method: "POST", body: JSON.stringify(f) });
-      const j = await r.json();
-      if (r.ok) { setMsg(`Visite médicale programmée — réf. ${j.reference}`); onRetour(); }
-      else setMsg(j.erreur || "Erreur");
-    } catch { setMsg("Erreur réseau"); }
+      const r = await apiFetch("/api/demande?demarche=visite-medicale", { method: "POST", body: JSON.stringify({ demarche: "visite-medicale", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire organise la visite et vous confirme le rendez-vous.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
     setEnvoi(false);
   };
 
@@ -2252,22 +2262,26 @@ function DemandeVisite({ user, client, onRetour }) {
         <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Visite médicale</h2>
       </div>
 
-      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
 
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date prévue *</label>
-          <input type="date" style={{ ...inputStyle, borderColor: err && !f.date ? T.err : T.border }} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date souhaitée *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateVisite ? T.err : T.border }} value={f.dateVisite} onChange={(e) => setF({ ...f, dateVisite: e.target.value })} />
         </div>
       </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Embauche, reprise après arrêt, visite périodique… votre gestionnaire prend contact avec le service de santé au travail.
+      </p>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn onClick={onRetour}>Annuler</Btn>
-        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Valider"}</Btn>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Demander la visite"}</Btn>
       </div>
     </>
   );
@@ -2277,20 +2291,21 @@ function DemandeVisite({ user, client, onRetour }) {
    MUTUELLE
    ================================================================ */
 function Demandemutuelle({ user, client, onRetour }) {
-  const [f, setF] = useState({ salarie: "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) });
+  const VIDE = { salarie: "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) };
+  const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
-  const [msg, setMsg] = useState("");
+  const [msg, setMsg] = useState(null);
   const [envoi, setEnvoi] = useState(false);
 
   const envoyer = async () => {
     if (!f.salarie.trim() || !f.mutuelle.trim()) { setErr(true); return; }
-    setEnvoi(true);
+    setEnvoi(true); setMsg(null);
     try {
-      const r = await apiFetch("/api/demande?demarche=mutuelle", { method: "POST", body: JSON.stringify(f) });
-      const j = await r.json();
-      if (r.ok) { setMsg(`Adhésion enregistrée — réf. ${j.reference}`); onRetour(); }
-      else setMsg(j.erreur || "Erreur");
-    } catch { setMsg("Erreur réseau"); }
+      const r = await apiFetch("/api/demande?demarche=mutuelle", { method: "POST", body: JSON.stringify({ demarche: "mutuelle", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire traite l'adhésion et revient vers vous.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
     setEnvoi(false);
   };
 
@@ -2301,26 +2316,27 @@ function Demandemutuelle({ user, client, onRetour }) {
         <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Adhésion mutuelle</h2>
       </div>
 
-      {msg && <div style={{ background: "#E6F1FB", color: "#0C447C", border: "1px solid #B5D4F4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>{msg}</div>}
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
 
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.salarie.trim() ? T.err : T.border }} placeholder="Nom Prénom" value={f.salarie} onChange={(e) => setF({ ...f, salarie: e.target.value })} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Mutuelle *</label>
-          <input type="text" style={{ ...inputStyle, borderColor: err && !f.mutuelle ? T.err : T.border }} placeholder="Nom de la mutuelle ou du régime…" value={f.mutuelle} onChange={(e) => setF({ ...f, mutuelle: e.target.value })} />
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Mutuelle / demande *</label>
+          <input type="text" style={{ ...inputStyle, borderColor: err && !f.mutuelle.trim() ? T.err : T.border }} placeholder="Ex. adhésion Alan, dispense (mutuelle du conjoint)…" value={f.mutuelle} onChange={(e) => setF({ ...f, mutuelle: e.target.value })} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
-          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'adhésion</label>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'effet souhaitée</label>
           <input type="date" style={inputStyle} value={f.dateAdhesion} onChange={(e) => setF({ ...f, dateAdhesion: e.target.value })} />
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn onClick={onRetour}>Annuler</Btn>
-        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Valider"}</Btn>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Transmettre"}</Btn>
       </div>
     </>
   );
