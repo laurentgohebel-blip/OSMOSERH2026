@@ -359,8 +359,10 @@ export default function AppShell({ user, onLogout }) {
           .osrh-kpi-val { font-size: 30px !important; }
           .osrh-carte h2 { font-size: 15px; }
           .osrh-barres { height: 170px !important; }
-          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; grid-auto-rows: minmax(260px, 330px) !important; }
-          .osrh-tuile { padding: 32px 20px !important; }
+          /* Hauteur des tuiles : naturelle à toutes les tailles (correctif
+             Laurent — ne pas forcer les hauteurs, le padding suffit). */
+          .osrh-tuilegrid { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important; }
+          .osrh-tuile { padding: 40px 20px !important; }
         }
         @media (max-width: 760px) {
           .osrh-dashgrid { grid-template-columns: 1fr; grid-template-areas: "rep" "mois" "pro" "tra"; }
