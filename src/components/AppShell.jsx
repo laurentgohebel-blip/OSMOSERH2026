@@ -185,6 +185,9 @@ const inputInvalid = { ...inputStyle, border: `1px solid ${T.err}` };
 export default function AppShell({ user, onLogout }) {
   const [vue, setVue] = useState("dash");
   const [tuile, setTuile] = useState(null);
+  // Salarié pré-rempli quand une démarche est lancée depuis sa fiche
+  // (Gestion du personnel) — vidé à toute ouverture depuis la grille.
+  const [salariePrerempli, setSalariePrerempli] = useState("");
   const [dossierActif, setDossierActif] = useState("Contrats");
   const [db, setDb] = useState(null);
   const [toast, setToast] = useState(null);
@@ -650,7 +653,7 @@ export default function AppShell({ user, onLogout }) {
                   <button
                     key={t.id}
                     className="osrh-tuile"
-                    onClick={() => inclus ? setTuile(t) : notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.")}
+                    onClick={() => { if (!inclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH."); setSalariePrerempli(""); setTuile(t); }}
                     style={{
                       background: T.card, border: `1px solid ${T.border}`, borderRadius: 14,
                       padding: "26px 18px", cursor: "pointer", textAlign: "center",
@@ -685,9 +688,15 @@ export default function AppShell({ user, onLogout }) {
           <VariablesPaie user={user} client={codeClient} onRetour={() => setTuile(null)} />
         )}
 
+        {/* Le dossier du personnel aussi : liste + fiche en pleine largeur. */}
+        {vue === "prod" && tuile && tuile.id === "personnel" && (
+          <GestionPersonnel user={user} client={codeClient} onRetour={() => setTuile(null)}
+            onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
+        )}
+
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} onRetour={() => setTuile(null)} />
@@ -699,19 +708,16 @@ export default function AppShell({ user, onLogout }) {
               <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "fin" && (
-              <DemandeFinContrat user={user} client={codeClient} onRetour={() => setTuile(null)} />
-            )}
-            {tuile.id === "personnel" && (
-              <GestionPersonnel user={user} client={codeClient} db={db} onRetour={() => setTuile(null)} />
+              <DemandeFinContrat user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "absences" && (
-              <DemandeAbsence user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <DemandeAbsence user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "visite" && (
-              <DemandeVisite user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <DemandeVisite user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "mutuelle" && (
-              <Demandemutuelle user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <Demandemutuelle user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
@@ -1561,9 +1567,12 @@ function DemandeEmbauche({ user, client, onRetour }) {
    ================================================================ */
 const MOTIFS_FIN = ["Démission", "Rupture conventionnelle", "Licenciement pour motif personnel", "Licenciement pour motif économique", "Fin de CDD (terme prévu)", "Rupture anticipée de CDD", "Rupture période d'essai (employeur)", "Rupture période d'essai (salarié)", "Départ à la retraite", "Mise à la retraite", "Décès", "Autre"];
 
-function DemandeFinContrat({ user, client, onRetour }) {
+function DemandeFinContrat({ user, client, salarieInitial, onRetour }) {
+  // salarieInitial (« NOM Prénom ») vient de la fiche salarié : premier mot
+  // = nom, le reste = prénom — modifiable librement dans le formulaire.
+  const initSal = String(salarieInitial || "").trim().split(/\s+/);
   const [f, setF] = useState({
-    typeContrat: "CDI", motif: "", nom: "", prenom: "", matricule: "",
+    typeContrat: "CDI", motif: "", nom: initSal[0] || "", prenom: initSal.slice(1).join(" "), matricule: "",
     dateFin: "", dernierJour: "", preavis: "", congesRestants: "", commentaire: "",
   });
   const [err, setErr] = useState({});
@@ -2170,8 +2179,8 @@ function FormulaireTuile({ tuile, onRetour, onSave }) {
 /* ================================================================
    ABSENCES
    ================================================================ */
-function DemandeAbsence({ user, client, onRetour }) {
-  const VIDE = { salarie: "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
+function DemandeAbsence({ user, client, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null); // { ok } | { erreur }
@@ -2236,8 +2245,8 @@ function DemandeAbsence({ user, client, onRetour }) {
 /* ================================================================
    VISITE MÉDICALE
    ================================================================ */
-function DemandeVisite({ user, client, onRetour }) {
-  const VIDE = { salarie: "", dateVisite: "" };
+function DemandeVisite({ user, client, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", dateVisite: "" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -2290,8 +2299,8 @@ function DemandeVisite({ user, client, onRetour }) {
 /* ================================================================
    MUTUELLE
    ================================================================ */
-function Demandemutuelle({ user, client, onRetour }) {
-  const VIDE = { salarie: "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) };
+function Demandemutuelle({ user, client, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", mutuelle: "", dateAdhesion: new Date().toISOString().slice(0, 10) };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -2345,101 +2354,246 @@ function Demandemutuelle({ user, client, onRetour }) {
 /* ================================================================
    GESTION DU PERSONNEL — dossier salarié centralisé
    ================================================================ */
-function GestionPersonnel({ user, client, db, onRetour }) {
-  const [salSelId, setSalSelId] = useState(null);
-  const [ong, setOng] = useState("Contrat");
-  const salaries = db?.contrats || [];
-  const sal = salaries.find((s) => s.id === salSelId);
+const DEMO_PERSONNEL = {
+  salaries: [
+    { cle: "DUPONT MARIE", nom: "DUPONT", prenom: "Marie", type: "CDI", poste: "Comptable", debut: "2026-09-01", fin: null },
+    { cle: "MARTIN PAUL", nom: "MARTIN", prenom: "Paul", type: "CDD", poste: "Assistant RH", debut: "2026-08-15", fin: dansNJours(26) },
+  ],
+  absences: [
+    { cle: "MARTIN PAUL", salarie: "Martin Paul", du: dansNJours(-6), au: dansNJours(-4), motif: "Maladie", justificatifUrl: "", statut: "Nouvelle", reference: "ABS-DEMO1" },
+  ],
+  visites: [
+    { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO1" },
+  ],
+  mutuelles: [],
+  fins: [],
+};
 
-  if (salSelId && sal) {
-    const nom = `${(sal.nom || "").toUpperCase()} ${sal.prenom || ""}`.trim();
-    const onglets = ["Contrat", "Absences", "Visite", "Mutuelle", "Fin"];
+function GestionPersonnel({ user, client, onRetour, onDemarche }) {
+  const [dossier, setDossier] = useState(null); // null | { salaries… } | { erreur } | { demo }
+  const [salCle, setSalCle] = useState(null);
+  const [ong, setOng] = useState("Contrat");
+
+  useEffect(() => {
+    apiFetch("/api/personnel")
+      .then(async (r) => {
+        if (r.ok) return setDossier(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setDossier(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Dossier indisponible (HTTP ${r.status}).` });
+      })
+      .catch(() => setDossier(import.meta.env.DEV ? { demo: true } : { erreur: "Dossier momentanément indisponible — réessayez." }));
+  }, []);
+
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+  if (dossier === null) {
+    return (
+      <>
+        <EnteteFiche titre="Gestion du personnel" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut }}>Chargement du dossier…</p>
+      </>
+    );
+  }
+  if (dossier.erreur) {
+    return (
+      <>
+        <EnteteFiche titre="Gestion du personnel" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut, margin: "12px 0" }}>{dossier.erreur}</p>
+        <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+      </>
+    );
+  }
+  const src = dossier.demo ? DEMO_PERSONNEL : dossier;
+  const salaries = src.salaries || [];
+  const sal = salaries.find((s) => s.cle === salCle);
+
+  /* ── Fiche d'un salarié ─────────────────────────────────────── */
+  if (sal) {
+    const nomComplet = `${sal.nom} ${sal.prenom}`.trim();
+    const absences = (src.absences || []).filter((x) => x.cle === sal.cle);
+    const visites = (src.visites || []).filter((x) => x.cle === sal.cle);
+    const mutuelles = (src.mutuelles || []).filter((x) => x.cle === sal.cle);
+    const fins = (src.fins || []).filter((x) => x.cle === sal.cle);
+    const onglets = [
+      { id: "Contrat", n: null }, { id: "Absences", n: absences.length },
+      { id: "Visites", n: visites.length }, { id: "Mutuelle", n: mutuelles.length },
+      { id: "Fin", n: fins.length },
+    ];
 
     return (
       <>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-          <button onClick={() => setSalSelId(null)} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
-          <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>{nom}</h2>
-        </div>
+        <EnteteFiche titre={nomComplet} onRetour={() => { setSalCle(null); setOng("Contrat"); }} />
+        <p style={{ margin: "-12px 0 16px", fontSize: 12.5, color: T.mut }}>
+          {sal.type}{sal.poste ? ` — ${sal.poste}` : ""} · entré le {fr(sal.debut)}{sal.fin ? ` · fin prévue le ${fr(sal.fin)}` : ""}
+        </p>
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 16, borderBottom: `1px solid ${T.border}`, paddingBottom: 8 }}>
+        <div style={{ display: "flex", gap: 4, marginBottom: 16, borderBottom: `1px solid ${T.border}`, flexWrap: "wrap" }}>
           {onglets.map((o) => (
-            <button key={o} onClick={() => setOng(o)} style={{
-              all: "unset", cursor: "pointer", padding: "6px 14px", fontSize: 13, fontFamily: T.sans,
-              color: ong === o ? T.accent : T.mut, borderBottom: ong === o ? `2px solid ${T.accent}` : "none",
-              fontWeight: ong === o ? 600 : 400,
-            }}>{o}</button>
+            <button key={o.id} onClick={() => setOng(o.id)} style={{
+              all: "unset", cursor: "pointer", padding: "8px 14px", fontSize: 13, fontFamily: T.sans,
+              color: ong === o.id ? T.accent : T.mut,
+              borderBottom: ong === o.id ? `2px solid ${T.accent}` : "2px solid transparent",
+              fontWeight: ong === o.id ? 600 : 400,
+            }}>
+              {o.id}{o.n ? ` (${o.n})` : ""}
+            </button>
           ))}
         </div>
 
         {ong === "Contrat" && (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
-            <div style={{ marginBottom: 10 }}><strong>Type :</strong> {sal.type}</div>
-            <div style={{ marginBottom: 10 }}><strong>Poste :</strong> {sal.poste}</div>
-            <div style={{ marginBottom: 10 }}><strong>Début :</strong> {sal.debut?.split("-").reverse().join("/")}</div>
-            {sal.type === "CDD" && <div><strong>Fin :</strong> prévue</div>}
-            <Btn primary small style={{ marginTop: 14 }} onClick={() => alert("Édition contrat — bientôt")}>Modifier</Btn>
-          </div>
+          <Carte>
+            {[["Type de contrat", sal.type || "—"], ["Poste", sal.poste || "—"], ["Date d'entrée", fr(sal.debut)], ["Fin prévue", sal.fin ? fr(sal.fin) : "— (contrat en cours)"]].map(([l, v], i, t) => (
+              <Rangee key={l} gauche={<span style={{ color: T.mut }}>{l}</span>} droite={<strong>{v}</strong>} dernier={i === t.length - 1} />
+            ))}
+          </Carte>
         )}
+
         {ong === "Absences" && (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
-            <div style={{ marginBottom: 14, color: T.mut }}>Aucune absence déclarée.</div>
-            <Btn primary small onClick={() => alert("Ajouter une absence via la tuile rapide")}>+ Déclarer une absence</Btn>
-          </div>
+          <>
+            <Carte>
+              {absences.length === 0 && <Vide texte="Aucune absence déclarée pour ce salarié." />}
+              {absences.map((a, i) => (
+                <Rangee key={i} dernier={i === absences.length - 1}
+                  gauche={<><strong>{a.motif || "Absence"}</strong><span style={{ color: T.mut }}> — du {fr(a.du)}{a.au ? ` au ${fr(a.au)}` : ""}</span></>}
+                  milieu={a.reference}
+                  droite={<Badge s={a.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("absences", nomComplet)}><Plus size={14} /> Déclarer une absence</Btn>
+            </div>
+          </>
         )}
-        {ong === "Visite" && (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
-            <div style={{ marginBottom: 14, color: T.mut }}>Aucune visite programmée.</div>
-            <Btn primary small onClick={() => alert("Ajouter une visite via la tuile rapide")}>+ Programmer une visite</Btn>
-          </div>
+
+        {ong === "Visites" && (
+          <>
+            <Carte>
+              {visites.length === 0 && <Vide texte="Aucune visite médicale enregistrée pour ce salarié." />}
+              {visites.map((v, i) => (
+                <Rangee key={i} dernier={i === visites.length - 1}
+                  gauche={<><strong>Visite médicale</strong><span style={{ color: T.mut }}> — {fr(v.date)}</span></>}
+                  milieu={v.reference}
+                  droite={<Badge s={v.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("visite", nomComplet)}><Plus size={14} /> Demander une visite</Btn>
+            </div>
+          </>
         )}
+
         {ong === "Mutuelle" && (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
-            <div style={{ marginBottom: 14, color: T.mut }}>Aucune mutuelle enregistrée.</div>
-            <Btn primary small onClick={() => alert("Ajouter une mutuelle via la tuile rapide")}>+ Ajouter une mutuelle</Btn>
-          </div>
+          <>
+            <Carte>
+              {mutuelles.length === 0 && <Vide texte="Aucune demande mutuelle pour ce salarié." />}
+              {mutuelles.map((m, i) => (
+                <Rangee key={i} dernier={i === mutuelles.length - 1}
+                  gauche={<><strong>{m.mutuelle || "Mutuelle"}</strong><span style={{ color: T.mut }}> — effet {fr(m.date)}</span></>}
+                  milieu={m.reference}
+                  droite={<Badge s={m.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("mutuelle", nomComplet)}><Plus size={14} /> Demande mutuelle</Btn>
+            </div>
+          </>
         )}
+
         {ong === "Fin" && (
-          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, fontSize: 13 }}>
-            <div style={{ marginBottom: 14, color: T.mut }}>Contrat actif — pas de fin programmée.</div>
-            <Btn primary small onClick={() => alert("Déclarer une fin via la tuile rapide")}>+ Déclarer une fin</Btn>
-          </div>
+          <>
+            <Carte>
+              {fins.length === 0 && <Vide texte="Aucune fin de contrat déclarée — contrat en cours." />}
+              {fins.map((x, i) => (
+                <Rangee key={i} dernier={i === fins.length - 1}
+                  gauche={<><strong>{x.motif || "Fin de contrat"}</strong><span style={{ color: T.mut }}> — au {fr(x.date)}</span></>}
+                  milieu={x.reference}
+                  droite={<Badge s={x.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("fin", nomComplet)}><UserMinus size={14} /> Déclarer une fin de contrat</Btn>
+            </div>
+          </>
         )}
       </>
     );
   }
 
+  /* ── Liste des salariés ─────────────────────────────────────── */
+  const compteur = (liste, cle) => (src[liste] || []).filter((x) => x.cle === cle).length;
   return (
     <>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
-        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
-        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Gestion du personnel</h2>
-      </div>
+      <EnteteFiche titre="Gestion du personnel" onRetour={onRetour} />
+      <p style={{ margin: "-12px 0 16px", fontSize: 13, color: T.mut }}>
+        Les salariés déclarés via la démarche Embauche — cliquez pour ouvrir le dossier.
+      </p>
 
-      {salaries.length === 0 && (
+      {salaries.length === 0 ? (
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
-          Aucun salarié déclaré.<br />
-          Débutez par une embauche pour créer le premier dossier.
+          Aucun salarié déclaré pour l'instant.<br />
+          Déclarez une embauche pour créer le premier dossier.
+        </div>
+      ) : (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 90px 100px 1fr", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Salarié</span><span>Poste</span><span>Contrat</span><span>Entrée</span><span>Suivi</span>
+          </div>
+          {salaries.map((s, i) => {
+            const n = compteur("absences", s.cle) + compteur("visites", s.cle) + compteur("mutuelles", s.cle) + compteur("fins", s.cle);
+            return (
+              <button key={s.cle + i} onClick={() => { setSalCle(s.cle); setOng("Contrat"); }} style={{
+                all: "unset", boxSizing: "border-box", width: "100%", display: "grid",
+                gridTemplateColumns: "2fr 2fr 90px 100px 1fr", gap: 8, padding: "12px 16px",
+                borderBottom: i < salaries.length - 1 ? `1px solid ${T.border}` : "none",
+                cursor: "pointer", fontSize: 13, fontFamily: T.sans, color: T.ink, alignItems: "center",
+              }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "#FAFBFD")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.nom} {s.prenom}</span>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.poste || "—"}</span>
+                <span>{s.type || "—"}</span>
+                <span style={{ color: T.mut }}>{fr(s.debut)}</span>
+                <span style={{ color: T.mut, fontSize: 12 }}>{n > 0 ? `${n} élément${n > 1 ? "s" : ""} →` : "→"}</span>
+              </button>
+            );
+          })}
         </div>
       )}
 
-      {salaries.length > 0 && (
-        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
-          {salaries.map((s, i) => (
-            <button key={i} onClick={() => setSalSelId(s.id)} style={{
-              all: "unset", display: "flex", justifyContent: "space-between", alignItems: "center",
-              padding: "12px 16px", borderBottom: i < salaries.length - 1 ? `1px solid ${T.border}` : "none",
-              cursor: "pointer", fontSize: 13, fontFamily: T.sans, color: T.ink,
-            }}>
-              <div>
-                <div style={{ fontWeight: 600, marginBottom: 3 }}>{(s.nom || "").toUpperCase()} {s.prenom}</div>
-                <div style={{ fontSize: 12, color: T.mut }}>{s.poste} • {s.type}</div>
-              </div>
-              <div style={{ fontSize: 12, color: T.mut, flexShrink: 0 }}>→</div>
-            </button>
-          ))}
-        </div>
-      )}
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+        <ShieldCheck size={13} />
+        {dossier.demo
+          ? "Données de démonstration — connectez-vous en production pour vos salariés réels"
+          : "Dossier alimenté par vos démarches — les déclarations sont rapprochées par nom et prénom du salarié."}
+      </div>
     </>
   );
+}
+
+/* En-tête commun des vues « gestion du personnel » (retour + titre). */
+function EnteteFiche({ titre, onRetour }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+      <button onClick={onRetour} aria-label="Retour" style={{ all: "unset", cursor: "pointer", color: T.mut, padding: 4 }}><ArrowLeft size={18} /></button>
+      <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>{titre}</h2>
+    </div>
+  );
+}
+
+/* Blocs de la fiche salarié — au niveau module (jamais de composant défini
+   dans un composant : cause de démontages à chaque rendu). */
+function Carte({ children }) {
+  return <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>{children}</div>;
+}
+function Rangee({ gauche, milieu, droite, dernier }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "11px 16px", fontSize: 13, borderBottom: dernier ? "none" : `1px solid ${T.border}` }}>
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{gauche}</span>
+      {milieu && <span style={{ color: T.mut, fontSize: 12, flexShrink: 0 }}>{milieu}</span>}
+      {droite}
+    </div>
+  );
+}
+function Vide({ texte }) {
+  return <div style={{ padding: "18px 16px", fontSize: 13, color: T.mut }}>{texte}</div>;
 }
