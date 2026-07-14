@@ -102,6 +102,20 @@ app.http("demande", {
         return { status: 202, jsonBody: { reference } };
       }
 
+      // Cas particulier « contact » : message au gestionnaire — JAMAIS
+      // optionnel (le canal fait partie du service de base). Écrit dans
+      // « Messages gestionnaire » ; le flux « + AR » notifie et accuse
+      // réception, la réponse du gestionnaire part par e-mail classique.
+      if (d.demarche === "contact") {
+        if (!d.objet || String(d.objet).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Objet requis." } };
+        if (!d.message || String(d.message).trim().length < 10)
+          return { status: 400, jsonBody: { erreur: "Message trop court — précisez votre demande." } };
+        const reference = `MSG-${Date.now().toString(36).toUpperCase()}`;
+        await creerMessageGestionnaire(email, clientInfo, d, reference);
+        return { status: 202, jsonBody: { reference } };
+      }
+
       // Cas particuliers « gestion du personnel » (absences, visite médicale,
       // mutuelle) : écriture directe dans la liste dédiée. Le flux « + AR »
       // attaché à chaque liste envoie l'accusé de réception au demandeur et
@@ -205,6 +219,29 @@ app.http("demande", {
     return { status: 202, jsonBody: { reference } };
   }
 });
+
+/* Écrit un message client dans « Messages gestionnaire » (canal de contact).
+   Même exigence que les autres écritures : réponse Graph vérifiée. */
+async function creerMessageGestionnaire(email, clientInfo, d, reference) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  if (!ids["Messages gestionnaire"]) throw { status: 502, erreur: "Canal gestionnaire indisponible." };
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Messages gestionnaire"]}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields: {
+      Title: String(d.objet).trim().slice(0, 255),
+      Message: String(d.message).trim().slice(0, 4000),
+      Reference: reference,
+      CodeClient: clientInfo.codeClient,
+      RaisonSociale: clientInfo.raisonSociale || "",
+      EmailDemandeur: email,
+      EmailGestionnaire: clientInfo.emailGestionnaire || "",
+      Statut: "Nouveau",
+    } }),
+  });
+  if (!r.ok) throw { status: 502, erreur: "Envoi du message impossible — réessayez." };
+}
 
 /* Écrit une ligne « gestion du personnel » (Absences, Visites médicales,
    Adhésions mutuelles) : socle commun imposé par le serveur (identité client,

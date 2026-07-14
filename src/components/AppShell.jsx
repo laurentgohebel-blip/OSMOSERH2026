@@ -113,6 +113,7 @@ const TUILES = [
   { id: "variables", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "attestation", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "acompte", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
+  { id: "contact", titre: "Mon gestionnaire", sous: "Poser une question, transmettre", icone: Send, cablee: true },
   { id: "absences", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
   { id: "visite", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
   { id: "mutuelle", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
@@ -709,6 +710,9 @@ export default function AppShell({ user, onLogout }) {
             )}
             {tuile.id === "fin" && (
               <DemandeFinContrat user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "contact" && (
+              <ContactGestionnaire user={user} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "absences" && (
               <DemandeAbsence user={user} client={codeClient} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
@@ -2565,6 +2569,70 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
         {dossier.demo
           ? "Données de démonstration — connectez-vous en production pour vos salariés réels"
           : "Dossier alimenté par vos démarches — les déclarations sont rapprochées par nom et prénom du salarié."}
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   CONTACTER MON GESTIONNAIRE — canal de base, jamais optionnel.
+   Le message part dans « Messages gestionnaire » ; le flux notifie le
+   gestionnaire (réponse par e-mail classique) et accuse réception.
+   ================================================================ */
+const OBJETS_CONTACT = ["Question sur la paie", "Question contrat / salarié", "Transmission d'informations", "Demande de document", "Autre demande"];
+
+function ContactGestionnaire({ user, onRetour }) {
+  const VIDE = { objet: "", message: "" };
+  const [f, setF] = useState(VIDE);
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.objet || f.message.trim().length < 10) { setErr(true); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande?demarche=contact", { method: "POST", body: JSON.stringify({ demarche: "contact", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Message transmis — réf. ${j.reference}. Votre gestionnaire vous répond par e-mail.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Contacter mon gestionnaire</h2>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      <div style={{ display: "grid", gap: 14, marginBottom: 8 }}>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Objet *</label>
+          <select style={{ ...inputStyle, borderColor: err && !f.objet ? T.err : T.border }} value={f.objet} onChange={(e) => setF({ ...f, objet: e.target.value })}>
+            <option value="">— Choisir un objet —</option>
+            {OBJETS_CONTACT.map((o) => <option key={o} value={o}>{o}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Votre message *</label>
+          <textarea rows={7} style={{ ...inputStyle, resize: "vertical", borderColor: err && f.message.trim().length < 10 ? T.err : T.border }}
+            placeholder="Décrivez votre question ou l'information à transmettre — votre gestionnaire a déjà votre contexte client."
+            value={f.message} onChange={(e) => setF({ ...f, message: e.target.value })} />
+          {err && f.message.trim().length < 10 && <p style={{ margin: "4px 0 0", fontSize: 11.5, color: T.err }}>Quelques mots de plus — au moins une phrase.</p>}
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "0 0 16px" }}>
+        Réponse par e-mail à <strong>{user?.email || "votre adresse de connexion"}</strong> — un accusé de réception vous est envoyé immédiatement.
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}><Send size={14} /> {envoi ? "Envoi…" : "Envoyer le message"}</Btn>
       </div>
     </>
   );
