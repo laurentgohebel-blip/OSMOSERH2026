@@ -4,8 +4,13 @@
 // déclenche le mode démo des formulaires, comme avant.
 import { pca } from "./msalClient";
 import { apiRequest } from "./authConfig";
+import { demoActive, reponseDemo } from "./demo/modeDemo";
 
 export async function apiFetch(chemin, options = {}) {
+  // Mode démonstration : tout /api/* est servi localement (données fictives),
+  // aucun appel réseau, aucun jeton — voir src/demo/modeDemo.js.
+  if (demoActive()) return reponseDemo(chemin, options);
+
   let jeton = null;
   const compte = pca.getAllAccounts()[0];
   if (compte) {

@@ -10,6 +10,7 @@
 import React, { useState } from "react";
 import { useMsal } from "@azure/msal-react";
 import { loginRequest } from "./authConfig";
+import { entrerDemo } from "./demo/modeDemo";
 
 export default function LoginPage() {
   const { instance } = useMsal();
@@ -122,7 +123,21 @@ export default function LoginPage() {
             professionnelle — votre gestionnaire Osmose RH activera ensuite
             votre accès.
           </p>
-          <p className="osrh-login-note" style={{ marginTop: 10 }}>
+
+          {/* Mode démonstration : portail complet sur un client fictif,
+              sans compte — aucun envoi réel (voir src/demo/modeDemo.js). */}
+          <button
+            onClick={() => { entrerDemo(); window.location.hash = "/dashboard"; window.location.reload(); }}
+            style={{
+              all: "unset", cursor: "pointer", display: "block", width: "100%",
+              boxSizing: "border-box", marginTop: 22, padding: "11px 20px", textAlign: "center",
+              border: "1px solid #D5DDE8", borderRadius: 10, fontSize: 12.5,
+              color: "#5C6B80", fontFamily: "inherit",
+            }}>
+            Vous découvrez Osmose RH ? <strong style={{ color: "#1668D9", whiteSpace: "nowrap" }}>Explorer la démonstration&nbsp;→</strong>
+          </button>
+
+          <p className="osrh-login-note" style={{ marginTop: 14 }}>
             <a href="/mentions-legales.html" style={{ color: "#8794A8" }}>Mentions légales &amp; confidentialité</a>
           </p>
         </div>
