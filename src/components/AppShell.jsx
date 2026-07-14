@@ -7,7 +7,7 @@
 // Statut sont posés par le flux). Le flux Power Automate fait
 // tout le reste. Les autres tuiles restent en démo locale.
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
@@ -204,7 +204,12 @@ export default function AppShell({ user, onLogout }) {
     apiFetch("/api/dashboard")
       .then(async (r) => { if (r.ok) setStats(await r.json()); })
       .catch(() => {});
-    // Documents réels — maquette uniquement en dev local, message en prod
+    chargerDocs();
+  }, []);
+
+  // Documents réels — maquette uniquement en dev local, message en prod.
+  // Fonction réutilisable : appelée au chargement ET après chaque dépôt.
+  const chargerDocs = () => {
     apiFetch("/api/documents")
       .then(async (r) => {
         if (r.ok) return setDocs(await r.json());
@@ -212,7 +217,36 @@ export default function AppShell({ user, onLogout }) {
         setDocs(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Documents indisponibles (HTTP ${r.status}).` });
       })
       .catch(() => setDocs(import.meta.env.DEV ? { demo: true } : { erreur: "Documents momentanément indisponibles — réessayez." }));
-  }, []);
+  };
+
+  /* Dépôt de fichiers : envois séquentiels vers /api/depot (le serveur
+     impose liste blanche d'extensions, 10 Mo max, dossier du client). */
+  const [depotEnCours, setDepotEnCours] = useState(null);
+  const refChoixFichiers = useRef(null);
+  const EXT_DEPOT = ["pdf", "jpg", "jpeg", "png", "heic", "xlsx", "xls", "csv", "docx", "doc", "odt", "ods", "txt", "zip"];
+  const deposerFichiers = async (fichiers) => {
+    for (const f of [...fichiers]) {
+      const ext = (f.name.split(".").pop() || "").toLowerCase();
+      if (!EXT_DEPOT.includes(ext)) { notifier(`« ${f.name} » : type de fichier non accepté.`); continue; }
+      if (f.size > 10 * 1024 * 1024) { notifier(`« ${f.name} » : 10 Mo maximum.`); continue; }
+      setDepotEnCours(f.name);
+      try {
+        const r = await apiFetch(`/api/depot?nom=${encodeURIComponent(f.name)}`, {
+          method: "POST",
+          headers: { "Content-Type": f.type || "application/octet-stream" },
+          body: f,
+        });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          notifier(j.erreur || `Échec du dépôt de « ${f.name} ».`);
+        } else {
+          notifier(`« ${f.name} » déposé — visible par votre gestionnaire.`);
+        }
+      } catch (_) { notifier(`Échec du dépôt de « ${f.name} » — vérifiez votre connexion.`); }
+    }
+    setDepotEnCours(null);
+    chargerDocs();
+  };
 
   /* Téléchargement via l'API (jeton + contrôle d'appartenance côté serveur),
      puis déclenchement du « Enregistrer sous » du navigateur. */
@@ -696,7 +730,7 @@ export default function AppShell({ user, onLogout }) {
             );
           }
           const reels = docs.documents || [];
-          const ordre = ["Attestations", "Contrats", "Paie", "Général"];
+          const ordre = ["Attestations", "Contrats", "Paie", "Dépôts", "Général"];
           const cats = [...new Set(reels.map((d) => d.categorie))]
             .sort((a, b) => (ordre.indexOf(a) + 99 * (ordre.indexOf(a) < 0)) - (ordre.indexOf(b) + 99 * (ordre.indexOf(b) < 0)));
           const catActive = cats.includes(dossierActif) ? dossierActif : cats[0];
@@ -704,10 +738,23 @@ export default function AppShell({ user, onLogout }) {
           const taille = (o) => (o >= 1048576 ? `${(o / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round(o / 1024))} Ko`);
           return (
             <>
-              <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
-              <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
-                Vos documents — déposés par votre gestionnaire ou générés par vos démarches.
-              </p>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+                <div>
+                  <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Documents</h1>
+                  <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+                    Vos documents — déposés par votre gestionnaire, générés par vos démarches, ou transmis par vous.
+                  </p>
+                </div>
+                <div>
+                  <input ref={refChoixFichiers} type="file" multiple style={{ display: "none" }}
+                    accept={EXT_DEPOT.map((e) => "." + e).join(",")}
+                    onChange={(e) => { if (e.target.files?.length) deposerFichiers(e.target.files); e.target.value = ""; }} />
+                  <Btn primary disabled={!!depotEnCours} onClick={() => refChoixFichiers.current?.click()}>
+                    <Upload size={15} /> {depotEnCours ? `Dépôt de ${depotEnCours.slice(0, 24)}…` : "Déposer un fichier"}
+                  </Btn>
+                  <p style={{ fontSize: 10.5, color: T.mut, margin: "6px 0 0", textAlign: "right" }}>10 Mo max — PDF, images, Office</p>
+                </div>
+              </div>
 
               {reels.length === 0 && (
                 <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>

@@ -237,7 +237,7 @@ async function assurerDossierClient(tok, codeClient) {
     if (!r.ok && r.status !== 409) throw { status: 502, erreur: "Préparation de l'espace documentaire impossible." };
   };
   await creer(null, codeClient);
-  for (const sous of ["Attestations", "Contrats", "Paie"]) await creer(codeClient, sous);
+  for (const sous of ["Attestations", "Contrats", "Paie", "Dépôts"]) await creer(codeClient, sous);
   dossiersAssures.add(codeClient);
 }
 
@@ -385,4 +385,54 @@ async function creerFinContrat(email, clientInfo, d, reference) {
   if (!r.ok) throw { status: 502, erreur: "Enregistrement de la fin de contrat impossible, réessayez." };
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat };
+const EXTENSIONS_DEPOT = ["pdf", "jpg", "jpeg", "png", "heic", "xlsx", "xls", "csv", "docx", "doc", "odt", "ods", "txt", "zip"];
+const TAILLE_MAX_DEPOT = 10 * 1024 * 1024; // 10 Mo
+
+/** Dépose un fichier du client dans {code}/Dépôts (lecture ET écriture pour
+    lui, visible du gestionnaire). Nom nettoyé, extension en liste blanche,
+    10 Mo max, renommage automatique en cas de collision. */
+async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
+  const nom = String(nomBrut || "").replace(/[\\/:*?"<>|]/g, "_").replace(/^\.+/, "").trim().slice(0, 120);
+  const ext = (nom.split(".").pop() || "").toLowerCase();
+  if (!nom || !nom.includes(".") || !EXTENSIONS_DEPOT.includes(ext))
+    throw { status: 400, erreur: `Type de fichier non accepté (autorisés : ${EXTENSIONS_DEPOT.join(", ")}).` };
+  if (!contenu || contenu.byteLength === 0) throw { status: 400, erreur: "Fichier vide." };
+  if (contenu.byteLength > TAILLE_MAX_DEPOT) throw { status: 413, erreur: "Fichier trop volumineux (10 Mo maximum)." };
+
+  const tok = await tokenGraph();
+  const drive = await driveDocuments(tok);
+  await assurerDossierClient(tok, codeClient);
+  const chemin = `${codeClient}/Dépôts/${nom}`;
+
+  if (contenu.byteLength <= 4 * 1024 * 1024) {
+    // PUT simple jusqu'à 4 Mo
+    const r = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive}/root:/${encodeURIComponent(chemin).replace(/%2F/g, "/")}:/content?@microsoft.graph.conflictBehavior=rename`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": contentType || "application/octet-stream" },
+      body: contenu,
+    });
+    if (!r.ok) throw { status: 502, erreur: "Dépôt impossible, réessayez." };
+    return (await r.json()).name;
+  }
+
+  // au-delà : session de téléversement (un seul segment suffit sous 10 Mo)
+  const rs = await fetch(`https://graph.microsoft.com/v1.0/drives/${drive}/root:/${encodeURIComponent(chemin).replace(/%2F/g, "/")}:/createUploadSession`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "rename", name: nom } }),
+  });
+  if (!rs.ok) throw { status: 502, erreur: "Dépôt impossible (session), réessayez." };
+  const session = await rs.json();
+  const r = await fetch(session.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Length": String(contenu.byteLength),
+      "Content-Range": `bytes 0-${contenu.byteLength - 1}/${contenu.byteLength}`,
+    },
+    body: contenu,
+  });
+  if (!r.ok) throw { status: 502, erreur: "Dépôt interrompu, réessayez." };
+  return (await r.json()).name;
+}
+
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier };
