@@ -3,7 +3,7 @@ import React from "react";
 import { useMsal } from "@azure/msal-react";
 import LoginPage from "./LoginPage.jsx";
 import AppShell from "./components/AppShell.jsx";
-import { demoActive, quitterDemo, UTILISATEUR_DEMO, ENTREPRISE_DEMO } from "./demo/modeDemo";
+import { demoActive, entrerDemo, quitterDemo, UTILISATEUR_DEMO, ENTREPRISE_DEMO } from "./demo/modeDemo";
 
 /* Bandeau permanent du mode démonstration — au-dessus du portail, jamais
    masquable : personne ne doit confondre la démo avec un espace réel. */
@@ -33,6 +33,14 @@ export default function App() {
   const { instance } = useMsal();
   const accounts = instance.getAllAccounts();
   const isAuth = accounts.length > 0;
+
+  // Lien direct vers la démo — espace.synapserh.fr/?demo (page /decouvrir.html,
+  // e-mails de prospection) : active le mode démo puis nettoie l'URL.
+  // Idempotent : sans effet si la démo est déjà active.
+  if (new URLSearchParams(window.location.search).has("demo")) {
+    entrerDemo();
+    window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+  }
 
   // Mode démonstration (lien « Découvrir la démonstration » de la page de
   // connexion) : portail complet sans compte, appels API servis localement
