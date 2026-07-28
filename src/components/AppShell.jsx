@@ -1303,7 +1303,7 @@ const ChampReq = ({ label, erreur, large, children }) => (
 function DemandeAcompte({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
-    nom: "", prenom: "", matricule: "", montant: "",
+    nom: "", prenom: "", matricule: "", montant: "", dateVersement: "",
   });
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
@@ -1319,6 +1319,7 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       prenom: f.prenom.trim().length < 2,
       matricule: !/^\d{1,10}$/.test(f.matricule.trim()),
       montant: !/^\d{1,5}([.,]\d{1,2})?$/.test(f.montant.trim()) || parseFloat(f.montant.trim().replace(",", ".")) <= 0,
+      dateVersement: !/^\d{4}-\d{2}-\d{2}$/.test(f.dateVersement) || f.dateVersement < new Date().toISOString().slice(0, 10),
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -1340,6 +1341,7 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       nomSalarie: `${f.nom.trim().toUpperCase()} ${f.prenom.trim()}`.trim(),
       matricule: Number(f.matricule.trim()),  // colonne Matricule : nombre JSON attendu par le déclencheur du flux
       montant: Number(f.montant.trim().replace(",", ".")), // colonne Montant demandé : nombre JSON attendu par le déclencheur du flux
+      dateVersement: f.dateVersement, // AAAA-MM-JJ — colonne Date de versement côté flux
       xq_note: "", // honeypot : doit rester vide
     };
 
@@ -1444,6 +1446,10 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
 
           <ChampReq label="Montant demandé (€)" erreur={err.montant && "Montant invalide (ex. 150 ou 113,35)."}>
             <input inputMode="decimal" style={err.montant ? inputInvalid : inputStyle} placeholder="Ex. 150" value={f.montant} onChange={(e) => maj("montant", e.target.value)} />
+          </ChampReq>
+
+          <ChampReq label="Date de versement souhaitée" erreur={err.dateVersement && "Date requise (aujourd'hui ou à venir)."}>
+            <input type="date" min={new Date().toISOString().slice(0, 10)} style={err.dateVersement ? inputInvalid : inputStyle} value={f.dateVersement} onChange={(e) => maj("dateVersement", e.target.value)} />
           </ChampReq>
         </div>
 
