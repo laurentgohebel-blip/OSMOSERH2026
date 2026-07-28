@@ -1335,10 +1335,9 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       email: f.email.trim(),
       nom: f.nom.trim().toUpperCase(),
       prenom: f.prenom.trim(),
-      // Alias attendus par le schéma régénéré du déclencheur (les champs
-      // nom/prenom sont conservés pour les autres consommateurs du payload).
-      NomSalarie: f.nom.trim().toUpperCase(),
-      PrenomSalarie: f.prenom.trim(),
+      // Même convention que l'attestation (ATT-01) : le flux lit un champ
+      // combiné nomSalarie — nom/prenom restent envoyés séparément.
+      nomSalarie: `${f.nom.trim().toUpperCase()} ${f.prenom.trim()}`.trim(),
       matricule: Number(f.matricule.trim()),  // colonne Matricule : nombre JSON attendu par le déclencheur du flux
       montant: Number(f.montant.trim().replace(",", ".")), // colonne Montant demandé : nombre JSON attendu par le déclencheur du flux
       xq_note: "", // honeypot : doit rester vide
