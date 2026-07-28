@@ -1335,7 +1335,7 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       email: f.email.trim(),
       nom: f.nom.trim().toUpperCase(),
       prenom: f.prenom.trim(),
-      matricule: f.matricule.trim(),          // colonne Matricule (nombre) : int(...) côté flux
+      matricule: Number(f.matricule.trim()),  // colonne Matricule : nombre JSON attendu par le déclencheur du flux
       montant: Number(f.montant.trim().replace(",", ".")), // colonne Montant demandé : nombre JSON attendu par le déclencheur du flux
       xq_note: "", // honeypot : doit rester vide
     };
