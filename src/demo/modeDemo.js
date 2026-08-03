@@ -102,7 +102,7 @@ function etatInitial() {
       salaries,
       absences: [
         { cle: "NGUYEN LINH", salarie: "NGUYEN Linh", du: dansNJours(-3), au: dansNJours(-3), motif: "Enfant malade", justificatifUrl: "", statut: "Nouvelle", reference: "ABS-DEMO03" },
-        { cle: "MOREAU JULIEN", salarie: "MOREAU Julien", du: dansNJours(-6), au: dansNJours(1), motif: "Maladie (arrêt de travail)", justificatifUrl: "https://espace.synapserh.fr/documents", statut: "Nouvelle", reference: "ABS-DEMO02" },
+        { cle: "MOREAU JULIEN", salarie: "MOREAU Julien", du: dansNJours(-6), au: dansNJours(1), motif: "Maladie (arrêt de travail)", justificatifUrl: "https://espace.osmoserh.fr/documents", statut: "Nouvelle", reference: "ABS-DEMO02" },
         { cle: "GARCIA LÉA", salarie: "GARCIA Léa", du: dansNJours(-20), au: dansNJours(-13), motif: "Congés payés", justificatifUrl: "", statut: "Traitée", reference: "ABS-DEMO01" },
       ],
       visites: [

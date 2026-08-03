@@ -3,7 +3,7 @@
 // Page d'accueil de l'espace client Osmose RH — UNE seule porte d'entrée :
 // le bouton ouvre la page External ID qui gère à la fois la connexion et la
 // création de compte (email + mot de passe, vérification par code).
-// Gabarit aligné sur la page Connexion de synapserh.fr : panneau visuel navy
+// Gabarit aligné sur la page Connexion de osmoserh.fr : panneau visuel navy
 // à gauche, carte de connexion à droite — empilés sur mobile.
 // ─────────────────────────────────────────────────────────────────────────────
 

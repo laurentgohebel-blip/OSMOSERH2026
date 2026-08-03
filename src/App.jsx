@@ -34,7 +34,7 @@ export default function App() {
   const accounts = instance.getAllAccounts();
   const isAuth = accounts.length > 0;
 
-  // Lien direct vers la démo — espace.synapserh.fr/?demo (page /decouvrir.html,
+  // Lien direct vers la démo — espace.osmoserh.fr/?demo (page /decouvrir.html,
   // e-mails de prospection) : active le mode démo puis nettoie l'URL.
   // Idempotent : sans effet si la démo est déjà active.
   if (new URLSearchParams(window.location.search).has("demo")) {
