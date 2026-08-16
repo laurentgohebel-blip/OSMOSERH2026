@@ -1,5 +1,11 @@
 # Bascule de domaine → osmoserh.fr
 
+> ⚠️ **Partiellement remplacé.** Depuis la décision de migrer vers un tenant
+> neuf, l'état réel est dans **`Synthese-migration-2026-08-16.md`**.
+> L'étape 6 (domaine dans le tenant Synapse) ne doit PAS être faite ; les
+> étapes DNS/SWA/External ID restent valables mais visent la NOUVELLE
+> Static Web App du tenant `osmoserh83`.
+
 Décisions : portail sur **espace.osmoserh.fr**, e-mails en **@osmoserh.fr**,
 ancien domaine synapserh.fr maintenu en parallèle pendant la transition.
 

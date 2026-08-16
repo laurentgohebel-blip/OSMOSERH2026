@@ -1,5 +1,12 @@
 # Migration vers un tenant Microsoft « Osmose » neuf
 
+> ⚠️ **Document initial (plan d'avant-migration).** L'état réel, les valeurs
+> définitives (tenants, site, apps) et les décisions prises sont dans
+> **`Synthese-migration-2026-08-16.md`** — c'est elle qui fait foi.
+> En résumé au 16/08 : tenant workforce `osmoserh83` créé, couche de données
+> SharePoint terminée (7/7 listes du code + bibliothèques), flux à
+> reconstruire (ATT-01 d'abord), puis configuration SWA et recette.
+
 Décision : créer un nouveau tenant Microsoft 365 / Entra et y déménager tout
 l'écosystème (mails, SharePoint, Power Automate, Azure). Ce document est le
 plan de référence — phases dans l'ordre, pièges connus, partage des rôles.
