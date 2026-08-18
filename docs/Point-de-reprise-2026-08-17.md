@@ -62,6 +62,18 @@ Ce qui a bougé depuis la synthèse, pendant le blocage Microsoft.
   (déployé le 18/08) pour discriminer « compte non rattaché » de
   « client inactif ou inconnu ».
 
+### 18/08 (suite) — écran d'activation gestionnaire construit
+
+Cause de la « boucle » : la demande avait été passée en « Traitée » sans
+les deux écritures d'activation. Pour éliminer ce piège : **écran
+d'administration intégré au portail** (déployé) — un gestionnaire dont
+l'adresse figure dans la variable SWA `ADMIN_EMAILS` voit, à sa connexion,
+les demandes en attente et active en un clic (création de la fiche
+« Paramètres clients » si nouveau client + rattachement « Utilisateurs
+portail » + demande en « Traitée » + cache vidé : effet immédiat).
+`ADMIN_EMAILS` à poser sur la SWA synapserh maintenant, et sur la
+nouvelle SWA en phase 5.
+
 ## Reprise au déblocage Microsoft (ordre conseillé)
 
 1. Points ouverts de la synthèse : domaine osmoserh.fr vérifié dans quel

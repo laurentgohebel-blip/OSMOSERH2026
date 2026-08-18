@@ -93,6 +93,11 @@ function dateParis(v) {
 // Les deux listes restent petites : on les lit en entier (pagination suivie)
 // et on filtre en code — aucun besoin de colonnes indexées. Cache 60 s.
 const cacheItems = new Map();
+
+/** Vide le cache de lecture des listes — à appeler après toute écriture
+    d'administration (activation d'un compte) pour que l'effet soit
+    immédiat au rechargement, sans attendre l'expiration des 60 s. */
+function viderCacheItems() { cacheItems.clear(); }
 async function items(tok, listeId, champs) {
   const enCache = cacheItems.get(listeId);
   if (enCache && Date.now() < enCache.expire) return enCache.valeur;
@@ -496,4 +501,4 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
   return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems };
