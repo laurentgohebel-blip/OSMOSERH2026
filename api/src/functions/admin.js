@@ -4,8 +4,8 @@
 // vérifié comme partout — un gestionnaire se connecte au portail avec un
 // compte dont l'adresse figure dans ADMIN_EMAILS.
 //
-// GET  /api/admin/donnees : demandes d'accès « Nouvelle » + clients actifs.
-// POST /api/admin/activer : { email, demandeId?, codeClient } pour un client
+// GET  /api/admin-donnees : demandes d'accès « Nouvelle » + clients actifs.
+// POST /api/admin-activer : { email, demandeId?, codeClient } pour un client
 //   existant, ou { email, demandeId?, nouveau: { codeClient, raisonSociale,
 //   options[], adresseEntreprise?, siret?, representant?,
 //   fonctionRepresentant?, lieuEdition?, emailGestionnaire? } }.
@@ -34,11 +34,11 @@ async function exigerAdmin(request) {
 const graphListe = (listeId, suite = "") =>
   `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}${suite}`;
 
-/* ── GET /api/admin/donnees ────────────────────────────────────────────── */
+/* ── GET /api/admin-donnees ────────────────────────────────────────────── */
 app.http("adminDonnees", {
   methods: ["GET"],
   authLevel: "anonymous",
-  route: "admin/donnees",
+  route: "admin-donnees",
   handler: async (request, context) => {
     try {
       await exigerAdmin(request);
@@ -82,11 +82,11 @@ app.http("adminDonnees", {
   },
 });
 
-/* ── POST /api/admin/activer ───────────────────────────────────────────── */
+/* ── POST /api/admin-activer ───────────────────────────────────────────── */
 app.http("adminActiver", {
   methods: ["POST"],
   authLevel: "anonymous",
-  route: "admin/activer",
+  route: "admin-activer",
   handler: async (request, context) => {
     try {
       await exigerAdmin(request);
