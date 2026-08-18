@@ -123,6 +123,20 @@ portail » → e-mail de bienvenue, connecteur Outlook).
    (le compte de test du 17/08 est en attente, prêt à activer).
 6. Dérouler `Recette-phase-6.md`.
 
+### 18/08 (soir, suite) — constat DNS e-mail
+
+- Le MX de **synapserh.fr** pointe vers Microsoft 365 (pas OVH) : une
+  boîte créée chez OVH sur ce domaine ne reçoit RIEN. Pour une adresse
+  de test : boîte partagée dans le tenant M365, ou adresse externe.
+- ⚠️ **synapserh.fr a DEUX enregistrements SPF** (permerror garanti chez
+  les destinataires — cause probable de l'AR en spam du 17/08). À faire
+  dans la zone OVH : supprimer `v=spf1 include:spf.protection.outlook.com -all`,
+  garder celui avec `include:mx.ovh.com` tant que les flux envoient en
+  SMTP OVH ; retirer `mx.ovh.com` après le passage au connecteur Outlook.
+- ✅ osmoserh.fr : SPF unique et MX déjà sur Microsoft
+  (`osmoserh-fr.mail.protection.outlook.com`) — domaine raccordé à un
+  tenant Exchange, prêt pour la migration.
+
 ## Côté Laurent, sans Microsoft (si pas déjà fait)
 
 - OVH : supprimer `Acceuil.html` (mal orthographié), `synapse.css`,
