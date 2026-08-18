@@ -10,7 +10,7 @@
 // { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
 import React, { useEffect, useState } from "react";
-import { LogOut, RefreshCw, UserCheck, Building2, Check } from "lucide-react";
+import { LogOut, RefreshCw, UserCheck, UserPlus, Building2, Check } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
 const T = {
@@ -28,13 +28,24 @@ const LIBELLES_OPTIONS = {
   attestation: "Attestations", paie: "Variables de paie",
 };
 
-function FicheDemande({ demande, clients, options, onActivee, notifier }) {
-  const [mode, setMode] = useState(clients.length ? "existant" : "nouveau");
+const N_VIDE = {
+  codeClient: "", raisonSociale: "", options: ["embauche"],
+  adresseEntreprise: "", siret: "", representant: "",
+  fonctionRepresentant: "", lieuEdition: "", emailGestionnaire: "",
+};
+
+/* Formulaire d'activation, deux usages :
+   - avec `demande` : traitement d'une demande d'accès en attente ;
+   - sans `demande` : création directe (pré-provisionnement d'un client
+     signé — le gestionnaire saisit l'adresse, le client entrera
+     directement dans son espace à sa première connexion). */
+function FormulaireActivation({ demande, clients, options, onActivee, onClientCree, notifier }) {
+  const creation = !demande;
+  const [email, setEmail] = useState("");
+  const [mode, setMode] = useState(creation || !clients.length ? "nouveau" : "existant");
   const [codeExistant, setCodeExistant] = useState("");
   const [n, setN] = useState({
-    codeClient: "", raisonSociale: demande.entreprise || "", options: ["embauche"],
-    adresseEntreprise: "", siret: "", representant: demande.nom || "",
-    fonctionRepresentant: "", lieuEdition: "", emailGestionnaire: "",
+    ...N_VIDE, raisonSociale: demande?.entreprise || "", representant: demande?.nom || "",
   });
   const [envoi, setEnvoi] = useState(false);
   const majN = (k, v) => setN((p) => ({ ...p, [k]: v }));
@@ -42,6 +53,9 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
     majN("options", n.options.includes(o) ? n.options.filter((x) => x !== o) : [...n.options, o]);
 
   const activer = async () => {
+    const adresse = (creation ? email : demande.email).trim().toLowerCase();
+    if (creation && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(adresse))
+      return notifier("Adresse e-mail du client invalide.");
     if (mode === "existant" && !codeExistant) return notifier("Choisissez le client à rattacher.");
     if (mode === "nouveau" && (!n.codeClient.trim() || !n.raisonSociale.trim()))
       return notifier("Code client et raison sociale sont requis.");
@@ -52,15 +66,21 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "adminActiver",
-          email: demande.email,
-          demandeId: demande.id,
+          email: adresse,
+          ...(demande ? { demandeId: demande.id } : {}),
           ...(mode === "existant" ? { codeClient: codeExistant } : { nouveau: n }),
         }),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { notifier(j.erreur || `Activation refusée (HTTP ${r.status}).`); setEnvoi(false); return; }
-      notifier(`✓ ${demande.email} rattaché à ${j.codeClient} — le client peut recharger sa page.`);
-      onActivee(demande.id);
+      if (mode === "nouveau" && onClientCree) onClientCree(j.codeClient, n.raisonSociale.trim());
+      if (creation) {
+        setEmail(""); setCodeExistant(""); setN({ ...N_VIDE }); setEnvoi(false);
+        notifier(`✓ ${adresse} rattaché à ${j.codeClient} — l'espace s'ouvrira dès sa première connexion.`);
+      } else {
+        notifier(`✓ ${adresse} rattaché à ${j.codeClient} — le client peut recharger sa page.`);
+        onActivee(demande.id);
+      }
     } catch {
       notifier("API injoignable — réessayez.");
       setEnvoi(false);
@@ -71,20 +91,33 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
 
   return (
     <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
-        <div>
-          <strong style={{ fontSize: 14.5 }}>{demande.nom || demande.email}</strong>
-          <span style={{ color: T.mut, fontSize: 12.5 }}> — {demande.entreprise || "entreprise non précisée"}</span>
-        </div>
-        <span style={{ fontSize: 11.5, color: T.mut }}>{fr(demande.recueLe)}</span>
-      </div>
-      <p style={{ margin: "0 0 4px", fontSize: 12.5, color: T.mut }}>
-        {demande.email}{demande.telephone ? ` · ${demande.telephone}` : ""}
-      </p>
-      {demande.message && (
-        <p style={{ margin: "6px 0 0", fontSize: 12.5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px" }}>
-          {demande.message}
-        </p>
+      {creation ? (
+        <>
+          <input style={champ} type="email" placeholder="Adresse e-mail du client *"
+            value={email} onChange={(e) => setEmail(e.target.value)} />
+          <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut }}>
+            Le client devra créer son compte de connexion avec cette adresse exacte —
+            c'est elle qui ouvre son espace.
+          </p>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+            <div>
+              <strong style={{ fontSize: 14.5 }}>{demande.nom || demande.email}</strong>
+              <span style={{ color: T.mut, fontSize: 12.5 }}> — {demande.entreprise || "entreprise non précisée"}</span>
+            </div>
+            <span style={{ fontSize: 11.5, color: T.mut }}>{fr(demande.recueLe)}</span>
+          </div>
+          <p style={{ margin: "0 0 4px", fontSize: 12.5, color: T.mut }}>
+            {demande.email}{demande.telephone ? ` · ${demande.telephone}` : ""}
+          </p>
+          {demande.message && (
+            <p style={{ margin: "6px 0 0", fontSize: 12.5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px" }}>
+              {demande.message}
+            </p>
+          )}
+        </>
       )}
 
       <div style={{ display: "flex", gap: 14, margin: "14px 0 10px", fontSize: 13 }}>
@@ -137,7 +170,7 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
           background: T.accent, color: "#fff", borderRadius: 8, padding: "9px 18px",
           fontSize: 13, fontWeight: 600, fontFamily: T.sans, opacity: envoi ? 0.7 : 1,
         }}>
-          <Check size={15} /> {envoi ? "Activation…" : "Activer l'accès"}
+          <Check size={15} /> {envoi ? "Activation…" : creation ? "Créer l'accès" : "Activer l'accès"}
         </button>
       </div>
     </div>
@@ -162,6 +195,13 @@ export default function AdminActivation({ user, onLogout }) {
 
   const retirer = (id) =>
     setDonnees((d) => ({ ...d, demandes: d.demandes.filter((x) => x.id !== id) }));
+
+  // Un client créé (avec ou sans demande) devient immédiatement proposable
+  // en « client existant » dans les autres fiches, sans rechargement.
+  const ajouterClient = (codeClient, raisonSociale) =>
+    setDonnees((d) => d?.clients && !d.clients.some((c) => c.codeClient === codeClient)
+      ? { ...d, clients: [...d.clients, { codeClient, raisonSociale }].sort((a, b) => a.codeClient.localeCompare(b.codeClient)) }
+      : d);
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
@@ -194,11 +234,27 @@ export default function AdminActivation({ user, onLogout }) {
                 (si besoin), rattache le compte et passe la demande en « Traitée ».
               </p>
               {donnees.demandes.map((dem) => (
-                <FicheDemande key={dem.id} demande={dem} clients={donnees.clients}
-                  options={donnees.options} onActivee={retirer} notifier={notifier} />
+                <FormulaireActivation key={dem.id} demande={dem} clients={donnees.clients}
+                  options={donnees.options} onActivee={retirer} onClientCree={ajouterClient} notifier={notifier} />
               ))}
             </div>
           )
+        )}
+
+        {donnees?.demandes && (
+          <section style={{ marginTop: 30 }}>
+            <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+              <UserPlus size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+              Nouveau client — accès sans demande
+            </h2>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
+              Pour un client qui vient de signer : créez sa fiche et rattachez son adresse
+              AVANT sa première connexion — il entrera directement dans son espace,
+              sans demande d'accès ni attente.
+            </p>
+            <FormulaireActivation clients={donnees.clients} options={donnees.options}
+              onClientCree={ajouterClient} notifier={notifier} />
+          </section>
         )}
       </main>
 

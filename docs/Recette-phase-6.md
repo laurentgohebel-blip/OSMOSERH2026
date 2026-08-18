@@ -36,6 +36,10 @@ symptôme exact (message, référence, heure) avant de passer à la suite.
 - [ ] Re-soumission même adresse → « demande déjà en cours » (anti-doublon)
 - [ ] Activation : ligne « Utilisateurs portail » ajoutée → reconnexion →
       l'espace s'ouvre sur le bon client
+- [ ] Pré-provisionnement (parcours A d'`Onboarding-client.md`) : création
+      d'un accès via « Nouveau client — accès sans demande » → première
+      connexion du compte → l'espace s'ouvre directement, sans demande
+      d'accès ; le client créé apparaît dans la liste « client existant »
 - [ ] /?demo → mode démonstration OK ; « Quitter » → retour connexion
 
 ## 2. Démarches (client de test, options toutes ouvertes)
