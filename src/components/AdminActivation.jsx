@@ -43,7 +43,7 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
       return notifier("Code client et raison sociale sont requis.");
     setEnvoi(true);
     try {
-      const r = await apiFetch("/api/admin-activer", {
+      const r = await apiFetch("/api/adminActiver", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -146,7 +146,7 @@ export default function AdminActivation({ user, onLogout }) {
 
   const charger = () => {
     setDonnees(null);
-    apiFetch("/api/admin-donnees")
+    apiFetch("/api/adminDonnees")
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
