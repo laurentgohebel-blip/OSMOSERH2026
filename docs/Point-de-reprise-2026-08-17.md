@@ -49,6 +49,19 @@ Ce qui a bougé depuis la synthèse, pendant le blocage Microsoft.
   déblocage : historique d'exécution du flux (déclencheur muet ?), spams.
   Ce flux est de toute façon à reconstruire dans le nouveau tenant.
 
+## Mise à jour du 18/08 — accès synapserh récupéré (osmoserh toujours bloqué)
+
+- Le flux « Demandes d'accès + AR » côté synapserh fonctionne (vérifié
+  dans l'historique) — le non-reçu du 17/08 reste à imputer (spam probable).
+- ✅ **Décision : tous les envois SMTP (OVH) passent au connecteur
+  Office 365 Outlook** lors de la reconstruction des flux — confirme la
+  décision de la synthèse du 16/08, généralisée à TOUS les flux.
+- 🔴 Incident en cours : après traitement d'une demande d'accès,
+  le compte activé « tourne en boucle » — diagnostic en cours ; l'écran
+  « Demande d'accès » affiche désormais le motif serveur exact
+  (déployé le 18/08) pour discriminer « compte non rattaché » de
+  « client inactif ou inconnu ».
+
 ## Reprise au déblocage Microsoft (ordre conseillé)
 
 1. Points ouverts de la synthèse : domaine osmoserh.fr vérifié dans quel

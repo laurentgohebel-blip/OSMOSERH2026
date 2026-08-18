@@ -442,7 +442,7 @@ export default function AppShell({ user, onLogout }) {
   }
 
   if (moi?.bloque && moi.code === 403) {
-    return <DemandeAcces user={user} onLogout={onLogout} />;
+    return <DemandeAcces user={user} onLogout={onLogout} raison={moi.bloque} />;
   }
 
   if (!db) {
@@ -2133,7 +2133,7 @@ function VariablesPaie({ user, client, onRetour }) {
    (vérifié) ; le gestionnaire traite la demande en ajoutant la ligne
    Email → CodeClient dans « Utilisateurs portail ».
    ================================================================ */
-function DemandeAcces({ user, onLogout }) {
+function DemandeAcces({ user, onLogout, raison }) {
   const [f, setF] = useState({ nom: user?.displayName || "", entreprise: "", telephone: "", message: "" });
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
@@ -2206,6 +2206,14 @@ function DemandeAcces({ user, onLogout }) {
     <div style={cadre}>
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 26px", maxWidth: 480, width: "100%" }}>
         <h1 style={{ margin: "0 0 6px", fontSize: 21, fontFamily: T.serif, fontWeight: 600 }}>Bienvenue sur Osmose RH</h1>
+        {/* Motif exact renvoyé par le serveur : discrimine « compte non
+            rattaché » de « client inactif/inconnu » — précieux pour le
+            diagnostic d'activation (le gestionnaire le demande au client). */}
+        {raison && (
+          <p style={{ margin: "0 0 12px", fontSize: 11.5, color: T.mut, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 10px" }}>
+            Motif serveur : {raison}
+          </p>
+        )}
         <p style={{ margin: "0 0 16px", fontSize: 13, color: T.mut }}>
           Votre compte <strong>{user?.email}</strong> est créé. Dernière étape : demandez l'activation de votre accès — votre gestionnaire s'en charge rapidement.
         </p>
