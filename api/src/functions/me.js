@@ -16,8 +16,20 @@ app.http("me", {
       // affiche l'écran d'activation des demandes d'accès.
       const admins = (process.env.ADMIN_EMAILS || "")
         .split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
-      if (admins.includes(email))
+      if (admins.includes(email)) {
+        // ?vue=admin : données de l'écran d'activation, servies par CETTE
+        // route car la table de routage de la SWA n'accepte plus de
+        // nouveau nom (voir le commentaire de contournement en fin de fichier).
+        if ((request.query && request.query.get && request.query.get("vue")) === "admin") {
+          try {
+            return await require("../admin").donnees(request, context);
+          } catch (e) {
+            context.error("me/vue=admin :", e);
+            return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+          }
+        }
         return { status: 200, jsonBody: { email, admin: true } };
+      }
       const c = await resoudreClient(email);
       return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
     } catch (e) {
@@ -40,15 +52,21 @@ app.http("ping", {
   handler: async () => ({ status: 200, jsonBody: { ok: true, version: VERSION_API, quand: new Date().toISOString() } }),
 });
 
-/* Contournement SWA (18/08) : cette Static Web App n'indexe pas les
-   NOUVEAUX fichiers de src/functions (constat : ping enregistrée ici
-   fonctionne, adminDonnees dans son propre fichier restait en 404 — et
-   un simple require() des modules depuis ici n'a pas suffi non plus).
-   Donc : les routes sont déclarées ICI, dans le seul fichier dont
-   l'indexation est prouvée ; les modules admin et lead (dans src/,
-   hors du dossier scanné) n'exportent que leurs handlers, chargés
-   paresseusement à la première requête. Si un module refuse de charger,
-   on renvoie un 500 avec la cause — jamais un 404 muet. */
+/* Contournement SWA (18/08) — bilan de la journée de diagnostic :
+   la table de routage de CETTE Static Web App est figée côté plateforme.
+   Le code exécuté est bien le dernier (prouvé : ping renvoie `version`),
+   mais AUCUN nouveau nom de fonction n'entre dans la table — ni en
+   nouveau fichier, ni via require(), ni déclaré directement ici (seule
+   ping, à 16h34, est passée ; adminDonnees déclarée à l'identique dans
+   ce même fichier reste en 404). Conséquences :
+   1. L'écran d'administration passe par les routes HISTORIQUES,
+      indexées depuis juillet : GET /api/me?vue=admin (données) et
+      POST /api/demande { action: "adminActiver", … } (activation).
+   2. Les déclarations ci-dessous restent : inopérantes ici, elles
+      donneront les vraies routes sur la NOUVELLE SWA (migration Osmose),
+      où /api/lead est de toute façon indispensable au site vitrine.
+   Modules en chargement paresseux : un module inchargeable donne un 500
+   avec la cause — jamais un 404 muet. */
 const paresseux = (chemin, nom) => async (request, context) => {
   let h;
   try {

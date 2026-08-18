@@ -81,11 +81,15 @@ async function donnees(request, context) {
 }
 
 /* ── POST /api/adminActiver ───────────────────────────────────────────── */
-async function activer(request, context) {
+/* `corps` : payload déjà lu par l'appelant (détour via /api/demande — le
+   corps d'une requête ne se lit qu'une fois). Absent : lu ici. */
+async function activer(request, context, corps) {
   try {
     await exigerAdmin(request);
-    let d;
-    try { d = await request.json(); } catch { return { status: 400, jsonBody: { erreur: "JSON attendu" } }; }
+    let d = corps;
+    if (!d) {
+      try { d = await request.json(); } catch { return { status: 400, jsonBody: { erreur: "JSON attendu" } }; }
+    }
 
     const email = String(d.email || "").trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))

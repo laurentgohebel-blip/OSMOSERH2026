@@ -4,6 +4,10 @@
 // Chaque demande propose : rattacher à un client existant, OU créer le
 // client (code, raison sociale, options, identité employeur) — l'API fait
 // les deux écritures SharePoint et passe la demande en « Traitée ».
+// Routage : la table de routage de la SWA actuelle n'accepte plus de
+// nouvelle route (voir api/src/functions/me.js) — l'écran passe donc par
+// les routes historiques : GET /api/me?vue=admin et POST /api/demande
+// { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
 import React, { useEffect, useState } from "react";
 import { LogOut, RefreshCw, UserCheck, Building2, Check } from "lucide-react";
@@ -43,10 +47,11 @@ function FicheDemande({ demande, clients, options, onActivee, notifier }) {
       return notifier("Code client et raison sociale sont requis.");
     setEnvoi(true);
     try {
-      const r = await apiFetch("/api/adminActiver", {
+      const r = await apiFetch("/api/demande", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          action: "adminActiver",
           email: demande.email,
           demandeId: demande.id,
           ...(mode === "existant" ? { codeClient: codeExistant } : { nouveau: n }),
@@ -146,7 +151,7 @@ export default function AdminActivation({ user, onLogout }) {
 
   const charger = () => {
     setDonnees(null);
-    apiFetch("/api/adminDonnees")
+    apiFetch("/api/me?vue=admin")
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
