@@ -7,6 +7,8 @@ symptôme exact (message, référence, heure) avant de passer à la suite.
 ## 0. Préalables techniques
 
 - [ ] Variables SWA posées (tableau de la synthèse du 16/08) — aucune absente
+- [ ] `ADMIN_EMAILS` posée (adresses gestionnaires, séparées par des virgules)
+      → l'écran d'activation des demandes d'accès s'affiche à leur connexion
 - [ ] `FLOW_URL_ATTESTATION_EMPLOYEUR` renseignée (⚠️ pas `ATT01`)
 - [ ] espace.osmoserh.fr actif (DNS + domaine personnalisé + certificat)
 - [ ] `https://espace.osmoserh.fr` ajouté aux URI de redirection SPA de

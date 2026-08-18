@@ -12,6 +12,12 @@ app.http("me", {
   handler: async (request, context) => {
     try {
       const { email } = await verifierJeton(request);
+      // Gestionnaire (ADMIN_EMAILS) : pas de résolution client — le portail
+      // affiche l'écran d'activation des demandes d'accès.
+      const admins = (process.env.ADMIN_EMAILS || "")
+        .split(",").map((a) => a.trim().toLowerCase()).filter(Boolean);
+      if (admins.includes(email))
+        return { status: 200, jsonBody: { email, admin: true } };
       const c = await resoudreClient(email);
       return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
     } catch (e) {

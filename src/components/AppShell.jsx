@@ -14,6 +14,7 @@ import {
   GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
+import AdminActivation from "./AdminActivation";
 
 /* ================================================================
    CONFIGURATION
@@ -410,6 +411,12 @@ export default function AppShell({ user, onLogout }) {
       })),
     ];
   }, [db]);
+
+  /* Gestionnaire (ADMIN_EMAILS côté API) : écran d'activation des demandes
+     d'accès à la place de l'espace client. */
+  if (moi?.admin) {
+    return <AdminActivation user={user} onLogout={onLogout} />;
+  }
 
   /* 401 : la session côté API n'est pas exploitable — on propose de se
      reconnecter. 403 : compte valide mais non rattaché — c'est le début
