@@ -1,4 +1,4 @@
-// api/src/functions/lead.js — leads du site vitrine (formulaires publics).
+// api/src/lead.js — leads du site vitrine (formulaires publics).
 // POST /api/lead : SANS jeton (les visiteurs du site n'ont pas de compte) —
 // pot de miel + validation, puis écriture dans la liste « Leads site » du
 // site RH. La notification (gestionnaire + accusé au prospect) est assurée
@@ -6,8 +6,9 @@
 // connecteurs standard uniquement, aucune URL secrète dans la page publique.
 // CORS : le site vitrine (osmoserh.fr) appelle l'API cross-origin — on
 // répond au préflight OPTIONS et on renvoie l'origine si elle est connue.
+// Ce module n'enregistre pas sa route : il exporte le handler, déclaré
+// par me.js (contournement SWA — voir le commentaire dans me.js).
 
-const { app } = require("@azure/functions");
 const { tokenGraph, idsListes } = require("./annuaire");
 
 const ORIGINES_AUTORISEES = new Set([
@@ -28,10 +29,7 @@ function enTetesCors(request) {
   };
 }
 
-app.http("lead", {
-  methods: ["POST", "OPTIONS"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
+async function lead(request, context) {
     const headers = enTetesCors(request);
     if (request.method === "OPTIONS") return { status: 204, headers };
 
@@ -83,5 +81,6 @@ app.http("lead", {
       context.error("lead :", e);
       return { status: 502, headers, jsonBody: { erreur: "Service momentanément indisponible." } };
     }
-  }
-});
+}
+
+module.exports = { lead };
