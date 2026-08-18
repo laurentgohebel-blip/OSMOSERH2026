@@ -14,7 +14,7 @@
 //   immédiat pour le client qui recharge).
 
 const { app } = require("@azure/functions");
-const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems } = require("../annuaire");
+const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems } = require("./annuaire");
 
 const OPTIONS_VALIDES = ["embauche", "acompte", "attestation", "paie"];
 
