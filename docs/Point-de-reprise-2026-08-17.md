@@ -101,6 +101,17 @@ jeton + `ADMIN_EMAILS`. Écran testé et fonctionnel en réel.
 - Si d'autres routes devaient naître avant la migration : même recette,
   passer par une route historique (me, demande, dashboard…).
 
+### 18/08 (soir) — onboarding refondu
+
+Écran admin validé en réel (client activé, espace ouvert). Dans la
+foulée : **procédure d'onboarding de référence** (`Onboarding-client.md`)
+— parcours A « pré-provisionnement » (le gestionnaire crée l'accès AVANT
+la première connexion : section « Nouveau client — accès sans demande »
+de l'écran admin, déployée) + parcours B « demande spontanée » en filet,
+modèle d'e-mail de bienvenue inclus. Nouveau flux à prévoir à la
+reconstruction : « Bienvenue portail » (création dans « Utilisateurs
+portail » → e-mail de bienvenue, connecteur Outlook).
+
 ## Reprise au déblocage Microsoft (ordre conseillé)
 
 1. Points ouverts de la synthèse : domaine osmoserh.fr vérifié dans quel
