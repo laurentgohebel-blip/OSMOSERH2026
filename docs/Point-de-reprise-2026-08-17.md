@@ -74,6 +74,33 @@ portail » + demande en « Traitée » + cache vidé : effet immédiat).
 `ADMIN_EMAILS` à poser sur la SWA synapserh maintenant, et sur la
 nouvelle SWA en phase 5.
 
+### 18/08 (fin) — ⚠️ table de routage de la SWA synapserh FIGÉE (résolu par détour)
+
+Symptôme : toute NOUVELLE route API répondait 404 (adminDonnees,
+adminActiver, lead), quelle que soit la déclaration (nouveau fichier,
+`require()` depuis me.js, déclaration directe dans me.js), déploiements
+verts. Preuve que le **code** servi est pourtant à jour : `/api/ping`
+renvoie le marqueur `version` du dernier commit. Diagnostic : la table
+de routage de cette SWA n'accepte plus de nouveau nom de fonction —
+dysfonctionnement côté plateforme Azure, pas côté code.
+
+**Résolution (en production, validée le 18/08)** : l'écran admin passe
+par les routes historiques, indexées depuis juillet —
+`GET /api/me?vue=admin` (données) et `POST /api/demande` avec
+`action: "adminActiver"` (activation). Le module admin re-vérifie
+jeton + `ADMIN_EMAILS`. Écran testé et fonctionnel en réel.
+
+À savoir pour la suite :
+- Les routes propres (`adminDonnees`, `adminActiver`, `lead`) restent
+  déclarées dans me.js : inopérantes sur cette SWA, elles serviront sur
+  la **nouvelle SWA** de la migration (⚠️ y tester `/api/lead` en
+  priorité : indispensable au site vitrine, il n'a AUCUN détour).
+- `/api/ping` est conservé comme témoin de version tant que la SWA
+  synapserh vit (champ `version` = déploiement réellement servi).
+  À retirer sur la nouvelle SWA si tout y est sain.
+- Si d'autres routes devaient naître avant la migration : même recette,
+  passer par une route historique (me, demande, dashboard…).
+
 ## Reprise au déblocage Microsoft (ordre conseillé)
 
 1. Points ouverts de la synthèse : domaine osmoserh.fr vérifié dans quel

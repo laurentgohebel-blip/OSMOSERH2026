@@ -9,6 +9,13 @@ symptôme exact (message, référence, heure) avant de passer à la suite.
 - [ ] Variables SWA posées (tableau de la synthèse du 16/08) — aucune absente
 - [ ] `ADMIN_EMAILS` posée (adresses gestionnaires, séparées par des virgules)
       → l'écran d'activation des demandes d'accès s'affiche à leur connexion
+- [ ] **Nouvelle SWA : indexation des routes saine** — `/api/adminDonnees`
+      sans jeton répond `{"erreur":"Connexion requise."}` et `/api/lead`
+      répond au POST (pas de 404). Sur l'ancienne SWA la table de routage
+      était figée (voir Point-de-reprise du 17/08, § 18/08 fin) ; l'écran
+      admin passe par `me?vue=admin` + `demande{action}` et fonctionne
+      partout, mais `/api/lead` n'a PAS de détour : ce point est bloquant
+      pour les formulaires du site vitrine.
 - [ ] `FLOW_URL_ATTESTATION_EMPLOYEUR` renseignée (⚠️ pas `ATT01`)
 - [ ] espace.osmoserh.fr actif (DNS + domaine personnalisé + certificat)
 - [ ] `https://espace.osmoserh.fr` ajouté aux URI de redirection SPA de
