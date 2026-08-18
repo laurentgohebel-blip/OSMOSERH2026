@@ -8,7 +8,7 @@
 // répond au préflight OPTIONS et on renvoie l'origine si elle est connue.
 
 const { app } = require("@azure/functions");
-const { tokenGraph, idsListes } = require("../annuaire");
+const { tokenGraph, idsListes } = require("./annuaire");
 
 const ORIGINES_AUTORISEES = new Set([
   "https://osmoserh.fr",

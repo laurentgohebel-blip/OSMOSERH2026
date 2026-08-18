@@ -37,3 +37,12 @@ app.http("ping", {
   authLevel: "anonymous",
   handler: async () => ({ status: 200, jsonBody: { ok: true, quand: new Date().toISOString() } }),
 });
+
+/* Contournement SWA (18/08) : cette Static Web App n'indexe pas les
+   NOUVEAUX fichiers de src/functions (constat : ping enregistrée ici
+   fonctionne, adminDonnees dans son propre fichier restait en 404).
+   Les modules admin et lead vivent donc dans src/ (hors du dossier
+   scanné, pour éviter tout double enregistrement) et sont chargés d'ici :
+   le require exécute leurs app.http(). */
+require("../admin");
+require("../lead");
