@@ -26,17 +26,26 @@ Côté gestionnaire, dans l'ordre, dès la signature :
 4. Cliquer **« Créer l'accès »**. C'est tout côté technique : fiche
    « Paramètres clients » + rattachement « Utilisateurs portail » sont
    écrits, effet immédiat.
-5. **Envoyer l'e-mail de bienvenue** (modèle ci-dessous). Automatisation
+5. **Reprise de l'effectif** (section dédiée de l'écran admin) : demander
+   au client (ou à l'expert-comptable sortant) l'export de ses salariés —
+   n'importe quel Excel/CSV, ou le modèle `Modele_import_salaries.xlsx`
+   du portail. L'ouvrir dans Excel, sélectionner le tableau, **Ctrl+C,
+   coller dans la section** : colonnes reconnues automatiquement, aperçu,
+   puis import (doublons nom+prénom ignorés, compte-rendu affiché).
+   → Le client découvre son espace **déjà peuplé de ses salariés**,
+   démarches pré-remplies : c'est le moment « waouh » de l'onboarding.
+6. **Envoyer l'e-mail de bienvenue** (modèle ci-dessous). Automatisation
    prévue : flux « Bienvenue portail » à la création d'un élément dans
    « Utilisateurs portail » (connecteur Outlook) — tant qu'il n'est pas
    reconstruit, envoi manuel depuis la boîte @osmoserh.fr.
 
 Côté client, à sa première visite :
 
-6. Sur espace.osmoserh.fr, **« Créer un compte »** (inscription External
+7. Sur espace.osmoserh.fr, **« Créer un compte »** (inscription External
    ID) avec l'adresse exacte de l'étape 2 → code de vérification reçu par
    e-mail → mot de passe choisi.
-7. Connexion → l'espace s'ouvre **directement** sur son tableau de bord.
+8. Connexion → l'espace s'ouvre **directement** sur son tableau de bord,
+   son effectif déjà en place.
 
 ## Parcours B — demande spontanée (filet de sécurité)
 
@@ -54,8 +63,9 @@ client existant) :
 
 ## Premiers pas du client (à accompagner au premier rendez-vous)
 
-- **Importer ses salariés** (onglet Personnel) : c'est le référentiel qui
-  pré-remplit toutes les démarches — à faire en premier.
+- **Vérifier l'effectif repris ensemble** (onglet Personnel) : la reprise
+  a été faite à l'onboarding — contrôler les entrées/sorties récentes et
+  compléter ce qui manque.
 - Réaliser une **première démarche réelle** ensemble (une absence ou un
   acompte : rapides et parlantes).
 - Montrer l'onglet **Documents** (dépôt et récupération) et le bouton
@@ -77,8 +87,9 @@ client existant) :
 >    votre mot de passe.
 > 3. Vous arrivez directement sur le tableau de bord de {Raison sociale}.
 >
-> Premier réflexe une fois connecté : importez vos salariés (onglet
-> Personnel) — vos démarches seront ensuite pré-remplies.
+> Vos salariés sont déjà dans votre espace (onglet Personnel) : vos
+> démarches arrivent pré-remplies. Un premier réflexe : vérifiez cet
+> effectif et signalez-nous tout écart.
 >
 > Un doute, une question ? Le bouton « Contacter mon gestionnaire » dans
 > votre espace, ou simplement une réponse à cet e-mail.
@@ -109,6 +120,6 @@ client existant) :
 ## À reconstruire lors de la migration (rappel)
 
 - Flux « Demandes d'accès + AR » (parcours B) — connecteur Outlook.
-- Flux « Bienvenue portail » (nouveau, parcours A étape 5) : déclencheur
+- Flux « Bienvenue portail » (nouveau, parcours A étape 6) : déclencheur
   = création dans « Utilisateurs portail », envoi du modèle ci-dessus au
   client + copie gestionnaire.

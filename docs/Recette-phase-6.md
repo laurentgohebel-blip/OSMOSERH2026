@@ -40,6 +40,10 @@ symptôme exact (message, référence, heure) avant de passer à la suite.
       d'un accès via « Nouveau client — accès sans demande » → première
       connexion du compte → l'espace s'ouvre directement, sans demande
       d'accès ; le client créé apparaît dans la liste « client existant »
+- [ ] Reprise de l'effectif : coller un export Excel dans la section
+      dédiée de l'écran admin → colonnes reconnues, aperçu, import →
+      salariés visibles dans l'onglet Personnel du client, ré-import du
+      même fichier → 100 % doublons ignorés (aucune ligne créée)
 - [ ] /?demo → mode démonstration OK ; « Quitter » → retour connexion
 
 ## 2. Démarches (client de test, options toutes ouvertes)

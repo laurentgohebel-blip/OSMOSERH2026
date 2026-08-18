@@ -175,4 +175,87 @@ async function activer(request, context, corps) {
   }
 }
 
-module.exports = { donnees, activer };
+/* ── Import de reprise d'effectif ─────────────────────────────────────── */
+/* Payload (détour /api/demande, action "adminImportSalaries") :
+   { codeClient, salaries: [{ matricule?, nom, prenom?, poste?, typeContrat?,
+     dateEntree?, dateSortie?, email?, telephone?, statut? }] }
+   Écrit le référentiel « Salariés » avec le CodeClient imposé côté serveur.
+   Doublons ignorés (clé nom+prénom normalisée, la même que personnel.js),
+   dans le lot ET contre l'existant. Rend un compte-rendu ligne à ligne. */
+
+const cleSalarie = (nom, prenom) =>
+  `${String(nom || "").trim().toUpperCase()} ${String(prenom || "").trim().toUpperCase()}`.trim();
+const dateValide = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "";
+
+async function importerSalaries(request, context, corps) {
+  try {
+    await exigerAdmin(request);
+    const d = corps || {};
+    const codeClient = String(d.codeClient || "").trim();
+    const lot = Array.isArray(d.salaries) ? d.salaries : [];
+    if (!codeClient) return { status: 400, jsonBody: { erreur: "Code client requis." } };
+    if (lot.length === 0) return { status: 400, jsonBody: { erreur: "Aucun salarié à importer." } };
+    if (lot.length > 500) return { status: 400, jsonBody: { erreur: "500 salariés maximum par import." } };
+
+    const tok = await tokenGraph();
+    const ids = await idsListes(tok);
+    if (!ids["Salariés"]) throw { status: 502, erreur: "Liste « Salariés » introuvable." };
+
+    const clients = await items(tok, ids["Paramètres clients"], "CodeClient,Actif");
+    if (!clients.some((c) => c.CodeClient === codeClient && c.Actif !== false))
+      return { status: 400, jsonBody: { erreur: `Client ${codeClient} introuvable ou inactif.` } };
+
+    const existants = new Set(
+      (await items(tok, ids["Salariés"], "CodeClient,Nom,Prenom"))
+        .filter((s) => s.CodeClient === codeClient)
+        .map((s) => cleSalarie(s.Nom, s.Prenom)));
+
+    const aujourdhui = new Date().toISOString().slice(0, 10);
+    let crees = 0, doublons = 0;
+    const ignorees = [];
+    for (let i = 0; i < lot.length; i++) {
+      const s = lot[i] || {};
+      const nom = String(s.nom || "").trim();
+      const prenom = String(s.prenom || "").trim();
+      if (nom.length < 2) { ignorees.push({ ligne: i + 1, raison: "nom manquant" }); continue; }
+      const cle = cleSalarie(nom, prenom);
+      if (existants.has(cle)) { doublons++; continue; }
+      const dateSortie = dateValide(s.dateSortie);
+      const r = await fetch(graphListe(ids["Salariés"], "/items"), {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: {
+          Title: `${nom.toUpperCase()} ${prenom}`.trim(),
+          CodeClient: codeClient,
+          Matricule: String(s.matricule || "").trim().slice(0, 40),
+          Nom: nom.slice(0, 120),
+          Prenom: prenom.slice(0, 120),
+          Poste: String(s.poste || "").trim().slice(0, 160),
+          TypeContrat: String(s.typeContrat || "").trim().slice(0, 60),
+          ...(dateValide(s.dateEntree) ? { DateEntree: dateValide(s.dateEntree) } : {}),
+          ...(dateSortie ? { DateSortie: dateSortie } : {}),
+          Statut: String(s.statut || "").trim().slice(0, 40)
+            || (dateSortie && dateSortie < aujourdhui ? "Sorti" : "Actif"),
+          Email: String(s.email || "").trim().toLowerCase().slice(0, 200),
+          Telephone: String(s.telephone || "").trim().slice(0, 40),
+        } }),
+      });
+      if (!r.ok) {
+        context.error("admin/import salarié :", r.status, (await r.text().catch(() => "")).slice(0, 200));
+        ignorees.push({ ligne: i + 1, raison: `écriture refusée (HTTP ${r.status})` });
+        continue;
+      }
+      existants.add(cle);
+      crees++;
+    }
+
+    viderCacheItems(); // le client voit son effectif dès le prochain chargement
+    return { status: 200, jsonBody: { ok: true, codeClient, crees, doublons, ignorees } };
+  } catch (e) {
+    if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+    context.error("admin/importerSalaries :", e);
+    return { status: 502, jsonBody: { erreur: "Import impossible — réessayez." } };
+  }
+}
+
+module.exports = { donnees, activer, importerSalaries };
