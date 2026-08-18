@@ -24,6 +24,19 @@ app.http("demande", {
     // 1. Honeypot : un humain ne remplit jamais ce champ caché
     if (d.xq_note || d.website) return { status: 202, jsonBody: { reference: "OK" } }; // on ne renseigne pas le bot
 
+    // 1 bis. Détour gestionnaire : l'activation des demandes d'accès passe
+    // par cette route car la table de routage de la SWA n'accepte plus de
+    // nouveau nom (voir me.js). Le module admin re-vérifie lui-même le
+    // jeton ET la liste ADMIN_EMAILS — un client ordinaire reçoit un 403.
+    if (d.action === "adminActiver") {
+      try {
+        return await require("../admin").activer(request, context, d);
+      } catch (e) {
+        context.error("demande/adminActiver :", e);
+        return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+      }
+    }
+
     // 2. Identité vérifiée puis résolution client — le verrou.
     //    Cas particulier « acces » : la demande d'accès est LA démarche des
     //    comptes pas encore rattachés — jeton valide exigé, résolution non.
