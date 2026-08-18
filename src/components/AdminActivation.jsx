@@ -10,7 +10,7 @@
 // { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
 import React, { useEffect, useState } from "react";
-import { LogOut, RefreshCw, UserCheck, UserPlus, Building2, Check } from "lucide-react";
+import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
 const T = {
@@ -177,6 +177,198 @@ function FormulaireActivation({ demande, clients, options, onActivee, onClientCr
   );
 }
 
+/* ── Reprise de l'effectif ────────────────────────────────────────────── */
+/* Le gestionnaire colle le tableau de l'export du client (Excel → Ctrl+C
+   → coller ici : le presse-papier arrive en TSV, format universel), le
+   portail détecte les colonnes usuelles, montre un aperçu, et l'API écrit
+   le référentiel « Salariés » (CodeClient imposé côté serveur, doublons
+   nom+prénom ignorés). */
+
+const CHAMPS_IMPORT = [
+  { k: "matricule", l: "Matricule" }, { k: "nom", l: "Nom" }, { k: "prenom", l: "Prénom" },
+  { k: "poste", l: "Poste / emploi" }, { k: "typeContrat", l: "Type de contrat" },
+  { k: "dateEntree", l: "Date d'entrée" }, { k: "dateSortie", l: "Date de sortie" },
+  { k: "email", l: "E-mail" }, { k: "telephone", l: "Téléphone" }, { k: "statut", l: "Statut" },
+];
+// Ordre de détection pensé pour les collisions de sous-chaînes :
+// « prénom » avant « nom », les dates avant « contrat » (« date fin contrat »).
+const DETECTION = [
+  ["matricule", ["matricule", "n° sal", "numero sal"]],
+  ["prenom", ["prenom"]],
+  ["dateEntree", ["entree", "embauche", "debut", "arrivee"]],
+  ["dateSortie", ["sortie", "depart", "fin"]],
+  ["email", ["mail", "courriel"]],
+  ["telephone", ["tel", "portable", "mobile"]],
+  ["statut", ["statut"]],
+  ["typeContrat", ["contrat", "nature"]],
+  ["poste", ["poste", "emploi", "fonction", "qualification"]],
+  ["nom", ["nom"]],
+];
+const normaliser = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const detecterChamp = (entete) => {
+  const e = normaliser(entete);
+  if (!e) return "";
+  for (const [champ, alias] of DETECTION) if (alias.some((a) => e.includes(a))) return champ;
+  return "";
+};
+const normDate = (v) => {
+  const t = String(v || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})$/);
+  if (!m) return "";
+  const an = m[3].length === 2 ? (Number(m[3]) > 50 ? "19" + m[3] : "20" + m[3]) : m[3];
+  return `${an}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+};
+
+function analyserCollage(texte) {
+  const lignesBrutes = texte.split(/\r?\n/).map((l) => l.replace(/ /g, " "))
+    .filter((l) => l.trim() !== "");
+  if (!lignesBrutes.length) return null;
+  const sep = lignesBrutes[0].includes("\t") ? "\t" : lignesBrutes[0].includes(";") ? ";" : ",";
+  const grille = lignesBrutes.map((l) => l.split(sep).map((c) => c.trim()));
+  const nbCol = Math.max(...grille.map((l) => l.length));
+  const detection = Array.from({ length: nbCol }, (_, i) => detecterChamp(grille[0][i]));
+  // Première ligne = en-têtes si au moins deux colonnes reconnues distinctes
+  const reconnues = detection.filter(Boolean);
+  const enTete = new Set(reconnues).size >= 2;
+  return {
+    donnees: enTete ? grille.slice(1) : grille,
+    mapping: enTete ? detection : Array.from({ length: nbCol }, () => ""),
+    nbCol, enTete,
+  };
+}
+
+function RepriseEffectif({ clients, notifier }) {
+  const [codeClient, setCodeClient] = useState("");
+  const [texte, setTexte] = useState("");
+  const [mapping, setMapping] = useState([]);
+  const [envoi, setEnvoi] = useState(false);
+  const [resultat, setResultat] = useState(null);
+
+  const analyse = texte.trim() ? analyserCollage(texte) : null;
+  const majTexte = (v) => {
+    setTexte(v); setResultat(null);
+    const a = v.trim() ? analyserCollage(v) : null;
+    setMapping(a ? a.mapping : []);
+  };
+  const colNom = mapping.indexOf("nom");
+  const utilisables = analyse && colNom >= 0
+    ? analyse.donnees.filter((l) => String(l[colNom] || "").trim().length >= 2).length : 0;
+
+  const importer = async () => {
+    if (!codeClient) return notifier("Choisissez le client destinataire de l'effectif.");
+    if (!analyse) return notifier("Collez d'abord le tableau des salariés.");
+    if (colNom < 0) return notifier("Indiquez quelle colonne contient le Nom.");
+    if (!utilisables) return notifier("Aucune ligne avec un nom exploitable.");
+    if (utilisables > 500) return notifier("500 salariés maximum par import — coupez le fichier en deux.");
+    const salaries = analyse.donnees.map((l) => {
+      const s = {};
+      mapping.forEach((champ, i) => { if (champ) s[champ] = l[i] || ""; });
+      if (s.dateEntree) s.dateEntree = normDate(s.dateEntree);
+      if (s.dateSortie) s.dateSortie = normDate(s.dateSortie);
+      return s;
+    }).filter((s) => String(s.nom || "").trim().length >= 2);
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminImportSalaries", codeClient, salaries }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEnvoi(false);
+      if (!r.ok) return notifier(j.erreur || `Import refusé (HTTP ${r.status}).`);
+      setResultat(j); setTexte(""); setMapping([]);
+      notifier(`✓ Effectif ${codeClient} : ${j.crees} salarié${j.crees > 1 ? "s" : ""} importé${j.crees > 1 ? "s" : ""}.`);
+    } catch {
+      setEnvoi(false);
+      notifier("API injoignable — réessayez.");
+    }
+  };
+
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 20px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" }}>
+        <select style={champ} value={codeClient} onChange={(e) => setCodeClient(e.target.value)}>
+          <option value="">— Client destinataire —</option>
+          {clients.map((c) => (
+            <option key={c.codeClient} value={c.codeClient}>{c.codeClient} — {c.raisonSociale}</option>
+          ))}
+        </select>
+        <a href="/modeles/Modele_import_salaries.xlsx" download
+          style={{ fontSize: 12, color: T.accent, whiteSpace: "nowrap" }}>
+          ⬇ Modèle Excel de reprise
+        </a>
+      </div>
+      <textarea value={texte} onChange={(e) => majTexte(e.target.value)}
+        placeholder={"Ouvrez l'export du client dans Excel, sélectionnez le tableau (en-têtes comprises), Ctrl+C… puis collez ici."}
+        style={{ ...champ, marginTop: 10, minHeight: 90, resize: "vertical", fontFamily: "monospace", fontSize: 12 }} />
+
+      {analyse && (
+        <>
+          <p style={{ margin: "10px 0 6px", fontSize: 12.5, color: T.mut }}>
+            {analyse.donnees.length} ligne{analyse.donnees.length > 1 ? "s" : ""} détectée{analyse.donnees.length > 1 ? "s" : ""}
+            {analyse.enTete ? " (en-têtes reconnues)" : " (pas d'en-têtes reconnues — indiquez les colonnes)"} —
+            vérifiez le mappage puis l'aperçu :
+          </p>
+          <div style={{ overflowX: "auto", border: `1px solid ${T.border}`, borderRadius: 8 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12, minWidth: "100%" }}>
+              <thead>
+                <tr>
+                  {mapping.map((m, i) => (
+                    <th key={i} style={{ padding: 6, background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+                      <select value={m} style={{ ...champ, padding: "5px 7px", fontSize: 11.5 }}
+                        onChange={(e) => setMapping(mapping.map((x, j) => (j === i ? e.target.value : x)))}>
+                        <option value="">— ignorer —</option>
+                        {CHAMPS_IMPORT.map((c) => <option key={c.k} value={c.k}>{c.l}</option>)}
+                      </select>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {analyse.donnees.slice(0, 6).map((l, i) => (
+                  <tr key={i}>
+                    {mapping.map((_, j) => (
+                      <td key={j} style={{ padding: "5px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{l[j] || ""}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {analyse.donnees.length > 6 && (
+            <p style={{ margin: "4px 0 0", fontSize: 11.5, color: T.mut }}>… et {analyse.donnees.length - 6} autres lignes.</p>
+          )}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <button onClick={importer} disabled={envoi} style={{
+              all: "unset", cursor: envoi ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8,
+              background: T.accent, color: "#fff", borderRadius: 8, padding: "9px 18px",
+              fontSize: 13, fontWeight: 600, fontFamily: T.sans, opacity: envoi ? 0.7 : 1,
+            }}>
+              <Users size={15} /> {envoi ? "Import…" : `Importer ${utilisables} salarié${utilisables > 1 ? "s" : ""}`}
+            </button>
+          </div>
+        </>
+      )}
+
+      {resultat && (
+        <div style={{ marginTop: 12, fontSize: 12.5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 12px" }}>
+          <strong>Import {resultat.codeClient}</strong> : {resultat.crees} créé{resultat.crees > 1 ? "s" : ""},{" "}
+          {resultat.doublons} doublon{resultat.doublons > 1 ? "s" : ""} ignoré{resultat.doublons > 1 ? "s" : ""}
+          {resultat.ignorees?.length ? <>
+            , {resultat.ignorees.length} ligne{resultat.ignorees.length > 1 ? "s" : ""} en erreur :
+            <ul style={{ margin: "4px 0 0 18px" }}>
+              {resultat.ignorees.slice(0, 8).map((x, i) => <li key={i}>ligne {x.ligne} — {x.raison}</li>)}
+              {resultat.ignorees.length > 8 && <li>… et {resultat.ignorees.length - 8} autres.</li>}
+            </ul>
+          </> : "."}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminActivation({ user, onLogout }) {
   const [donnees, setDonnees] = useState(null); // null | { demandes, clients, options } | { erreur }
   const [toast, setToast] = useState(null);
@@ -254,6 +446,20 @@ export default function AdminActivation({ user, onLogout }) {
             </p>
             <FormulaireActivation clients={donnees.clients} options={donnees.options}
               onClientCree={ajouterClient} notifier={notifier} />
+          </section>
+        )}
+
+        {donnees?.demandes && donnees.clients.length > 0 && (
+          <section style={{ marginTop: 30 }}>
+            <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+              <Users size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+              Reprise de l'effectif
+            </h2>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
+              Collez le tableau des salariés du client (export Excel de son ancien outil,
+              registre du personnel…) : son espace sera déjà peuplé à sa première connexion.
+            </p>
+            <RepriseEffectif clients={donnees.clients} notifier={notifier} />
           </section>
         )}
       </main>

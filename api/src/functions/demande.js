@@ -28,11 +28,14 @@ app.http("demande", {
     // par cette route car la table de routage de la SWA n'accepte plus de
     // nouveau nom (voir me.js). Le module admin re-vérifie lui-même le
     // jeton ET la liste ADMIN_EMAILS — un client ordinaire reçoit un 403.
-    if (d.action === "adminActiver") {
+    if (d.action === "adminActiver" || d.action === "adminImportSalaries") {
       try {
-        return await require("../admin").activer(request, context, d);
+        const admin = require("../admin");
+        return d.action === "adminActiver"
+          ? await admin.activer(request, context, d)
+          : await admin.importerSalaries(request, context, d);
       } catch (e) {
-        context.error("demande/adminActiver :", e);
+        context.error(`demande/${d.action} :`, e);
         return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
       }
     }
