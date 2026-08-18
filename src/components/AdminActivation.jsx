@@ -295,7 +295,7 @@ function RepriseEffectif({ clients, notifier }) {
             <option key={c.codeClient} value={c.codeClient}>{c.codeClient} — {c.raisonSociale}</option>
           ))}
         </select>
-        <a href="/modeles/Modele_import_salaries.xlsx" download
+        <a href="/modeles/Modele_reprise_effectif.xlsx" download
           style={{ fontSize: 12, color: T.accent, whiteSpace: "nowrap" }}>
           ⬇ Modèle Excel de reprise
         </a>

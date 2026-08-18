@@ -28,12 +28,17 @@ Côté gestionnaire, dans l'ordre, dès la signature :
    écrits, effet immédiat.
 5. **Reprise de l'effectif** (section dédiée de l'écran admin) : demander
    au client (ou à l'expert-comptable sortant) l'export de ses salariés —
-   n'importe quel Excel/CSV, ou le modèle `Modele_import_salaries.xlsx`
+   n'importe quel Excel/CSV, ou le modèle `Modele_reprise_effectif.xlsx`
    du portail. L'ouvrir dans Excel, sélectionner le tableau, **Ctrl+C,
    coller dans la section** : colonnes reconnues automatiquement, aperçu,
    puis import (doublons nom+prénom ignorés, compte-rendu affiché).
    → Le client découvre son espace **déjà peuplé de ses salariés**,
    démarches pré-remplies : c'est le moment « waouh » de l'onboarding.
+   ⚠️ Ne pas confondre avec l'**import salariés PAIE**
+   (`Modele_import_salaries.xlsx`) : la reprise alimente le portail
+   (onglet Personnel, pré-remplissage) ; la création des dossiers en
+   paie exige son circuit et son fichier propres (NIR, adresse, IBAN…) —
+   les deux se demandent au client en même temps, mais ne se mélangent pas.
 6. **Envoyer l'e-mail de bienvenue** (modèle ci-dessous). Automatisation
    prévue : flux « Bienvenue portail » à la création d'un élément dans
    « Utilisateurs portail » (connecteur Outlook) — tant qu'il n'est pas
