@@ -123,6 +123,12 @@ portail » → e-mail de bienvenue, connecteur Outlook).
    (le compte de test du 17/08 est en attente, prêt à activer).
 6. Dérouler `Recette-phase-6.md`.
 
+**Parcours A validé en réel le 18/08** (adresse Gmail de test) :
+création de l'accès depuis l'écran admin → inscription du compte →
+l'espace s'ouvre directement, sans demande d'accès. La fiche de test
+créée à cette occasion sera à désactiver (`Actif` à faux dans
+« Paramètres clients ») ou à réutiliser pour la recette phase 6.
+
 ### 18/08 (soir, suite) — constat DNS e-mail
 
 - Le MX de **synapserh.fr** pointe vers Microsoft 365 (pas OVH) : une
