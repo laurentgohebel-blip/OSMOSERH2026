@@ -27,3 +27,13 @@ app.http("me", {
     }
   }
 });
+
+/* Fonction-témoin de diagnostic (18/08) : enregistrée depuis un fichier
+   qui charge à coup sûr, pour discriminer « nouveau fichier non indexé »
+   de « nouvelle fonction non enregistrée ». À retirer une fois l'écran
+   d'administration validé. */
+app.http("ping", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  handler: async () => ({ status: 200, jsonBody: { ok: true, quand: new Date().toISOString() } }),
+});
