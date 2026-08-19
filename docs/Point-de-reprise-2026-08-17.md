@@ -116,7 +116,10 @@ portail » → e-mail de bienvenue, connecteur Outlook).
 
 1. Points ouverts de la synthèse : domaine osmoserh.fr vérifié dans quel
    tenant, licence Power Automate Premium, rôle Dataverse, SPF fusionné.
-2. Reconstruire **ATT-01** (kit prêt) → `FLOW_URL_ATTESTATION_EMPLOYEUR`.
+2. Reconstruire **ATT-01 et ACP-01 en flux STANDARD** (chantier « fin du
+   Premium » du 19/08 : `Flux-standard-ACP-ATT.md` +
+   `creer_listes_demarches.py`) — ne PAS acheter Power Automate Premium,
+   ne PAS poser de variables `FLOW_URL_*` dans le nouveau tenant.
 3. Phase 5 : variables SWA (tableau de la synthèse).
 4. `python src/scripts/creer_leads_site.py` + flux de notification leads.
 5. Flux « Demandes d'accès + AR » : reconstruire et re-tester l'entonnoir

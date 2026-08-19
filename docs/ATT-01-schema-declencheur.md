@@ -1,5 +1,12 @@
 # ATT-01 — schéma du déclencheur HTTP (généré depuis le code)
 
+> ⚠️ **OBSOLÈTE depuis le 19/08** — chantier « fin du Premium » : ATT-01
+> se reconstruit en déclencheur STANDARD « Quand un élément est créé »
+> sur la liste « Demandes attestations ». Voir
+> `Flux-standard-ACP-ATT.md`. Ce kit HTTP ne sert plus que si l'on
+> choisissait de conserver le circuit Premium (variable
+> `FLOW_URL_ATTESTATION_EMPLOYEUR` en place).
+
 Source de vérité : payload du formulaire attestation (`AppShell.jsx` l. 1112)
 + enrichissement serveur (`demande.js` l. 214). Généré le 16/08/2026 — si le
 formulaire ou l'API changent, régénérer depuis le code, pas de mémoire.

@@ -118,6 +118,76 @@ app.http("demande", {
         return { status: 202, jsonBody: { reference } };
       }
 
+      // Bascule « connecteurs standard » (chantier fin du Premium,
+      // docs/Flux-standard-ACP-ATT.md) : tant que la variable FLOW_URL_*
+      // correspondante existe, le relais HTTP historique reste actif ;
+      // dès qu'elle est retirée de la SWA, l'API écrit la liste et le
+      // flux standard « à la création d'un élément » prend le relais.
+      // Cutover par simple suppression de variable, réversible, sans
+      // redéploiement. Prérequis : creer_listes_demarches.py exécuté.
+      if (d.demarche === "acompte" && !process.env.FLOW_URL_ACOMPTE) {
+        const nomSalarie = String(d.nomSalarie || `${d.nom || ""} ${d.prenom || ""}`).trim();
+        if (nomSalarie.length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        const montant = Number(d.montant);
+        if (!Number.isFinite(montant) || montant <= 0 || montant > 100000)
+          return { status: 400, jsonBody: { erreur: "Montant invalide." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateVersement || "")))
+          return { status: 400, jsonBody: { erreur: "Date de versement requise." } };
+        const reference = `ACOMPTE-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementDemarche("Acompte", {
+          Title: nomSalarie,
+          CodeClient: clientInfo.codeClient,
+          Nom: String(d.nom || "").trim().toUpperCase().slice(0, 120),
+          Prenom: String(d.prenom || "").trim().slice(0, 120),
+          Montantdemande: Math.round(montant * 100) / 100,
+          ...(Number.isFinite(Number(d.matricule)) ? { Matricule: Number(d.matricule) } : {}),
+          DateVersement: d.dateVersement,
+          Reference: reference,
+          EmailDemandeur: email,
+          EmailGestionnaire: clientInfo.emailGestionnaire || "",
+          Statut: "Nouveau",
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
+      if (d.demarche === "attestation-employeur" && !process.env.FLOW_URL_ATTESTATION_EMPLOYEUR) {
+        const nomSalarie = String(d.nomSalarie || "").trim();
+        if (nomSalarie.length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!["Madame", "Monsieur"].includes(d.civilite))
+          return { status: 400, jsonBody: { erreur: "Civilité requise." } };
+        for (const [champ, libelle] of [["dateNaissance", "Date de naissance"], ["dateEntree", "Date d'entrée"]])
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d[champ] || "")))
+            return { status: 400, jsonBody: { erreur: `${libelle} requise (AAAA-MM-JJ).` } };
+        if (!d.poste || String(d.poste).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Poste requis." } };
+        if (!["PDF", "Word"].includes(d.formatSouhaite))
+          return { status: 400, jsonBody: { erreur: "Format souhaité invalide (PDF ou Word)." } };
+        const reference = `ATTESTATION-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementDemarche("Demandes attestations", {
+          Title: nomSalarie,
+          Reference: reference,
+          CodeClient: clientInfo.codeClient,
+          EmailDemandeur: email,
+          EmailGestionnaire: clientInfo.emailGestionnaire || "",
+          Civilite: d.civilite,
+          DateNaissance: d.dateNaissance,
+          DateEntree: d.dateEntree,
+          Poste: String(d.poste).trim().slice(0, 160),
+          TypeContrat: String(d.typeContrat || "").trim().slice(0, 60),
+          FormatSouhaite: d.formatSouhaite,
+          RaisonSociale: clientInfo.raisonSociale || "",
+          AdresseEntreprise: clientInfo.adresseEntreprise || "",
+          Siret: clientInfo.siret || "",
+          Representant: clientInfo.representant || "",
+          FonctionRepresentant: clientInfo.fonctionRepresentant || "",
+          LieuEdition: clientInfo.lieuEdition || "",
+          Statut: "Reçue",
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
       // Cas particulier « contact » : message au gestionnaire — JAMAIS
       // optionnel (le canal fait partie du service de base). Écrit dans
       // « Messages gestionnaire » ; le flux « + AR » notifie et accuse
@@ -256,6 +326,24 @@ app.http("demande", {
     return { status: 202, jsonBody: { reference } };
   }
 });
+
+/* Écrit une ligne de démarche « standard » (Acompte, Demandes attestations) :
+   champs déjà construits par l'appelant, réponse Graph vérifiée — le client
+   ne reçoit jamais une référence pour une ligne qui n'a pas été écrite. */
+async function creerElementDemarche(liste, fields) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  if (!ids[liste]) throw { status: 502, erreur: `Liste « ${liste} » introuvable — lancer creer_listes_demarches.py.` };
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids[liste]}/items`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!r.ok) {
+    const corps = (await r.text().catch(() => "")).slice(0, 300);
+    throw { status: 502, erreur: `Enregistrement dans « ${liste} » impossible — réessayez.`, detail: corps };
+  }
+}
 
 /* Écrit un message client dans « Messages gestionnaire » (canal de contact).
    Même exigence que les autres écritures : réponse Graph vérifiée. */
