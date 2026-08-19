@@ -36,6 +36,9 @@ standard, inclus dans Microsoft 365). Ne passent encore par HTTP que :
 
 **Action** : convertir ces deux démarches au même modèle que les huit
 autres (l'API écrit la liste, le flux se déclenche à la création).
+✅ **Chantier préparé le 19/08** : code en place (bascule par retrait
+des variables `FLOW_URL_*`), script `creer_listes_demarches.py`, fiche
+de reconstruction `Flux-standard-ACP-ATT.md`.
 Comme les flux doivent de toute façon être **reconstruits dans le
 nouveau tenant**, les reconstruire en standard ne coûte aucun travail
 supplémentaire — c'est le même effort, en moins cher. Bénéfices

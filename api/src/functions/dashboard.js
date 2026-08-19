@@ -19,14 +19,26 @@ app.http("dashboard", {
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
 
-      const [embauches, acomptes, attestations] = await Promise.all([
+      // Acompte : les éléments écrits par l'ancien flux HTTP portent les
+      // colonnes accentuées historiques (Pr_x00e9_nom, Montantdemand_x00e9_),
+      // ceux écrits par l'API standard les canoniques (Prenom,
+      // Montantdemande) — on lit les deux générations et on fusionne.
+      // Attestations : « Demandes attestations » (circuit standard) s'ajoute
+      // à « Attestations test » (historique) si elle existe.
+      const [embauches, acomptes, attestations, attestationsStd] = await Promise.all([
         items(tok, ids["Production contrat"],
           "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Dateded_x00e9_but,Approuv_x00e9_,Sign_x00e9_,Created"),
-        items(tok, ids["Acompte"], "CodeClient,Nom,Pr_x00e9_nom,Montantdemand_x00e9_,Statut,Created"),
-        items(tok, ids["Attestations test"], "CodeClient,Title,Statut,Created"),
+        items(tok, ids["Acompte"], "CodeClient,Nom,Pr_x00e9_nom,Prenom,Montantdemand_x00e9_,Montantdemande,Statut,Created"),
+        ids["Attestations test"] ? items(tok, ids["Attestations test"], "CodeClient,Title,Statut,Created") : [],
+        ids["Demandes attestations"] ? items(tok, ids["Demandes attestations"], "CodeClient,Title,Statut,Created") : [],
       ]);
       const duClient = (liste) => liste.filter((x) => x.CodeClient === c.codeClient);
-      const emb = duClient(embauches), aco = duClient(acomptes), att = duClient(attestations);
+      const emb = duClient(embauches), att = duClient([...attestations, ...attestationsStd]);
+      const aco = duClient(acomptes).map((x) => ({
+        ...x,
+        Pr_x00e9_nom: x.Pr_x00e9_nom || x.Prenom || "",
+        Montantdemand_x00e9_: x.Montantdemand_x00e9_ ?? x.Montantdemande ?? 0,
+      }));
 
       const maintenant = new Date();
       const debutMoisCourant = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1);
