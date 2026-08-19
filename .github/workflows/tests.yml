@@ -1,8 +1,16 @@
 name: Tests du portail (mode démo)
 
+# Économie de minutes Actions (dépôt privé, forfait limité) : les tests
+# ne tournent que sur main et jamais pour la documentation seule.
+# Lancement manuel possible depuis l'onglet Actions (workflow_dispatch).
 on:
   push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
+  workflow_dispatch:
 
 jobs:
   e2e:
