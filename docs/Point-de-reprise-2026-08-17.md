@@ -129,6 +129,15 @@ l'espace s'ouvre directement, sans demande d'accès. La fiche de test
 créée à cette occasion sera à désactiver (`Actif` à faux dans
 « Paramètres clients ») ou à réutiliser pour la recette phase 6.
 
+**Reprise de l'effectif construite et validée en réel le 18/08** :
+section « Reprise de l'effectif » de l'écran admin (coller depuis
+Excel, détection des colonnes, aperçu, import → référentiel
+« Salariés », doublons nom+prénom ignorés, compte-rendu). Test complet
+sur fichier fictif 12 lignes : 10 créés, 1 doublon, 1 erreur signalée,
+statut « Sorti » déduit, CDD visible en Échéances, ré-import = 0 créé.
+Modèle dédié `Modele_reprise_effectif.xlsx` (portail) — distinct de
+`Modele_import_salaries.xlsx` qui reste au circuit PAIE.
+
 ### 18/08 (soir, suite) — constat DNS e-mail
 
 - Le MX de **synapserh.fr** pointe vers Microsoft 365 (pas OVH) : une
