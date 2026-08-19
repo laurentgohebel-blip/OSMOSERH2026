@@ -1,8 +1,13 @@
 name: Deploy to Azure Static Web Apps
 
+# La documentation (docs/, *.md) n'est pas servie par la Static Web App :
+# inutile de consommer un déploiement pour elle.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   workflow_dispatch:
 
 jobs:
