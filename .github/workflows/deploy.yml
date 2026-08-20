@@ -8,6 +8,7 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
+      - "src/scripts/**"
   workflow_dispatch:
 
 jobs:
