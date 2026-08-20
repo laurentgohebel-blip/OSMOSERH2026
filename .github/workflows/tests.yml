@@ -9,6 +9,7 @@ on:
     paths-ignore:
       - "docs/**"
       - "**.md"
+      - "src/scripts/**"
   pull_request:
   workflow_dispatch:
 
