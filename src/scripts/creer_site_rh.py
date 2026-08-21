@@ -77,6 +77,15 @@ LISTES = [
         col("Nom", T()), col("Prenom", T()), col("Poste", T()),
         col("TypeContrat", T()), col("DateEntree", D()), col("DateSortie", D()),
         col("Statut", T()), col("Email", T()), col("Telephone", T()),
+        # Dossier salarié (enrichi le 22/08 — état civil, banque, paie)
+        col("AdressePostale", T()), col("NumeroSS", T()),
+        col("DateNaissance", D()), col("Sexe", T()),
+        col("NomNaissance", T()), col("NomMarital", T()),
+        col("SituationFamiliale", T()),
+        col("DepartementNaissance", T()), col("CodeDepartementNaissance", T()),
+        col("PaysNaissance", T()), col("CodePaysNaissance", T()),
+        col("Iban", T()), col("Bic", T()),
+        col("BulletinDematerialise", B(False)),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),

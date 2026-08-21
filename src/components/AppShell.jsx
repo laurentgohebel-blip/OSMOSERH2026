@@ -2558,6 +2558,140 @@ const DEMO_PERSONNEL = {
   fins: [],
 };
 
+/* ── Onglet « Dossier » de la fiche salarié : état civil, naissance,
+      coordonnées, banque & paie. Lecture par sections ; « Modifier »
+      ouvre le formulaire complet → POST /api/demande action majSalarie
+      (route historique, verrou client + option côté serveur). ───────── */
+const FICHE_VIDE = {
+  sexe: "", nomNaissance: "", nomMarital: "", situationFamiliale: "",
+  dateNaissance: "", numeroSS: "", departementNaissance: "",
+  codeDepartementNaissance: "", paysNaissance: "", codePaysNaissance: "",
+  adressePostale: "", email: "", telephone: "", iban: "", bic: "",
+  matricule: "", bulletinDematerialise: false,
+};
+const SECTIONS_DOSSIER = [
+  ["État civil", [
+    ["sexe", "Sexe", "choix", ["", "Masculin", "Féminin"]],
+    ["nomNaissance", "Nom de naissance", "texte"],
+    ["nomMarital", "Nom marital", "texte"],
+    ["situationFamiliale", "Situation familiale", "choix",
+      ["", "Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)", "Séparé(e)", "Veuf(ve)", "Union libre"]],
+    ["dateNaissance", "Date de naissance", "date"],
+    ["numeroSS", "N° de sécurité sociale", "texte"],
+  ]],
+  ["Naissance", [
+    ["departementNaissance", "Département de naissance", "texte"],
+    ["codeDepartementNaissance", "Code département", "texte"],
+    ["paysNaissance", "Pays de naissance", "texte"],
+    ["codePaysNaissance", "Code pays (ex. FR)", "texte"],
+  ]],
+  ["Coordonnées", [
+    ["adressePostale", "Adresse postale", "texte"],
+    ["email", "E-mail personnel", "texte"],
+    ["telephone", "Téléphone personnel", "texte"],
+  ]],
+  ["Banque & paie", [
+    ["matricule", "Matricule", "texte"],
+    ["iban", "IBAN", "texte"],
+    ["bic", "BIC", "texte"],
+    ["bulletinDematerialise", "Bulletin de paie dématérialisé", "ouinon"],
+  ]],
+];
+
+function DossierSalarie({ sal, onMaj }) {
+  const [edition, setEdition] = useState(false);
+  const [f, setF] = useState({ ...FICHE_VIDE, matricule: sal.matricule || "", ...(sal.fiche || {}) });
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null); // { ok } | { erreur }
+  const maj = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  const enregistrer = async () => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "majSalarie", id: sal.id, cle: sal.cle, fiche: f }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEnvoi(false);
+      if (!r.ok) return setMsg({ erreur: j.erreur || `Enregistrement refusé (HTTP ${r.status}).` });
+      onMaj({ ...f });
+      setEdition(false);
+      setMsg({ ok: true });
+    } catch {
+      setEnvoi(false);
+      setMsg({ erreur: "API injoignable — réessayez." });
+    }
+  };
+
+  const afficher = (champ, type) => {
+    const v = f[champ];
+    if (type === "ouinon") return v ? "Oui" : "Non";
+    if (type === "date") return v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—";
+    if (champ === "iban" && v) return v.replace(/(.{4})/g, "$1 ").trim();
+    return v || "—";
+  };
+
+  if (!edition) {
+    return (
+      <>
+        {msg?.ok && (
+          <p style={{ fontSize: 12.5, color: T.ok, margin: "0 0 10px" }}>✓ Dossier enregistré.</p>
+        )}
+        {SECTIONS_DOSSIER.map(([titre, champs]) => (
+          <div key={titre} style={{ marginBottom: 14 }}>
+            <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>{titre}</p>
+            <Carte>
+              {champs.map(([champ, libelle, type], i) => (
+                <Rangee key={champ} gauche={<span style={{ color: T.mut }}>{libelle}</span>}
+                  droite={<strong>{afficher(champ, type)}</strong>} dernier={i === champs.length - 1} />
+              ))}
+            </Carte>
+          </div>
+        ))}
+        <Btn primary onClick={() => { setMsg(null); setEdition(true); }}>Modifier le dossier</Btn>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {SECTIONS_DOSSIER.map(([titre, champs]) => (
+        <div key={titre} style={{ marginBottom: 16 }}>
+          <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>{titre}</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+            {champs.map(([champ, libelle, type, opts]) => (
+              <label key={champ} style={{ fontSize: 12, color: T.mut, display: "flex", flexDirection: "column", gap: 4, ...(champ === "adressePostale" ? { gridColumn: "1 / -1" } : {}) }}>
+                {libelle}
+                {type === "choix" ? (
+                  <select style={inputStyle} value={f[champ]} onChange={(e) => maj(champ, e.target.value)}>
+                    {opts.map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                  </select>
+                ) : type === "ouinon" ? (
+                  <span style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0", fontSize: 13, color: T.ink }}>
+                    <input type="checkbox" checked={!!f[champ]} onChange={(e) => maj(champ, e.target.checked)} /> Oui
+                  </span>
+                ) : (
+                  <input style={inputStyle} type={type === "date" ? "date" : "text"} value={f[champ] || ""}
+                    onChange={(e) => maj(champ, e.target.value)} />
+                )}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+      {msg?.erreur && (
+        <p style={{ fontSize: 12.5, color: T.err, margin: "0 0 10px" }}>{msg.erreur}</p>
+      )}
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn primary onClick={enregistrer} disabled={envoi}>{envoi ? "Enregistrement…" : "Enregistrer"}</Btn>
+        <Btn onClick={() => { setEdition(false); setMsg(null); setF({ ...FICHE_VIDE, matricule: sal.matricule || "", ...(sal.fiche || {}) }); }}>Annuler</Btn>
+      </div>
+    </>
+  );
+}
+
 function GestionPersonnel({ user, client, onRetour, onDemarche }) {
   const [dossier, setDossier] = useState(null); // null | { salaries… } | { erreur } | { demo }
   const [salCle, setSalCle] = useState(null);
@@ -2604,7 +2738,8 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
     const mutuelles = (src.mutuelles || []).filter((x) => x.cle === sal.cle);
     const fins = (src.fins || []).filter((x) => x.cle === sal.cle);
     const onglets = [
-      { id: "Contrat", n: null }, { id: "Absences", n: absences.length },
+      { id: "Contrat", n: null }, { id: "Dossier", n: null },
+      { id: "Absences", n: absences.length },
       { id: "Visites", n: visites.length }, { id: "Mutuelle", n: mutuelles.length },
       { id: "Fin", n: fins.length },
     ];
@@ -2635,6 +2770,14 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
               <Rangee key={l} gauche={<span style={{ color: T.mut }}>{l}</span>} droite={<strong>{v}</strong>} dernier={i === t.length - 1} />
             ))}
           </Carte>
+        )}
+
+        {ong === "Dossier" && (
+          <DossierSalarie sal={sal} onMaj={(fiche) =>
+            setDossier((d) => ({
+              ...d,
+              salaries: (d.salaries || src.salaries).map((s) => (s.cle === sal.cle ? { ...s, fiche } : s)),
+            }))} />
         )}
 
         {ong === "Absences" && (

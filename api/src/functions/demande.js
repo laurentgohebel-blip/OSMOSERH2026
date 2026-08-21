@@ -11,7 +11,7 @@
 // (voir annuaire.js). Les URLs de flux restent secrètes côté Azure.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat, tokenGraph, idsListes } = require("../annuaire");
+const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat, tokenGraph, idsListes, viderCacheItems } = require("../annuaire");
 
 app.http("demande", {
   methods: ["POST"],
@@ -77,6 +77,16 @@ app.http("demande", {
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+
+      // Mise à jour du DOSSIER SALARIÉ (onglet Dossier de la fiche) —
+      // action cliente sur la route historique (doctrine du 21/08).
+      // Verrous : jeton + client résolus ci-dessus, option embauche,
+      // et propriété de l'élément vérifiée AVANT toute écriture.
+      if (d.action === "majSalarie") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        return await majSalarie(clientInfo, d, context);
+      }
 
       // Cas particulier « fin-contrat » : déclaration de départ — écrite
       // dans la liste « Fins de contrat », production documentaire par le
@@ -341,6 +351,85 @@ app.http("demande", {
     return { status: 202, jsonBody: { reference } };
   }
 });
+
+/* Met à jour le dossier d'un salarié (liste « Salariés ») pour le client
+   connecté. Chaque champ est validé et mappé sur sa colonne ; seuls les
+   champs transmis sont modifiés (une chaîne vide efface). L'élément est
+   relu AVANT écriture pour vérifier qu'il appartient bien au client —
+   un id d'un autre client donne 404, jamais une fuite. */
+const SEXES = ["", "Masculin", "Féminin"];
+const SITUATIONS = ["", "Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)", "Séparé(e)", "Veuf(ve)", "Union libre"];
+async function majSalarie(clientInfo, d, context) {
+  const id = String(d.id || "").trim();
+  if (!/^\d+$/.test(id)) return { status: 400, jsonBody: { erreur: "Fiche salarié introuvable." } };
+  const f = d.fiche || {};
+  const txt = (v, max) => String(v ?? "").trim().slice(0, max);
+  const dateOuVide = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "");
+
+  // Espaces retirés AVANT toute troncature (un NIR saisi « 2 90 04… »
+  // dépasse 20 caractères avec ses espaces — couper d'abord mangerait
+  // un chiffre).
+  const nir = String(f.numeroSS ?? "").replace(/\s/g, "").slice(0, 15);
+  if (nir && !/^[12]\d{12}(\d{2})?$/.test(nir))
+    return { status: 400, jsonBody: { erreur: "Numéro de sécurité sociale invalide (13 ou 15 chiffres)." } };
+  const iban = String(f.iban ?? "").replace(/\s/g, "").toUpperCase().slice(0, 34);
+  if (iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(iban))
+    return { status: 400, jsonBody: { erreur: "IBAN invalide." } };
+  const bic = txt(f.bic, 11).replace(/\s/g, "").toUpperCase();
+  if (bic && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(bic))
+    return { status: 400, jsonBody: { erreur: "BIC invalide." } };
+  const email = txt(f.email, 200).toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
+    return { status: 400, jsonBody: { erreur: "Adresse e-mail invalide." } };
+  if (!SEXES.includes(txt(f.sexe, 20)))
+    return { status: 400, jsonBody: { erreur: "Sexe invalide." } };
+  if (!SITUATIONS.includes(txt(f.situationFamiliale, 30)))
+    return { status: 400, jsonBody: { erreur: "Situation familiale invalide." } };
+
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items/${id}`;
+
+  // Verrou de propriété : l'élément doit appartenir au client connecté.
+  const rl = await fetch(`${base}?$expand=fields($select=CodeClient)`, { headers: { Authorization: `Bearer ${tok}` } });
+  if (!rl.ok) return { status: 404, jsonBody: { erreur: "Fiche salarié introuvable." } };
+  const item = await rl.json();
+  if (item.fields?.CodeClient !== clientInfo.codeClient)
+    return { status: 404, jsonBody: { erreur: "Fiche salarié introuvable." } };
+
+  const fields = {
+    Matricule: txt(f.matricule, 40),
+    AdressePostale: txt(f.adressePostale, 250),
+    NumeroSS: nir,
+    DateNaissance: dateOuVide(f.dateNaissance) || null,
+    Sexe: txt(f.sexe, 20),
+    NomNaissance: txt(f.nomNaissance, 120),
+    NomMarital: txt(f.nomMarital, 120),
+    SituationFamiliale: txt(f.situationFamiliale, 30),
+    DepartementNaissance: txt(f.departementNaissance, 80),
+    CodeDepartementNaissance: txt(f.codeDepartementNaissance, 3).toUpperCase(),
+    PaysNaissance: txt(f.paysNaissance, 80),
+    CodePaysNaissance: txt(f.codePaysNaissance, 2).toUpperCase(),
+    Email: email,
+    Telephone: txt(f.telephone, 40),
+    Iban: iban,
+    Bic: bic,
+    BulletinDematerialise: f.bulletinDematerialise === true,
+  };
+
+  const r = await fetch(`${base}/fields`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+  if (!r.ok) {
+    const corps = (await r.text().catch(() => "")).slice(0, 300);
+    context.error("majSalarie :", r.status, corps);
+    return { status: 502, jsonBody: { erreur: "Enregistrement de la fiche impossible — réessayez. (Colonnes du dossier absentes ? Relancer creer_site_rh.py.)" } };
+  }
+  viderCacheItems();
+  return { status: 200, jsonBody: { ok: true } };
+}
 
 /* Écrit une ligne de démarche « standard » (Acompte, Demandes attestations) :
    champs déjà construits par l'appelant, réponse Graph vérifiée — le client

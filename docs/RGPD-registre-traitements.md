@@ -51,11 +51,13 @@ politique publiée (`public/mentions-legales.html`).
 - **Responsables de traitement** : chaque entreprise cliente
   (employeur) — liste tenue dans « Paramètres clients ».
 - **Catégories de personnes** : salariés des entreprises clientes.
-- **Catégories de données** : identité, date et lieu de naissance,
-  nationalité, **NIR**, adresse, coordonnées, contrat et rémunération,
-  variables de paie, absences (motif de la nomenclature DSN, sans
-  détail médical — les justificatifs médicaux transitent en documents),
-  documents RH générés.
+- **Catégories de données** : identité (dont noms de naissance et
+  marital, sexe, situation familiale), date, lieu, département et pays
+  de naissance, nationalité, **NIR**, adresse, coordonnées, contrat et
+  rémunération, **coordonnées bancaires (IBAN/BIC)**, choix de
+  dématérialisation du bulletin, variables de paie, absences (motif de
+  la nomenclature DSN, sans détail médical — les justificatifs médicaux
+  transitent en documents), documents RH générés.
 - **Opérations** : collecte via le portail, écriture dans les listes
   SharePoint du client, production de documents (contrats,
   attestations), notifications, restitution dans l'espace du client.

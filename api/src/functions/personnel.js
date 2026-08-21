@@ -24,7 +24,7 @@ app.http("personnel", {
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
       const [registre, contrats, absences, visites, mutuelles, fins] = await Promise.all([
-        items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone"),
+        items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise"),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
         items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),
@@ -39,6 +39,7 @@ app.http("personnel", {
       // référentiel fait foi en cas de doublon (clé nom+prénom).
       const duRegistre = du(registre).map((x) => ({
         cle: cle(x.Nom, x.Prenom),
+        id: x.id, // élément « Salariés » — permet la mise à jour de la fiche
         nom: String(x.Nom || "").toUpperCase(),
         prenom: x.Prenom || "",
         matricule: x.Matricule || "",
@@ -47,6 +48,25 @@ app.http("personnel", {
         debut: dateParis(x.DateEntree),
         fin: dateParis(x.DateSortie),
         statut: x.Statut || "Actif",
+        // Dossier salarié (état civil, coordonnées, banque) — enrichi 22/08
+        fiche: {
+          adressePostale: x.AdressePostale || "",
+          numeroSS: x.NumeroSS || "",
+          dateNaissance: dateParis(x.DateNaissance) || "",
+          sexe: x.Sexe || "",
+          nomNaissance: x.NomNaissance || "",
+          nomMarital: x.NomMarital || "",
+          situationFamiliale: x.SituationFamiliale || "",
+          departementNaissance: x.DepartementNaissance || "",
+          codeDepartementNaissance: x.CodeDepartementNaissance || "",
+          paysNaissance: x.PaysNaissance || "",
+          codePaysNaissance: x.CodePaysNaissance || "",
+          email: x.Email || "",
+          telephone: x.Telephone || "",
+          iban: x.Iban || "",
+          bic: x.Bic || "",
+          bulletinDematerialise: x.BulletinDematerialise === true,
+        },
       }));
       const clesRegistre = new Set(duRegistre.map((x) => x.cle));
       const duPipeline = du(contrats)

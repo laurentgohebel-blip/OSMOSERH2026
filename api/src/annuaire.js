@@ -107,7 +107,9 @@ async function items(tok, listeId, champs) {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}` } });
     if (!r.ok) throw { status: 502, erreur: "Annuaire clients injoignable (lecture)." };
     const j = await r.json();
-    tout.push(...j.value.map((i) => i.fields));
+    // L'id d'élément accompagne les champs : nécessaire aux mises à jour
+    // (fiche salarié). Posé après le spread : il gagne en cas de collision.
+    tout.push(...j.value.map((i) => ({ ...i.fields, id: i.id })));
     url = j["@odata.nextLink"] || null;
   }
   cacheItems.set(listeId, { valeur: tout, expire: Date.now() + 60000 });
