@@ -11,6 +11,23 @@
 const { app } = require("@azure/functions");
 const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
 
+/* Route lead déclarée EN TÊTE de fichier : l'indexation de la
+   plateforme SWA ne lit que le début de chaque fichier (constat du
+   21/08 : toute déclaration au-delà de ~la ligne 100 est ignorée —
+   voir me.js). Handler littéral obligatoire, jamais après un gros bloc. */
+app.http("lead", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../lead").lead(request, context);
+    } catch (e) {
+      context.error("lead :", e);
+      return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
+    }
+  },
+});
+
 const FENETRE_JOURS = 30;   // fenêtre d'alerte e-mail
 const RECENT_JOURS = 60;    // fins passées encore affichées sur le portail
 
@@ -132,18 +149,3 @@ async function modeAlertes(context) {
   return { status: 200, jsonBody: { alertes } };
 }
 
-/* Route lead déclarée ICI (fichier à une seule fonction) :
-   l'indexation SWA ne retient que 2 déclarations par fichier — voir le
-   commentaire de contournement dans me.js. Handler littéral obligatoire. */
-app.http("lead", {
-  methods: ["POST", "OPTIONS"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../lead").lead(request, context);
-    } catch (e) {
-      context.error("lead :", e);
-      return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
-    }
-  },
-});

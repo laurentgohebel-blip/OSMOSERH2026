@@ -13,6 +13,23 @@
 const { app } = require("@azure/functions");
 const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat, tokenGraph, idsListes } = require("../annuaire");
 
+/* Route admin-donnees déclarée EN TÊTE de fichier : l'indexation de la
+   plateforme SWA ne lit que le début de chaque fichier (constat du
+   21/08 : toute déclaration au-delà de ~la ligne 100 est ignorée —
+   voir me.js). Handler littéral obligatoire, jamais après un gros bloc. */
+app.http("admin-donnees", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../admin").donnees(request, context);
+    } catch (e) {
+      context.error("admin-donnees :", e);
+      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+    }
+  },
+});
+
 app.http("demande", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -399,18 +416,3 @@ async function creerElementPersonnel(liste, email, clientInfo, d, reference, cha
   }
 }
 
-/* Route admin-donnees déclarée ICI (fichier à une seule fonction) :
-   l'indexation SWA ne retient que 2 déclarations par fichier — voir le
-   commentaire de contournement dans me.js. Handler littéral obligatoire. */
-app.http("admin-donnees", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../admin").donnees(request, context);
-    } catch (e) {
-      context.error("admin-donnees :", e);
-      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
-    }
-  },
-});
