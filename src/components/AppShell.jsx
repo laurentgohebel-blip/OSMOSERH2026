@@ -269,6 +269,23 @@ export default function AppShell({ user, onLogout }) {
   // pour les listes déroulantes des formulaires ; null = indisponible
   // (option absente, panne) → les formulaires retombent en saisie libre.
   const [refSal, setRefSal] = useState(null);
+  // Pastille « messages non lus » de la tuile Mon gestionnaire : servie
+  // par /api/me au chargement, tenue à jour par la messagerie elle-même.
+  const [nonLusMsg, setNonLusMsg] = useState(0);
+  // Lien profond des e-mails de notification : ?msg=<id> ouvre le fil
+  // directement. Lecture PURE ici (StrictMode double-invoque les
+  // initialisateurs) ; l'URL est nettoyée dans l'effet, une seule fois.
+  const [msgInitial] = useState(() => new URLSearchParams(window.location.search).get("msg"));
+  useEffect(() => {
+    if (!msgInitial) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("msg")) { // seul msg est retiré — les autres paramètres restent
+      params.delete("msg");
+      const reste = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (reste ? `?${reste}` : "") + window.location.hash);
+    }
+    setVue("prod"); setTuile(TUILES.find((t) => t.id === "contact"));
+  }, []);
 
   // External ID enregistre « unknown » comme nom d'affichage quand le flux
   // d'inscription ne collecte pas le nom : on ne salue jamais « unknown » —
@@ -286,7 +303,11 @@ export default function AppShell({ user, onLogout }) {
     latence(500).then(() => setDb(JSON.parse(JSON.stringify(seed))));
     apiFetch("/api/me")
       .then(async (r) => {
-        if (r.ok) return setMoi(await r.json());
+        if (r.ok) {
+          const j = await r.json();
+          setNonLusMsg(j.messagesNonLus || 0);
+          return setMoi(j);
+        }
         if (r.status === 401 || r.status === 403) {
           const e = await r.json().catch(() => ({}));
           return setMoi({ bloque: e.erreur || `Accès refusé (HTTP ${r.status}).`, code: r.status });
@@ -428,7 +449,9 @@ export default function AppShell({ user, onLogout }) {
   /* Gestionnaire (ADMIN_EMAILS côté API) : écran d'activation des demandes
      d'accès à la place de l'espace client. */
   if (moi?.admin) {
-    return <AdminActivation user={user} onLogout={onLogout} />;
+    // msgInitial : le paramètre ?msg= a déjà été consommé par AppShell —
+    // transmis en prop pour que le lien profond marche aussi côté admin.
+    return <AdminActivation user={user} onLogout={onLogout} msgInitial={msgInitial} />;
   }
 
   /* 401 : la session côté API n'est pas exploitable — on propose de se
@@ -770,7 +793,13 @@ export default function AppShell({ user, onLogout }) {
                           onMouseEnter={(e) => { if (inclus) e.currentTarget.style.borderColor = T.accent; }}
                           onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}
                         >
-                          {t.cablee && inclus && (
+                          {t.id === "contact" && inclus && nonLusMsg > 0 ? (
+                            <span title={`${nonLusMsg} message${nonLusMsg > 1 ? "s" : ""} non lu${nonLusMsg > 1 ? "s" : ""}`} style={{
+                              position: "absolute", top: 10, right: 10, minWidth: 19, height: 19, borderRadius: 10,
+                              background: T.accent, color: "#fff", fontSize: 11, fontWeight: 600,
+                              display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", boxSizing: "border-box",
+                            }}>{nonLusMsg}</span>
+                          ) : t.cablee && inclus && (
                             <span style={{ position: "absolute", top: 12, right: 12, width: 8, height: 8, borderRadius: "50%", background: T.ok }} title="Démarche active" />
                           )}
                           <span style={{ width: 62, height: 62, borderRadius: 16, background: "#E6F1FB", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -810,7 +839,8 @@ export default function AppShell({ user, onLogout }) {
             un peu plus large qu'un formulaire (lecture confortable). */}
         {vue === "prod" && tuile && tuile.id === "contact" && (
           <div style={{ maxWidth: 660, margin: "0 auto" }}>
-            <MessagerieGestionnaire user={user} onRetour={() => setTuile(null)} />
+            <MessagerieGestionnaire user={user} onRetour={() => setTuile(null)}
+              filInitial={msgInitial} onNonLus={setNonLusMsg} />
           </div>
         )}
 
@@ -2961,7 +2991,10 @@ function LigneFil({ fil, onOuvrir }) {
       background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", fontFamily: T.sans,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-        <span style={{ fontSize: 14, fontWeight: 600, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fil.objet}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          {fil.nonLu && <span title="Réponse non lue" style={{ width: 8, height: 8, borderRadius: "50%", background: T.accent, flexShrink: 0 }} />}
+          <span style={{ fontSize: 14, fontWeight: fil.nonLu ? 700 : 600, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fil.objet}</span>
+        </span>
         <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
           <span style={{ fontSize: 11.5, color: T.mut }}>{fmtJourFil(fil.derniereMaj)}</span>
           <Badge s={STATUT_FIL(fil)} />
@@ -2974,20 +3007,37 @@ function LigneFil({ fil, onOuvrir }) {
   );
 }
 
-function MessagerieGestionnaire({ user, onRetour }) {
+function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
   const [fils, setFils] = useState(null);      // null = chargement ; { erreur } = panne ; [] = fils
   const [ouvert, setOuvert] = useState(null);  // id du fil déplié
   const [nouveau, setNouveau] = useState(false);
   const [rep, setRep] = useState("");          // réponse en cours de saisie
   const [repEnvoi, setRepEnvoi] = useState(false);
   const [repErr, setRepErr] = useState(null);
+  // Fil à ouvrir dès la première liste (lien profond ?msg= des e-mails).
+  const initRef = useRef(filInitial || null);
+
+  // Toute mise à jour de la liste passe ici : la pastille de la tuile
+  // (AppShell) suit le nombre de fils non lus sans rechargement.
+  const majFils = (liste) => {
+    setFils(liste);
+    if (Array.isArray(liste)) onNonLus?.(liste.filter((f) => f.nonLu).length);
+  };
 
   const charger = () => {
     apiFetch("/api/me?vue=messages")
       .then(async (r) => {
-        if (r.ok) return setFils((await r.json()).fils || []);
-        const e = await r.json().catch(() => ({}));
-        setFils({ erreur: e.erreur || `Messages indisponibles (HTTP ${r.status}).` });
+        if (!r.ok) {
+          const e = await r.json().catch(() => ({}));
+          return setFils({ erreur: e.erreur || `Messages indisponibles (HTTP ${r.status}).` });
+        }
+        const liste = (await r.json()).fils || [];
+        majFils(liste);
+        if (initRef.current) {
+          const f = liste.find((x) => String(x.id) === String(initRef.current));
+          initRef.current = null;
+          if (f) ouvrirFil(f);
+        }
       })
       // Échec réseau : API absente en dev local — liste vide, le formulaire
       // reste utilisable ; en production, message et bouton Réessayer.
@@ -3000,7 +3050,12 @@ function MessagerieGestionnaire({ user, onRetour }) {
   const ouvrirFil = (f) => {
     setOuvert(f.id); setRep(""); setRepErr(null);
     if (f.nonLu) {
-      setFils((prev) => (Array.isArray(prev) ? prev.map((x) => (x.id === f.id ? { ...x, nonLu: false } : x)) : prev));
+      setFils((prev) => {
+        if (!Array.isArray(prev)) return prev;
+        const maj = prev.map((x) => (x.id === f.id ? { ...x, nonLu: false } : x));
+        onNonLus?.(maj.filter((x) => x.nonLu).length);
+        return maj;
+      });
       apiFetch("/api/demande", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "messageStatut", id: f.id, lu: true }),

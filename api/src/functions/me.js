@@ -54,7 +54,11 @@ app.http("me", {
         }
       }
       const c = await resoudreClient(email);
-      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
+      // Pastille « messages non lus » de la tuile Mon gestionnaire —
+      // best effort : une panne de lecture ne bloque jamais l'entrée.
+      let messagesNonLus = 0;
+      try { messagesNonLus = await require("../messages").nonLus(c.codeClient); } catch { /* pastille absente, portail intact */ }
+      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options, messagesNonLus } };
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("me :", e);

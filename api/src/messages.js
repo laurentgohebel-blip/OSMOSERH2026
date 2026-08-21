@@ -33,8 +33,11 @@ function estGestionnaire(email) {
 // ouvert) ; par prudence on retombe quand même sur les colonnes
 // historiques si la lecture complète échoue : le canal reste lisible,
 // simplement sans les réponses.
-const CHAMPS_FIL = "CodeClient,Title,Message,Reference,Statut,Created,Echanges,DerniereMaj,DernierAuteur,Clos,NonLuClient";
-const CHAMPS_HISTORIQUES = "CodeClient,Title,Message,Reference,Statut,Created";
+// UNE sélection pour toutes les lectures de la liste : le cache de
+// items() est par liste (pas par champs) — deux sélections différentes
+// se serviraient mutuellement des lignes incomplètes.
+const CHAMPS_FIL = "CodeClient,Title,Message,Reference,Statut,Created,Echanges,DerniereMaj,DernierAuteur,Clos,NonLuClient,RaisonSociale,EmailDemandeur,NonLuGestionnaire";
+const CHAMPS_HISTORIQUES = "CodeClient,Title,Message,Reference,Statut,Created,RaisonSociale,EmailDemandeur";
 
 /* Ligne SharePoint → fil servi au portail. Toutes les nouvelles colonnes
    ont un défaut : une liste d'avant la messagerie reste servie à
@@ -86,8 +89,6 @@ async function fils(request, context) {
   return { status: 200, jsonBody: { fils: duClient } };
 }
 
-const CHAMPS_BOITE = CHAMPS_FIL + ",RaisonSociale,EmailDemandeur,NonLuGestionnaire";
-
 /** GET /api/me?vue=admin&onglet=messages — TOUS les fils, pour le gestionnaire. */
 async function boite(request, context) {
   const { email } = await verifierJeton(request);
@@ -96,8 +97,8 @@ async function boite(request, context) {
   const ids = await idsListes(tok);
   if (!ids[LISTE]) return { status: 200, jsonBody: { fils: [], total: 0 } };
   let lignes;
-  try { lignes = await items(tok, ids[LISTE], CHAMPS_BOITE); }
-  catch { lignes = await items(tok, ids[LISTE], CHAMPS_HISTORIQUES + ",RaisonSociale,EmailDemandeur"); }
+  try { lignes = await items(tok, ids[LISTE], CHAMPS_FIL); }
+  catch { lignes = await items(tok, ids[LISTE], CHAMPS_HISTORIQUES); }
   const tous = lignes.map(enFil)
     .sort((a, b) => String(b.derniereMaj).localeCompare(String(a.derniereMaj)));
   // Cap d'affichage : les 200 fils les plus récents (le total dit le reste).
@@ -167,7 +168,9 @@ async function repondre(request, context, d) {
       DernierAuteur: qui,
       Statut: gestionnaire ? "Répondu" : "Nouveau",
       ...(gestionnaire
-        ? { NonLuClient: true, NonLuGestionnaire: false, NotifEnvoyee: false }
+        // DerniereReponse : recopie à plat pour le flux e-mail (lot 3) —
+        // il cite la réponse d'un jeton, sans parser le JSON Echanges.
+        ? { NonLuClient: true, NonLuGestionnaire: false, NotifEnvoyee: false, DerniereReponse: texte }
         : { NonLuGestionnaire: true, NonLuClient: false }),
     });
     if (r.ok) {
@@ -205,4 +208,14 @@ async function statut(request, context, d) {
   return { status: 200, jsonBody: { ok: true } };
 }
 
-module.exports = { fils, boite, repondre, statut };
+/** Nombre de fils du client avec du non-lu côté client — pastille de la
+    tuile « Mon gestionnaire », servie avec /api/me (best effort). */
+async function nonLus(codeClient) {
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  if (!ids[LISTE]) return 0;
+  const lignes = await items(tok, ids[LISTE], CHAMPS_FIL);
+  return lignes.filter((x) => x.CodeClient === codeClient && x.NonLuClient === true).length;
+}
+
+module.exports = { fils, boite, repondre, statut, nonLus };

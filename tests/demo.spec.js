@@ -99,18 +99,23 @@ test.describe("Mode démonstration", () => {
   test("la messagerie gestionnaire : fils, conversation, nouveau message", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Production" }).click();
+    // Pastille non-lu sur la tuile (une réponse du gestionnaire attend).
+    await expect(page.getByTitle("1 message non lu")).toBeVisible();
     await page.getByText("Mon gestionnaire").first().click();
 
     // La liste des fils, avec leurs statuts.
     await expect(page.getByRole("button", { name: /Question sur la paie/ })).toBeVisible();
+    await expect(page.getByTitle("Réponse non lue")).toBeVisible();
     await expect(page.getByRole("button", { name: /Attestation pour la banque/ })).toBeVisible();
     await expect(page.getByText("Clos")).toBeVisible();
 
-    // Le fil répondu : la réponse du gestionnaire est dans la conversation.
+    // Le fil répondu : la réponse du gestionnaire est dans la conversation,
+    // et l'ouvrir marque le fil lu (la pastille disparaît de la liste).
     await page.getByRole("button", { name: /Question sur la paie/ }).click();
     await expect(page.getByText(/régularisées sur le bulletin de juillet/)).toBeVisible();
     await expect(page.getByText("Votre gestionnaire — ", { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "Retour aux messages" }).click();
+    await expect(page.getByTitle("Réponse non lue")).toHaveCount(0);
 
     // Répondre dans un fil ouvert : la réponse s'ajoute à la conversation.
     await page.getByRole("button", { name: /Transmission d'informations/ }).click();

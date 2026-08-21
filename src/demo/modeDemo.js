@@ -140,7 +140,7 @@ function etatInitial() {
       },
       {
         id: "fil-demo-2", objet: "Question sur la paie", reference: "MSG-DEMO02",
-        statut: "Répondu", clos: false, nonLu: false,
+        statut: "Répondu", clos: false, nonLu: true,
         message: "Bonjour,\nPouvez-vous vérifier le calcul des heures supplémentaires de Julien Moreau sur le bulletin de juin ? Il me semble qu'il manque 4 heures à 25 %.\nMerci !",
         creeLe: enISO(-6), derniereMaj: enISO(-5), dernierAuteur: "gestionnaire",
         echanges: [
@@ -191,6 +191,7 @@ export async function reponseDemo(chemin, options = {}) {
         client: CODE_CLIENT_DEMO,
         raisonSociale: ENTREPRISE_DEMO,
         options: OPTIONS_DEMO,
+        messagesNonLus: e.fils.filter((f) => f.nonLu).length,
       });
 
     case "/api/dashboard":

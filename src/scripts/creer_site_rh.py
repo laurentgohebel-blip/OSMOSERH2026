@@ -118,6 +118,9 @@ LISTES = [
         # ajoute ces colonnes aux listes existantes (traiter_liste).
         col("Echanges", TL()), col("DerniereMaj", DH()), col("DernierAuteur", T()),
         col("Clos", B(False)), col("NonLuClient", B(False)), col("NonLuGestionnaire", B(False)),
+        # Dernier texte du gestionnaire, recopié à plat par l'API : le
+        # flux e-mail le cite d'un simple jeton, sans parser Echanges.
+        col("DerniereReponse", TL()),
         # Anti-doublon du flux « réponse gestionnaire → e-mail client » :
         # l'API la passe à faux à chaque réponse, le flux notifie puis la
         # remet à vrai. Défaut vrai : l'existant ne déclenche rien.

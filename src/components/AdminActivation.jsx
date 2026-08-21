@@ -403,10 +403,18 @@ function BulleAdmin({ fil, qui, quand, texte }) {
   );
 }
 
-function BoiteMessages({ boite, recharger, notifier }) {
+function BoiteMessages({ boite, recharger, notifier, filInitial }) {
   const [ouvert, setOuvert] = useState(null);
   const [rep, setRep] = useState("");
   const [envoi, setEnvoi] = useState(false);
+
+  // Lien profond ?msg= : le fil s'ouvre dès que la boîte est chargée.
+  useEffect(() => {
+    if (filInitial && Array.isArray(boite?.fils)) {
+      const f = boite.fils.find((x) => String(x.id) === String(filInitial));
+      if (f) ouvrir(f);
+    }
+  }, [boite === null]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const poster = async (corps, okMsg) => {
     setEnvoi(true);
@@ -532,10 +540,22 @@ function BoiteMessages({ boite, recharger, notifier }) {
   );
 }
 
-export default function AdminActivation({ user, onLogout }) {
+export default function AdminActivation({ user, onLogout, msgInitial: msgProp }) {
   const [donnees, setDonnees] = useState(null); // null | { demandes, clients, options } | { erreur }
   const [boite, setBoite] = useState(null);     // null | { fils, total } | { erreur }
-  const [onglet, setOnglet] = useState("acces");
+  // Lien profond des e-mails : ?msg=<id> ouvre l'onglet Messages sur ce
+  // fil. Lecture PURE (StrictMode double-invoque les initialisateurs) —
+  // l'URL est nettoyée dans l'effet ci-dessous, une seule fois.
+  const [msgInitial] = useState(() => msgProp || new URLSearchParams(window.location.search).get("msg"));
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("msg")) { // seul msg est retiré — les autres paramètres restent
+      params.delete("msg");
+      const reste = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (reste ? `?${reste}` : ""));
+    }
+  }, []);
+  const [onglet, setOnglet] = useState(msgInitial ? "messages" : "acces");
   const [toast, setToast] = useState(null);
   const notifier = (m) => { setToast(m); setTimeout(() => setToast(null), 4200); };
 
@@ -601,7 +621,7 @@ export default function AdminActivation({ user, onLogout }) {
 
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "26px 18px 60px" }}>
         {onglet === "messages" && (
-          <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} />
+          <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} filInitial={msgInitial} />
         )}
 
         {onglet === "acces" && (<>

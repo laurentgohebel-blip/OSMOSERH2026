@@ -1,6 +1,6 @@
 # Fil de discussion « Mon gestionnaire » — messagerie du portail
 
-*Créé le 21/08/2026 — chantier « fil complet », lots 1 et 2 livrés.*
+*Créé le 21/08/2026 — chantier « fil complet », lots 1, 2 et 3 livrés.*
 
 ## Constat
 
@@ -75,13 +75,29 @@ modification »).
 - Démo + tests : réponse client mutée en mémoire, parcours étendu
   (réponse dans le fil, fil clos sans composeur).
 
-## Lot 3 — à venir
+## Lot 3 — livré
 
-Notifications : e-mail de notification refondu (bouton « Répondre dans
-le portail », lien profond `?msg=`), flux « réponse gestionnaire →
-e-mail client » (condition `DernierAuteur = gestionnaire` ET
-`NotifEnvoyee = faux`, puis repasse `NotifEnvoyee` à vrai), pastilles
-non-lu dans les listes et sur la tuile.
+- **Pastilles non-lu** : compteur `messagesNonLus` servi avec `/api/me`
+  (best effort — une panne n'empêche jamais l'entrée), badge sur la tuile
+  « Mon gestionnaire », point bleu sur les fils, marquage lu à
+  l'ouverture des deux côtés. Colonne `DerniereReponse` : dernier texte
+  du gestionnaire recopié à plat par l'API pour le flux e-mail.
+- **Lien profond** `https://espace.osmoserh.fr/?msg=<id>` : ouvre
+  directement le fil — côté client (tuile Mon gestionnaire) comme côté
+  gestionnaire (onglet Messages). Paramètre consommé par AppShell et
+  transmis à l'écran admin en prop.
+- **Modèles d'e-mail** (docs/modeles-flux/) :
+  - `modele-notification-portail.html` (au gestionnaire, flux existant
+    « à la création ») : CTA « Répondre dans le portail » (`?msg=`),
+    rappel Statut supprimé (automatique), mailto relégué en secours ;
+  - `modele-reponse-client.html` (au client) : **nouveau flux** « Quand
+    un élément est modifié » sur « Messages gestionnaire », condition de
+    déclenchement
+    `@and(equals(triggerBody()?['DernierAuteur'], 'gestionnaire'), equals(triggerBody()?['NotifEnvoyee'], false))`,
+    action 1 = e-mail à `EmailDemandeur` (corps = le modèle, qui cite
+    `DerniereReponse`), action 2 = Mettre à jour l'élément avec
+    `NotifEnvoyee = Oui` (anti-doublon). Défaut de la colonne : vrai —
+    l'existant ne déclenche rien.
 
 ## Opérations
 
@@ -89,4 +105,6 @@ non-lu dans les listes et sur la tuile.
   colonnes (idempotent : `traiter_liste` ajoute les colonnes manquantes).
   Sans cette relance, le portail fonctionne en dégradé lecture seule
   (fils sans réponses) et l'envoi reste intact.
-- Rien à changer dans les flux Power Automate au lot 1.
+- Flux Power Automate : mettre à jour le corps du flux de notification
+  existant (modèle refondu) et créer le flux « réponse → e-mail client »
+  (mode d'emploi complet en tête de `modele-reponse-client.html`).
