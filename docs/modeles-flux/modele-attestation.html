@@ -1,0 +1,52 @@
+<!-- Modèle d'attestation employeur — à coller dans l'action « Composer »
+     du flux « Attestation employeur » (voir Generation-documents-standard.md).
+     Remplacer chaque [[…]] par le jeton dynamique correspondant. -->
+<html>
+<head><meta charset="utf-8">
+<style>
+  body { font-family: Georgia, 'Times New Roman', serif; color: #1a2433;
+         max-width: 17cm; margin: 2.2cm auto; font-size: 12.5pt; line-height: 1.65; }
+  .entete { border-bottom: 2px solid #0D1F33; padding-bottom: 10px; margin-bottom: 34px; }
+  .entete .rs { font-size: 15pt; font-weight: bold; color: #0D1F33; }
+  .entete .coord { font-size: 10pt; color: #5C6B80; margin-top: 4px; }
+  h1 { text-align: center; font-size: 15pt; letter-spacing: 1.5px;
+       text-transform: uppercase; margin: 30px 0 34px; color: #0D1F33; }
+  p { text-align: justify; margin: 0 0 14px; }
+  .signature { margin-top: 46px; text-align: right; }
+  .signature .lieu { margin-bottom: 42px; }
+  .signature .nom { font-weight: bold; }
+  .pied { margin-top: 60px; border-top: 1px solid #E3E8EF; padding-top: 8px;
+          font-size: 8.5pt; color: #8A97A8; text-align: center; }
+</style>
+</head>
+<body>
+  <div class="entete">
+    <div class="rs">[[RAISON_SOCIALE]]</div>
+    <div class="coord">[[ADRESSE_ENTREPRISE]] — SIRET [[SIRET]]</div>
+  </div>
+
+  <h1>Attestation employeur</h1>
+
+  <p>Je soussigné(e) <strong>[[REPRESENTANT]]</strong>,
+  [[FONCTION_REPRESENTANT]] de la société <strong>[[RAISON_SOCIALE]]</strong>,
+  atteste par la présente que&nbsp;:</p>
+
+  <p><strong>[[CIVILITE]] [[NOM_SALARIE]]</strong>,
+  né(e) le [[DATE_NAISSANCE]], est employé(e) au sein de notre société
+  depuis le <strong>[[DATE_ENTREE]]</strong> en qualité de
+  <strong>[[POSTE]]</strong>, dans le cadre d'un contrat de type
+  <strong>[[TYPE_CONTRAT]]</strong>.</p>
+
+  <p>Cette attestation est délivrée à la demande de l'intéressé(e) pour
+  faire valoir ce que de droit.</p>
+
+  <div class="signature">
+    <div class="lieu">Fait à [[LIEU_EDITION]], le [[DATE_DU_JOUR]]</div>
+    <div class="nom">[[REPRESENTANT]]</div>
+    <div>[[FONCTION_REPRESENTANT]]</div>
+  </div>
+
+  <div class="pied">Référence [[REFERENCE]] — document généré via l'espace
+  client Osmose RH</div>
+</body>
+</html>
