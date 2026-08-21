@@ -67,18 +67,49 @@ app.http("ping", {
       où /api/lead est de toute façon indispensable au site vitrine.
    Modules en chargement paresseux : un module inchargeable donne un 500
    avec la cause — jamais un 404 muet. */
-const paresseux = (chemin, nom) => async (request, context) => {
-  let h;
-  try {
-    h = require(chemin)[nom];
-    if (typeof h !== "function") throw new Error(`export « ${nom} » absent`);
-  } catch (e) {
-    context.error(`chargement ${chemin} :`, e);
-    return { status: 500, jsonBody: { erreur: `Module ${chemin} inchargeable : ${e.message}` } };
-  }
-  return h(request, context);
-};
+/* Découverte du 21/08 (nouvelle SWA, table de routage neuve) : ping
+   (handler littéral) est routée, les trois ci-dessous ne l'étaient pas
+   tant que leur handler était produit par un appel (paresseux(…)).
+   L'indexation LIT le code plus qu'elle ne l'exécute : chaque
+   déclaration doit donc porter un handler écrit en toutes lettres.
+   Le require reste paresseux (dans le handler) : un module inchargeable
+   donne un 500 explicite, jamais un 404 muet. Noms en minuscules par
+   prudence (style rappel-variables). */
+app.http("admin-donnees", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../admin").donnees(request, context);
+    } catch (e) {
+      context.error("admin-donnees :", e);
+      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+    }
+  },
+});
 
-app.http("adminDonnees", { methods: ["GET"], authLevel: "anonymous", handler: paresseux("../admin", "donnees") });
-app.http("adminActiver", { methods: ["POST"], authLevel: "anonymous", handler: paresseux("../admin", "activer") });
-app.http("lead", { methods: ["POST", "OPTIONS"], authLevel: "anonymous", handler: paresseux("../lead", "lead") });
+app.http("admin-activer", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../admin").activer(request, context);
+    } catch (e) {
+      context.error("admin-activer :", e);
+      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+    }
+  },
+});
+
+app.http("lead", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../lead").lead(request, context);
+    } catch (e) {
+      context.error("lead :", e);
+      return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
+    }
+  },
+});
