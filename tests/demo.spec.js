@@ -112,6 +112,19 @@ test.describe("Mode démonstration", () => {
     await expect(page.getByText("Votre gestionnaire — ", { exact: false })).toBeVisible();
     await page.getByRole("button", { name: "Retour aux messages" }).click();
 
+    // Répondre dans un fil ouvert : la réponse s'ajoute à la conversation.
+    await page.getByRole("button", { name: /Transmission d'informations/ }).click();
+    await page.getByPlaceholder("Répondre dans ce fil…").fill("L'avenant signé est déposé dans les documents.");
+    await page.getByRole("button", { name: /^Répondre$/ }).click();
+    await expect(page.getByText("L'avenant signé est déposé dans les documents.")).toBeVisible();
+    await page.getByRole("button", { name: "Retour aux messages" }).click();
+
+    // Un fil clos ne propose pas de réponse.
+    await page.getByRole("button", { name: /Attestation pour la banque/ }).click();
+    await expect(page.getByText(/Fil clos — pour une nouvelle demande/)).toBeVisible();
+    await expect(page.getByPlaceholder("Répondre dans ce fil…")).toHaveCount(0);
+    await page.getByRole("button", { name: "Retour aux messages" }).click();
+
     // Un nouveau message crée un fil, aussitôt en tête de liste.
     await page.getByRole("button", { name: "Nouveau message" }).click();
     await page.locator("select").selectOption({ label: "Demande de document" });

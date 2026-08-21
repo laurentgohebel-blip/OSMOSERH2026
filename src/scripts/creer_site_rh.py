@@ -118,6 +118,10 @@ LISTES = [
         # ajoute ces colonnes aux listes existantes (traiter_liste).
         col("Echanges", TL()), col("DerniereMaj", DH()), col("DernierAuteur", T()),
         col("Clos", B(False)), col("NonLuClient", B(False)), col("NonLuGestionnaire", B(False)),
+        # Anti-doublon du flux « réponse gestionnaire → e-mail client » :
+        # l'API la passe à faux à chaque réponse, le flux notifie puis la
+        # remet à vrai. Défaut vrai : l'existant ne déclenche rien.
+        col("NotifEnvoyee", B(True)),
     ]),
     ("Variables de paie", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("Mois", T()),

@@ -1,6 +1,6 @@
 # Fil de discussion « Mon gestionnaire » — messagerie du portail
 
-*Créé le 21/08/2026 — chantier « fil complet », lot 1 livré.*
+*Créé le 21/08/2026 — chantier « fil complet », lots 1 et 2 livrés.*
 
 ## Constat
 
@@ -34,13 +34,21 @@ AUCUNE nouvelle colonne : zéro régression sur un tenant non re-provisionné.
 |---|---|---|
 | Fils du client | `GET /api/me?vue=messages` → module paresseux `api/src/messages.js` | **1 (fait)** |
 | Créer un fil | `POST /api/demande { demarche: "contact" }` — inchangé (+ cache vidé) | **1 (fait)** |
-| Répondre (2 côtés) | `POST /api/demande { action: "messageRepondre", id, texte }` | 2 |
-| Clore / lu | `POST /api/demande { action: "messageStatut", … }` | 2 |
-| Boîte gestionnaire | `GET /api/me?vue=admin&onglet=messages` | 2 |
+| Répondre (2 côtés) | `POST /api/demande { action: "messageRepondre", id, texte }` | **2 (fait)** |
+| Clore / rouvrir / lu | `POST /api/demande { action: "messageStatut", id, clos?, lu? }` | **2 (fait)** |
+| Boîte gestionnaire | `GET /api/me?vue=admin&onglet=messages` | **2 (fait)** |
 
-L'auteur d'une réponse sera déduit du JETON (`ADMIN_EMAILS` → gestionnaire),
+L'auteur d'une réponse est déduit du JETON (`ADMIN_EMAILS` → gestionnaire),
 jamais du payload ; propriété vérifiée sur le `CodeClient` avant toute
-écriture (modèle `majSalarie` : un id d'un autre client → 404).
+écriture (modèle `majSalarie` : un id d'un autre client → 404). Écritures
+sous verrou optimiste (`If-Match` sur l'etag ; une réponse rejoue sa
+lecture une fois en cas de conflit, jamais d'écrasement). `Statut` devient
+« à qui est la balle » : réponse gestionnaire → `Répondu`, relance client →
+`Nouveau` (le fil réapparaît dans la boîte). Fil clos : réponse refusée des
+deux côtés — le gestionnaire rouvre. `NotifEnvoyee` est remise à faux à
+chaque réponse gestionnaire : le flux « réponse → e-mail client » (lot 3)
+notifie puis la repasse à vrai (anti-doublon des flux « à la
+modification »).
 
 ## Lot 1 — livré
 
@@ -55,13 +63,25 @@ jamais du payload ; propriété vérifiée sur le `CodeClient` avant toute
 - Démo : trois fils fixtures + l'envoi crée un fil (état en mémoire) ;
   test Playwright du parcours complet (tests/demo.spec.js).
 
-## Lots suivants
+## Lot 2 — livré
 
-2. Réponses des deux côtés + onglet Messages de l'écran gestionnaire +
-   `Statut`/`Clos` automatiques.
-3. Notifications : e-mail de notification refondu (bouton « Répondre dans
-   le portail », voir docs/modeles-flux/modele-notification-portail.html),
-   e-mail au client à chaque réponse, pastilles non-lu.
+- `messages.js` : `repondre` / `statut` / `boite` (règles ci-dessus) ;
+  routes câblées dans `demande.js` (actions) et `me.js` (onglet).
+- Portail client : zone de réponse dans le fil (fil clos → lecture seule),
+  marquage lu à l'ouverture.
+- Écran gestionnaire : onglets « Demandes d'accès » / « Messages clients
+  (n à répondre) » — boîte tous clients triée par activité, conversation,
+  réponse, Clore/Rouvrir, marquage lu.
+- Démo + tests : réponse client mutée en mémoire, parcours étendu
+  (réponse dans le fil, fil clos sans composeur).
+
+## Lot 3 — à venir
+
+Notifications : e-mail de notification refondu (bouton « Répondre dans
+le portail », lien profond `?msg=`), flux « réponse gestionnaire →
+e-mail client » (condition `DernierAuteur = gestionnaire` ET
+`NotifEnvoyee = faux`, puis repasse `NotifEnvoyee` à vrai), pastilles
+non-lu dans les listes et sur la tuile.
 
 ## Opérations
 

@@ -250,6 +250,25 @@ function traiterDemande(e, options) {
     return json(200, { ok: true });
   }
 
+  // Fil de discussion : réponse et statut mutés en mémoire, mêmes règles
+  // que l'API réelle (fil clos refusé, relance → statut « Nouveau »).
+  if (d.action === "messageRepondre") {
+    const f = e.fils.find((x) => String(x.id) === String(d.id));
+    if (!f) return json(404, { erreur: "Fil introuvable." });
+    if (f.clos) return json(400, { erreur: "Fil clos — écrivez un nouveau message." });
+    const quand = new Date().toISOString();
+    f.echanges.push({ qui: "client", quand, texte: String(d.texte || "").trim() });
+    f.derniereMaj = quand; f.dernierAuteur = "client"; f.statut = "Nouveau";
+    return json(200, { ok: true, quand });
+  }
+  if (d.action === "messageStatut") {
+    const f = e.fils.find((x) => String(x.id) === String(d.id));
+    if (!f) return json(404, { erreur: "Fil introuvable." });
+    if (typeof d.clos === "boolean") f.clos = d.clos;
+    if (d.lu === true) f.nonLu = false;
+    return json(200, { ok: true });
+  }
+
   switch (d.demarche) {
     case "absences": {
       const reference = referenceDemo("ABS");

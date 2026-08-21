@@ -21,6 +21,17 @@ app.http("me", {
         // route car la table de routage de la SWA n'accepte plus de
         // nouveau nom (voir le commentaire de contournement en fin de fichier).
         if ((request.query && request.query.get && request.query.get("vue")) === "admin") {
+          // &onglet=messages : boîte de réception des fils clients —
+          // même contournement, logique dans le module messages.
+          if (request.query.get("onglet") === "messages") {
+            try {
+              return await require("../messages").boite(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/messages :", e);
+              return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
+            }
+          }
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {

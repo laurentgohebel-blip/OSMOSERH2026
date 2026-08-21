@@ -55,6 +55,23 @@ app.http("demande", {
       }
     }
 
+    // 1 quater. Fil de discussion « Mon gestionnaire » : réponse et
+    // clôture passent aussi par cette route (doctrine me.js). Le module
+    // vérifie lui-même le jeton et déduit le rôle du compte (ADMIN_EMAILS
+    // → gestionnaire, sinon client résolu + propriété du fil vérifiée).
+    if (d.action === "messageRepondre" || d.action === "messageStatut") {
+      try {
+        const messages = require("../messages");
+        return d.action === "messageRepondre"
+          ? await messages.repondre(request, context, d)
+          : await messages.statut(request, context, d);
+      } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+        context.error(`demande/${d.action} :`, e);
+        return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
+      }
+    }
+
     // 2. Identité vérifiée puis résolution client — le verrou.
     //    Cas particulier « acces » : la demande d'accès est LA démarche des
     //    comptes pas encore rattachés — jeton valide exigé, résolution non.

@@ -2978,6 +2978,9 @@ function MessagerieGestionnaire({ user, onRetour }) {
   const [fils, setFils] = useState(null);      // null = chargement ; { erreur } = panne ; [] = fils
   const [ouvert, setOuvert] = useState(null);  // id du fil déplié
   const [nouveau, setNouveau] = useState(false);
+  const [rep, setRep] = useState("");          // réponse en cours de saisie
+  const [repEnvoi, setRepEnvoi] = useState(false);
+  const [repErr, setRepErr] = useState(null);
 
   const charger = () => {
     apiFetch("/api/me?vue=messages")
@@ -2991,6 +2994,37 @@ function MessagerieGestionnaire({ user, onRetour }) {
       .catch(() => setFils(import.meta.env.DEV ? [] : { erreur: "Messages momentanément indisponibles — vérifiez votre connexion." }));
   };
   useEffect(charger, []);
+
+  // Ouverture d'un fil : saisie remise à zéro et côté client marqué lu
+  // (pastilles non-lu) — silencieux, l'échec n'empêche pas la lecture.
+  const ouvrirFil = (f) => {
+    setOuvert(f.id); setRep(""); setRepErr(null);
+    if (f.nonLu) {
+      setFils((prev) => (Array.isArray(prev) ? prev.map((x) => (x.id === f.id ? { ...x, nonLu: false } : x)) : prev));
+      apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "messageStatut", id: f.id, lu: true }),
+      }).catch(() => {});
+    }
+  };
+
+  // Réponse dans le fil — POST messageRepondre, puis fil relu (la liste
+  // est rechargée sans passer par l'état « chargement » : pas de saut).
+  const envoyerReponse = async () => {
+    const texte = rep.trim();
+    if (!texte) return;
+    setRepEnvoi(true); setRepErr(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "messageRepondre", id: ouvert, texte }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setRep(""); charger(); }
+      else setRepErr(j.erreur || `Envoi refusé (HTTP ${r.status}).`);
+    } catch { setRepErr("Envoi impossible — vérifiez votre connexion."); }
+    setRepEnvoi(false);
+  };
 
   // ── Nouveau message : le formulaire historique ; retour = liste rafraîchie
   if (nouveau) return <ContactGestionnaire user={user} onRetour={() => { setNouveau(false); setFils(null); charger(); }} />;
@@ -3013,14 +3047,26 @@ function MessagerieGestionnaire({ user, onRetour }) {
           <BulleFil qui="client" quand={fil.creeLe} texte={fil.message} />
           {(fil.echanges || []).map((e, i) => <BulleFil key={i} qui={e.qui} quand={e.quand} texte={e.texte} />)}
         </div>
-        {statut !== "Clos" && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 18, padding: "10px 14px", background: "#FDFBF3", border: "1px solid #EDE6D2", borderRadius: 10, fontSize: 12.5, color: T.mut, lineHeight: 1.55 }}>
-            <Clock size={14} style={{ flexShrink: 0, marginTop: 2 }} />
-            <span>
-              {statut === "Répondu"
-                ? "Votre gestionnaire vous a répondu. Pour poursuivre l'échange, envoyez un nouveau message en rappelant la référence."
-                : <>Votre gestionnaire a été prévenu — sa réponse vous parviendra par e-mail à <strong>{user?.email || "votre adresse de connexion"}</strong> et sera ajoutée à ce fil.</>}
-            </span>
+        {statut === "Clos" ? (
+          <p style={{ marginTop: 18, fontSize: 12.5, color: T.mut }}>
+            Fil clos — pour une nouvelle demande, écrivez un nouveau message.
+          </p>
+        ) : (
+          <div style={{ marginTop: 18 }}>
+            {(fil.echanges || []).length === 0 && (
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 12, padding: "10px 14px", background: "#FDFBF3", border: "1px solid #EDE6D2", borderRadius: 10, fontSize: 12.5, color: T.mut, lineHeight: 1.55 }}>
+                <Clock size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>Votre gestionnaire a été prévenu — sa réponse arrivera dans ce fil et par e-mail à <strong>{user?.email || "votre adresse de connexion"}</strong>.</span>
+              </div>
+            )}
+            <textarea rows={3} value={rep} onChange={(e) => setRep(e.target.value)}
+              placeholder="Répondre dans ce fil…" style={{ ...inputStyle, resize: "vertical" }} />
+            {repErr && <p style={{ margin: "6px 0 0", fontSize: 12, color: T.err }}>✗ {repErr}</p>}
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+              <Btn primary disabled={repEnvoi || !rep.trim()} onClick={envoyerReponse}>
+                <Send size={14} /> {repEnvoi ? "Envoi…" : "Répondre"}
+              </Btn>
+            </div>
           </div>
         )}
       </>
@@ -3063,7 +3109,7 @@ function MessagerieGestionnaire({ user, onRetour }) {
 
       {Array.isArray(fils) && fils.length > 0 && (
         <div style={{ display: "grid", gap: 10 }}>
-          {fils.map((f) => <LigneFil key={f.id} fil={f} onOuvrir={() => setOuvert(f.id)} />)}
+          {fils.map((f) => <LigneFil key={f.id} fil={f} onOuvrir={() => ouvrirFil(f)} />)}
         </div>
       )}
     </>
