@@ -10,7 +10,11 @@ Repères du tenant cible (synthèse 16/08) :
 - Tenant : `5dc184d2-699a-4051-9f46-d040bc141669`
 - App Graph : `be0f7e69-1192-4582-a3f7-984fae4ff145` (Sites.Manage.All)
 - RH_SITE_ID : `osmoserh83.sharepoint.com,ac8bcc33-…,e2c157a4-…`
-- CIAM (inchangé) : tenant da198f21, app 09b5b72f (osmoserh.ciamlogin.com)
+- CIAM **recréé le 21/08** (l'ancien tenant da198f21 n'était plus
+  administrable — leçon : l'annuaire clients doit appartenir à
+  lgohebel@osmoserh.fr) : tenant `d0ce15bd-f382-4878-bc70-45e20eb59cfa`,
+  app « Portail Osmose RH » `19d1eb4c-4b45-44c5-83d1-eaacc3713776`.
+  Comptes clients à recréer (il n'y avait que des comptes de test).
 
 ## Phase 0 — vérifications (Laurent, ~30 min)
 
