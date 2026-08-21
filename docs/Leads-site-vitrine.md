@@ -1,3 +1,9 @@
+> ⚠️ **21/08** : le point d'entrée public est désormais
+> `POST /api/demande` avec `{ action: "lead", … }` en
+> Content-Type **text/plain** (doctrine des routes, voir me.js).
+> `/api/lead` n'est pas routé par la plateforme. Le module
+> api/src/lead.js reste la logique métier, inchangée.
+
 # Leads du site vitrine — formulaires branchés
 
 Chaîne : formulaire (osmoserh.fr) → `POST /api/lead` (anonyme, pot de miel,

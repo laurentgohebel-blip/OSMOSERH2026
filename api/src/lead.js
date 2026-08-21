@@ -29,13 +29,18 @@ function enTetesCors(request) {
   };
 }
 
-async function lead(request, context) {
+/* `corps` : payload déjà lu par l'appelant (les formulaires vitrine
+   postent sur /api/demande avec action:"lead" — le corps d'une requête
+   ne se lit qu'une fois). Absent : lu ici. */
+async function lead(request, context, corps) {
     const headers = enTetesCors(request);
     if (request.method === "OPTIONS") return { status: 204, headers };
 
-    let d;
-    try { d = await request.json(); }
-    catch { return { status: 400, headers, jsonBody: { erreur: "JSON attendu" } }; }
+    let d = corps;
+    if (!d) {
+      try { d = await request.json(); }
+      catch { return { status: 400, headers, jsonBody: { erreur: "JSON attendu" } }; }
+    }
 
     // Pot de miel : un humain ne remplit jamais ce champ caché — on répond
     // OK sans rien écrire pour ne pas renseigner le robot.
