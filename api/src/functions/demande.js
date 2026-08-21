@@ -470,6 +470,7 @@ async function creerMessageGestionnaire(email, clientInfo, d, reference) {
     } }),
   });
   if (!r.ok) throw { status: 502, erreur: "Envoi du message impossible — réessayez." };
+  viderCacheItems(); // le fil doit apparaître aussitôt dans « Mon gestionnaire »
 }
 
 /* Écrit une ligne « gestion du personnel » (Absences, Visites médicales,

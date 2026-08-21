@@ -30,6 +30,18 @@ app.http("me", {
         }
         return { status: 200, jsonBody: { email, admin: true } };
       }
+      // ?vue=messages : fils de discussion du client — servi par CETTE
+      // route (doctrine ci-dessous : pas de nouveau /api/<nom>), logique
+      // dans le module paresseux src/messages.js, comme admin et lead.
+      if ((request.query && request.query.get && request.query.get("vue")) === "messages") {
+        try {
+          return await require("../messages").fils(request, context);
+        } catch (e) {
+          if (e && e.status) throw e; // 401/403 métier → catch global ci-dessous
+          context.error("me/vue=messages :", e);
+          return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
+        }
+      }
       const c = await resoudreClient(email);
       return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
     } catch (e) {

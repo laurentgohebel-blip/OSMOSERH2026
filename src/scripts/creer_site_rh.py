@@ -112,6 +112,12 @@ LISTES = [
         col("Message", TL()), col("Reference", T()), col("CodeClient", T()),
         col("RaisonSociale", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
         col("Statut", CH(["Nouveau", "Répondu"], "Nouveau")),
+        # Fil de discussion du portail (docs/Fil-messagerie-portail.md) :
+        # un élément = un fil ; message initial dans Message, réponses en
+        # JSON dans Echanges [{qui, quand, texte}]. Relancer ce script
+        # ajoute ces colonnes aux listes existantes (traiter_liste).
+        col("Echanges", TL()), col("DerniereMaj", DH()), col("DernierAuteur", T()),
+        col("Clos", B(False)), col("NonLuClient", B(False)), col("NonLuGestionnaire", B(False)),
     ]),
     ("Variables de paie", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("Mois", T()),

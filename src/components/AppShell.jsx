@@ -96,6 +96,10 @@ const STATUTS = {
   "À traiter":    { bg: "#FAEEDA", fg: "#854F0B" },
   "Envoyée":      { bg: "#E6F1FB", fg: "#0C447C" },
   "Reçue":        { bg: "#E6F1FB", fg: "#0C447C" },
+  // Fils de discussion « Mon gestionnaire » (statut vu du client)
+  "Transmis":     { bg: "#E6F1FB", fg: "#0C447C" },
+  "Répondu":      { bg: "#E1F5EE", fg: "#085041" },
+  "Clos":         { bg: "#F1EFE8", fg: "#444441" },
 };
 
 const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "#F0997B" };
@@ -126,7 +130,7 @@ const TUILES = [
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
-  { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Poser une question, transmettre", icone: Send, cablee: true },
+  { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
   { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "DUERP, registres, affichages", icone: ShieldCheck },
 ];
@@ -802,9 +806,17 @@ export default function AppShell({ user, onLogout }) {
             onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
         )}
 
+        {/* La messagerie gestionnaire aussi : liste des fils + conversation,
+            un peu plus large qu'un formulaire (lecture confortable). */}
+        {vue === "prod" && tuile && tuile.id === "contact" && (
+          <div style={{ maxWidth: 660, margin: "0 auto" }}>
+            <MessagerieGestionnaire user={user} onRetour={() => setTuile(null)} />
+          </div>
+        )}
+
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -817,9 +829,6 @@ export default function AppShell({ user, onLogout }) {
             )}
             {tuile.id === "fin" && (
               <DemandeFinContrat user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
-            )}
-            {tuile.id === "contact" && (
-              <ContactGestionnaire user={user} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "absences" && (
               <DemandeAbsence user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
@@ -2903,10 +2912,167 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
 }
 
 /* ================================================================
-   CONTACTER MON GESTIONNAIRE — canal de base, jamais optionnel.
-   Le message part dans « Messages gestionnaire » ; le flux notifie le
-   gestionnaire (réponse par e-mail classique) et accuse réception.
+   MON GESTIONNAIRE — fil de discussion (canal de base, jamais optionnel).
+   GET /api/me?vue=messages liste les fils du client (un élément de
+   « Messages gestionnaire » = un fil ; réponses dans la colonne
+   Echanges — voir docs/Fil-messagerie-portail.md). L'envoi d'un
+   premier message reste POST /api/demande { demarche: "contact" }.
    ================================================================ */
+const STATUT_FIL = (f) => (f.clos ? "Clos" : f.statut === "Répondu" ? "Répondu" : "Transmis");
+const fmtJourFil = (iso) => {
+  const d = new Date(iso || "");
+  return isNaN(d) ? "" : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+};
+const fmtJourHeureFil = (iso) => {
+  const d = new Date(iso || "");
+  return isNaN(d) ? "" : `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}, ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+};
+const dernierTexteFil = (f) =>
+  ((f.echanges && f.echanges.length ? f.echanges[f.echanges.length - 1].texte : f.message) || "").trim();
+
+/* Une réplique de la conversation — client à droite (bleu), gestionnaire
+   à gauche (carte). Les retours à la ligne saisis sont conservés. */
+function BulleFil({ qui, quand, texte }) {
+  const client = qui !== "gestionnaire";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: client ? "flex-end" : "flex-start" }}>
+      <div style={{
+        maxWidth: "85%", padding: "10px 14px", fontSize: 13.5, lineHeight: 1.55, color: T.ink,
+        whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+        background: client ? "#E6F1FB" : T.card,
+        border: `1px solid ${client ? "#CBDFF5" : T.border}`,
+        borderRadius: client ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+      }}>{texte}</div>
+      <span style={{ fontSize: 11, color: T.mut, margin: "4px 2px 0" }}>
+        {client ? "Vous" : "Votre gestionnaire"} — {fmtJourHeureFil(quand)}
+      </span>
+    </div>
+  );
+}
+
+/* Une ligne de la liste des fils : objet, date, statut, dernier échange. */
+function LigneFil({ fil, onOuvrir }) {
+  return (
+    <button onClick={onOuvrir} style={{
+      all: "unset", boxSizing: "border-box", display: "block", width: "100%", cursor: "pointer",
+      // minWidth 0 : sans lui, les textes nowrap fixent la largeur min de
+      // l'élément de grille et la carte déborde du conteneur (660 px).
+      minWidth: 0, overflow: "hidden",
+      background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "13px 16px", fontFamily: T.sans,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: T.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fil.objet}</span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 11.5, color: T.mut }}>{fmtJourFil(fil.derniereMaj)}</span>
+          <Badge s={STATUT_FIL(fil)} />
+        </span>
+      </div>
+      <div style={{ fontSize: 12.5, color: T.mut, marginTop: 5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {fil.dernierAuteur === "gestionnaire" ? "Votre gestionnaire : " : "Vous : "}{dernierTexteFil(fil)}
+      </div>
+    </button>
+  );
+}
+
+function MessagerieGestionnaire({ user, onRetour }) {
+  const [fils, setFils] = useState(null);      // null = chargement ; { erreur } = panne ; [] = fils
+  const [ouvert, setOuvert] = useState(null);  // id du fil déplié
+  const [nouveau, setNouveau] = useState(false);
+
+  const charger = () => {
+    apiFetch("/api/me?vue=messages")
+      .then(async (r) => {
+        if (r.ok) return setFils((await r.json()).fils || []);
+        const e = await r.json().catch(() => ({}));
+        setFils({ erreur: e.erreur || `Messages indisponibles (HTTP ${r.status}).` });
+      })
+      // Échec réseau : API absente en dev local — liste vide, le formulaire
+      // reste utilisable ; en production, message et bouton Réessayer.
+      .catch(() => setFils(import.meta.env.DEV ? [] : { erreur: "Messages momentanément indisponibles — vérifiez votre connexion." }));
+  };
+  useEffect(charger, []);
+
+  // ── Nouveau message : le formulaire historique ; retour = liste rafraîchie
+  if (nouveau) return <ContactGestionnaire user={user} onRetour={() => { setNouveau(false); setFils(null); charger(); }} />;
+
+  // ── Fil déplié : la conversation
+  const fil = Array.isArray(fils) ? fils.find((f) => f.id === ouvert) : null;
+  if (ouvert && fil) {
+    const statut = STATUT_FIL(fil);
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <button onClick={() => setOuvert(null)} aria-label="Retour aux messages" style={{ all: "unset", cursor: "pointer", color: T.mut, padding: 4 }}><ArrowLeft size={18} /></button>
+          <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fil.objet}</h2>
+          <Badge s={statut} />
+        </div>
+        <p style={{ margin: "0 0 18px 32px", fontSize: 11.5, color: T.mut }}>
+          Réf. {fil.reference || "—"} — ouvert le {fmtJourFil(fil.creeLe)}
+        </p>
+        <div style={{ display: "grid", gap: 14 }}>
+          <BulleFil qui="client" quand={fil.creeLe} texte={fil.message} />
+          {(fil.echanges || []).map((e, i) => <BulleFil key={i} qui={e.qui} quand={e.quand} texte={e.texte} />)}
+        </div>
+        {statut !== "Clos" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 18, padding: "10px 14px", background: "#FDFBF3", border: "1px solid #EDE6D2", borderRadius: 10, fontSize: 12.5, color: T.mut, lineHeight: 1.55 }}>
+            <Clock size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+            <span>
+              {statut === "Répondu"
+                ? "Votre gestionnaire vous a répondu. Pour poursuivre l'échange, envoyez un nouveau message en rappelant la référence."
+                : <>Votre gestionnaire a été prévenu — sa réponse vous parviendra par e-mail à <strong>{user?.email || "votre adresse de connexion"}</strong> et sera ajoutée à ce fil.</>}
+            </span>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // ── Liste des fils
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+        <button onClick={onRetour} aria-label="Retour" style={{ all: "unset", cursor: "pointer", color: T.mut, padding: 4 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600, flex: 1 }}>Mon gestionnaire</h2>
+        {Array.isArray(fils) && fils.length > 0 && (
+          <Btn primary onClick={() => setNouveau(true)}><Plus size={14} /> Nouveau message</Btn>
+        )}
+      </div>
+      <p style={{ margin: "0 0 18px 32px", fontSize: 12.5, color: T.mut }}>
+        Vos échanges avec votre gestionnaire Osmose RH — il connaît déjà votre dossier.
+      </p>
+
+      {fils === null && <p style={{ fontSize: 13, color: T.mut }}>Chargement de vos messages…</p>}
+
+      {fils?.erreur && (
+        <>
+          <p style={{ fontSize: 13, color: T.mut, margin: "0 0 12px" }}>{fils.erreur}</p>
+          <Btn primary onClick={() => { setFils(null); charger(); }}>Réessayer</Btn>
+        </>
+      )}
+
+      {Array.isArray(fils) && fils.length === 0 && (
+        <div style={{ textAlign: "center", padding: "44px 24px", background: T.card, border: `1px dashed ${T.border}`, borderRadius: 12 }}>
+          <Send size={26} color={T.accentSoft} strokeWidth={1.6} />
+          <p style={{ margin: "12px 0 4px", fontSize: 14.5, fontWeight: 600, color: T.ink }}>Aucun message pour l'instant</p>
+          <p style={{ margin: "0 0 18px", fontSize: 12.5, color: T.mut }}>
+            Une question sur la paie, un contrat, une information à transmettre ?
+          </p>
+          <Btn primary onClick={() => setNouveau(true)}><Plus size={14} /> Écrire à mon gestionnaire</Btn>
+        </div>
+      )}
+
+      {Array.isArray(fils) && fils.length > 0 && (
+        <div style={{ display: "grid", gap: 10 }}>
+          {fils.map((f) => <LigneFil key={f.id} fil={f} onOuvrir={() => setOuvert(f.id)} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
+/* Écran « nouveau message » de la messagerie ci-dessus : le message part
+   dans « Messages gestionnaire » (tête de fil) ; le flux notifie le
+   gestionnaire et accuse réception au demandeur. */
 const OBJETS_CONTACT = ["Question sur la paie", "Question contrat / salarié", "Transmission d'informations", "Demande de document", "Autre demande"];
 
 function ContactGestionnaire({ user, onRetour }) {
@@ -2932,7 +3098,7 @@ function ContactGestionnaire({ user, onRetour }) {
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
-        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Contacter mon gestionnaire</h2>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Nouveau message</h2>
       </div>
 
       {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
@@ -2959,7 +3125,7 @@ function ContactGestionnaire({ user, onRetour }) {
       </p>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn onClick={onRetour}>{msg?.ok ? "Voir mes messages" : "Annuler"}</Btn>
         <Btn primary disabled={envoi} onClick={envoyer}><Send size={14} /> {envoi ? "Envoi…" : "Envoyer le message"}</Btn>
       </div>
     </>
