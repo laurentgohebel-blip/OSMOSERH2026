@@ -209,6 +209,14 @@ function traiterDemande(e, options) {
   try { d = JSON.parse(options.body); } catch { return json(400, { erreur: "JSON attendu" }); }
   const p = e.personnel;
 
+  // Mise à jour du dossier salarié (onglet Dossier) — mutée en mémoire
+  // pour que la fiche reflète aussitôt la saisie, comme en réel.
+  if (d.action === "majSalarie") {
+    const s = (p.salaries || []).find((x) => x.cle === d.cle);
+    if (s) s.fiche = { ...(s.fiche || {}), ...(d.fiche || {}) };
+    return json(200, { ok: true });
+  }
+
   switch (d.demarche) {
     case "absences": {
       const reference = referenceDemo("ABS");
