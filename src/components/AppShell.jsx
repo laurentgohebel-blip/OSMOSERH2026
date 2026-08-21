@@ -266,7 +266,16 @@ export default function AppShell({ user, onLogout }) {
   // (option absente, panne) → les formulaires retombent en saisie libre.
   const [refSal, setRefSal] = useState(null);
 
-  const prenom = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
+  // External ID enregistre « unknown » comme nom d'affichage quand le flux
+  // d'inscription ne collecte pas le nom : on ne salue jamais « unknown » —
+  // repli sur la partie locale de l'adresse e-mail, joliment capitalisée.
+  const prenom = (() => {
+    const brut = user?.givenName || (user?.displayName || "").split(" ")[0] || "";
+    const nom = brut && brut.toLowerCase() !== "unknown"
+      ? brut
+      : ((user?.email || user?.username || "").split("@")[0] || "").split(/[._-]/)[0];
+    return nom ? nom.charAt(0).toUpperCase() + nom.slice(1) : "";
+  })();
   const initiales = (user?.displayName || "?").split(" ").map((m) => m[0]).slice(0, 2).join("").toUpperCase();
 
   useEffect(() => {
