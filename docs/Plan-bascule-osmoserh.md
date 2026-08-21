@@ -114,6 +114,13 @@ décision du 18/08 : plus aucun SMTP OVH), expéditeurs @osmoserh.fr,
 - [ ] URI de redirection `https://espace.osmoserh.fr` ajoutée à l'app
       CIAM « Portail Osmose RH »
 
+**✅ Phase 3 validée le 21/08** : SWA « OsmoseRH2026 » (Free) déployée
+depuis le workflow unifié, variables posées, tenant clients recréé et
+configuré (SPA + API exposée + flux d'utilisateurs + consentement),
+**première connexion gestionnaire réussie sur l'écran d'administration**
+— chaîne complète CIAM neuf → SWA → Graph → SharePoint osmoserh83
+vérifiée en réel. Reste de la phase 3 : domaine espace.osmoserh.fr.
+
 ## Phase 4 — recette et reprise des clients
 
 - [ ] Dérouler `Recette-phase-6.md` (préalables déjà en partie faits ici)
