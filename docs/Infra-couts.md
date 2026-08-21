@@ -39,6 +39,13 @@ autres (l'API écrit la liste, le flux se déclenche à la création).
 ✅ **Chantier préparé le 19/08** : code en place (bascule par retrait
 des variables `FLOW_URL_*`), script `creer_listes_demarches.py`, fiche
 de reconstruction `Flux-standard-ACP-ATT.md`.
+**Décision du 21/08 (Laurent)** : le connecteur premium « Word Online »
+du flux Attestation est CONSERVÉ, en **essai Premium renouvelé** sur le
+compte svc-flux (pratique éprouvée 3 ans sur un autre tenant). Risque
+assumé : renouvellement manuel à chaque échéance (interruption possible
+entre expiration et clic) et tolérance Microsoft révocable. Parade
+prête à l'emploi si l'essai cesse : `Generation-documents-standard.md`
++ `modeles-flux/modele-attestation.html` (bascule ~1 h, 0 €).
 Comme les flux doivent de toute façon être **reconstruits dans le
 nouveau tenant**, les reconstruire en standard ne coûte aucun travail
 supplémentaire — c'est le même effort, en moins cher. Bénéfices
