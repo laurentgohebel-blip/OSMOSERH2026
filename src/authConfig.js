@@ -1,14 +1,19 @@
 // src/authConfig.js
-// Authentification : tenant Microsoft Entra External ID « Osmose RH »
-// (osmoserh.onmicrosoft.com). Les clients créent leur compte eux-mêmes
-// (email + mot de passe) sur la page de connexion aux couleurs Osmose RH ;
-// l'accès réel est contrôlé côté serveur par la liste « Utilisateurs portail ».
+// Authentification : tenant Microsoft Entra External ID « Osmose RH
+// Clients » (recréé le 21/08 sous le compte lgohebel@osmoserh.fr —
+// l'ancien tenant da198f21 n'était plus administrable). Les clients
+// créent leur compte eux-mêmes (email + mot de passe) sur la page de
+// connexion aux couleurs Osmose RH ; l'accès réel est contrôlé côté
+// serveur par la liste « Utilisateurs portail ».
+// L'autorité utilise le GUID du tenant comme sous-domaine ciamlogin —
+// même mécanique que l'API (annuaire.js), indépendante du nom choisi.
 // Client ID et authority ne sont pas des secrets pour une SPA publique.
+const TENANT_CLIENTS = "d0ce15bd-f382-4878-bc70-45e20eb59cfa";
 export const msalConfig = {
   auth: {
-    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "09b5b72f-45e9-44cc-bd35-4472cf480c16", // app « Portail Osmose RH » (tenant External ID)
-    authority: "https://osmoserh.ciamlogin.com/da198f21-6842-4cd2-91fb-72e91195d784",
-    knownAuthorities: ["osmoserh.ciamlogin.com"],
+    clientId: import.meta.env.VITE_AZURE_CLIENT_ID || "19d1eb4c-4b45-44c5-83d1-eaacc3713776", // app « Portail Osmose RH »
+    authority: `https://${TENANT_CLIENTS}.ciamlogin.com/${TENANT_CLIENTS}`,
+    knownAuthorities: [`${TENANT_CLIENTS}.ciamlogin.com`],
 
     // En prod : l'URL de la Static Web App ; en dev : http://localhost:5173.
     // Les deux sont déclarées dans l'inscription d'application.
@@ -27,4 +32,4 @@ export const loginRequest = { scopes: ["openid", "profile", "email", "offline_ac
 
 // Scope de l'API du portail (/api/*) — exposé par la même app, pré-autorisé :
 // aucun écran de consentement supplémentaire pour l'utilisateur.
-export const apiRequest = { scopes: ["api://09b5b72f-45e9-44cc-bd35-4472cf480c16/access_as_user"] };
+export const apiRequest = { scopes: ["api://19d1eb4c-4b45-44c5-83d1-eaacc3713776/access_as_user"] };
