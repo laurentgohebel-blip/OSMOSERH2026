@@ -128,30 +128,38 @@ app.http("demande", {
       // l'API écrit dans « Production contrat » et le flux existant
       // « Production contrat + AR » se déclenche à la création.
       if (d.demarche === "embauche") {
-        // Volet administratif inclus (22/08) : l'embauche alimente AUSSI
-        // la fiche « Salariés » — tout le dossier est requis d'emblée.
+        // Modèle B (22/08) : le client fournit les infos du contrat et
+        // TROIS pièces obligatoires (identité, carte Vitale, RIB) déjà
+        // déposées via /api/depot — le payload porte leurs noms finaux.
+        // Osmose RH transcrit ensuite les pièces dans la fiche « Salariés »
+        // (onglet Dossier, bandeau « Dossier incomplet »). Le volet
+        // administratif reste accepté mais FACULTATIF : chaque champ
+        // transmis est contrôlé, aucun n'est exigé.
         const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle",
-          "sexe", "situationFamiliale", "departementNaissance", "codeDepartementNaissance", "paysNaissance", "codePaysNaissance", "iban", "bic", "emailSalarie", "telephoneSalarie"];
+          "pjIdentite", "pjVitale", "pjRib"];
         for (const c of requis)
           if (!d[c] || !String(d[c]).trim())
             return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
+        for (const c of ["pjIdentite", "pjVitale", "pjRib"])
+          if (!/\.(pdf|jpe?g|png)$/i.test(String(d[c]).trim()) || String(d[c]).length > 255)
+            return { status: 400, jsonBody: { erreur: "Pièce jointe invalide — reprenez le dépôt des trois documents." } };
         if (!/^[12]\d{12}(\d{2})?$/.test(String(d.numeroSS).replace(/\s/g, "")))
           return { status: 400, jsonBody: { erreur: "Numéro de sécurité sociale invalide (13 ou 15 chiffres)." } };
         if (!["CDI", "CDD"].includes(d.typeContrat))
           return { status: 400, jsonBody: { erreur: "Type de contrat non pris en charge." } };
         if (d.typeContrat === "CDD" && !d.dateFin)
           return { status: 400, jsonBody: { erreur: "Date de fin requise pour un CDD." } };
-        if (!SEXES.includes(d.sexe) || !d.sexe)
+        if (d.sexe && !SEXES.includes(d.sexe))
           return { status: 400, jsonBody: { erreur: "Sexe invalide." } };
-        if (!SITUATIONS.includes(d.situationFamiliale) || !d.situationFamiliale)
+        if (d.situationFamiliale && !SITUATIONS.includes(d.situationFamiliale))
           return { status: 400, jsonBody: { erreur: "Situation familiale invalide." } };
-        if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(String(d.iban).replace(/\s/g, "").toUpperCase()))
+        if (d.iban && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(String(d.iban).replace(/\s/g, "").toUpperCase()))
           return { status: 400, jsonBody: { erreur: "IBAN invalide." } };
-        if (!/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(String(d.bic).replace(/\s/g, "").toUpperCase()))
+        if (d.bic && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(String(d.bic).replace(/\s/g, "").toUpperCase()))
           return { status: 400, jsonBody: { erreur: "BIC invalide." } };
-        if (!/^[A-Za-z]{2}$/.test(String(d.codePaysNaissance).trim()))
+        if (d.codePaysNaissance && !/^[A-Za-z]{2}$/.test(String(d.codePaysNaissance).trim()))
           return { status: 400, jsonBody: { erreur: "Code pays invalide (2 lettres)." } };
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
+        if (d.emailSalarie && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
           return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
         // La fiche d'abord (upsert idempotent), le contrat ensuite : en cas
         // d'échec du contrat, une nouvelle tentative re-complète la fiche.
@@ -389,10 +397,13 @@ async function creerFicheSalarie(clientInfo, d) {
   const existant = existants.find((s) => s.CodeClient === clientInfo.codeClient &&
     `${String(s.Nom || "").trim().toUpperCase()} ${String(s.Prenom || "").trim().toUpperCase()}`.trim() === cleFiche);
 
+  // Volet administratif FACULTATIF (modèle B) : un champ non transmis
+  // n'est PAS écrit — une mise à jour (re-tentative, ré-embauche) ne
+  // doit jamais effacer ce qu'Osmose a déjà transcrit depuis les pièces.
+  const si = (col, val) => (String(val ?? "").trim() ? { [col]: val } : {});
   const fields = {
     Title: `${nom} ${prenom}`.trim(),
     CodeClient: clientInfo.codeClient,
-    Matricule: String(d.matricule || "").trim().slice(0, 40),
     Nom: nom.slice(0, 120),
     Prenom: prenom.slice(0, 120),
     Poste: String(d.poste).trim().slice(0, 160),
@@ -400,22 +411,24 @@ async function creerFicheSalarie(clientInfo, d) {
     DateEntree: d.dateDebut,
     ...(d.dateFin ? { DateSortie: d.dateFin } : {}),
     Statut: "Actif",
-    Email: String(d.emailSalarie).trim().toLowerCase().slice(0, 200),
-    Telephone: String(d.telephoneSalarie).trim().slice(0, 40),
     AdressePostale: String(d.adressePostale).trim().slice(0, 250),
     NumeroSS: String(d.numeroSS).replace(/\s/g, "").slice(0, 15),
     DateNaissance: d.dateNaissance,
-    Sexe: d.sexe,
     NomNaissance: nom.slice(0, 120),
-    NomMarital: String(d.nomMarital || "").trim().slice(0, 120),
-    SituationFamiliale: d.situationFamiliale,
-    DepartementNaissance: String(d.departementNaissance).trim().slice(0, 80),
-    CodeDepartementNaissance: String(d.codeDepartementNaissance).trim().toUpperCase().slice(0, 3),
-    PaysNaissance: String(d.paysNaissance).trim().slice(0, 80),
-    CodePaysNaissance: String(d.codePaysNaissance).trim().toUpperCase().slice(0, 2),
-    Iban: String(d.iban).replace(/\s/g, "").toUpperCase().slice(0, 34),
-    Bic: String(d.bic).replace(/\s/g, "").toUpperCase().slice(0, 11),
-    BulletinDematerialise: d.bulletinDematerialise === true,
+    ...si("Matricule", String(d.matricule || "").trim().slice(0, 40)),
+    ...si("Email", String(d.emailSalarie || "").trim().toLowerCase().slice(0, 200)),
+    ...si("Telephone", String(d.telephoneSalarie || "").trim().slice(0, 40)),
+    ...si("Sexe", d.sexe),
+    ...si("NomMarital", String(d.nomMarital || "").trim().slice(0, 120)),
+    ...si("SituationFamiliale", d.situationFamiliale),
+    ...si("DepartementNaissance", String(d.departementNaissance || "").trim().slice(0, 80)),
+    ...si("CodeDepartementNaissance", String(d.codeDepartementNaissance || "").trim().toUpperCase().slice(0, 3)),
+    ...si("PaysNaissance", String(d.paysNaissance || "").trim().slice(0, 80)),
+    ...si("CodePaysNaissance", String(d.codePaysNaissance || "").trim().toUpperCase().slice(0, 2)),
+    ...si("Iban", String(d.iban || "").replace(/\s/g, "").toUpperCase().slice(0, 34)),
+    ...si("Bic", String(d.bic || "").replace(/\s/g, "").toUpperCase().slice(0, 11)),
+    ...(d.bulletinDematerialise === true || d.bulletinDematerialise === false
+      ? { BulletinDematerialise: d.bulletinDematerialise === true } : {}),
   };
 
   const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
