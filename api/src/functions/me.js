@@ -45,7 +45,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-18-inline";
+const VERSION_API = "2026-08-21-repartition";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",
@@ -67,49 +67,11 @@ app.http("ping", {
       où /api/lead est de toute façon indispensable au site vitrine.
    Modules en chargement paresseux : un module inchargeable donne un 500
    avec la cause — jamais un 404 muet. */
-/* Découverte du 21/08 (nouvelle SWA, table de routage neuve) : ping
-   (handler littéral) est routée, les trois ci-dessous ne l'étaient pas
-   tant que leur handler était produit par un appel (paresseux(…)).
-   L'indexation LIT le code plus qu'elle ne l'exécute : chaque
-   déclaration doit donc porter un handler écrit en toutes lettres.
-   Le require reste paresseux (dans le handler) : un module inchargeable
-   donne un 500 explicite, jamais un 404 muet. Noms en minuscules par
-   prudence (style rappel-variables). */
-app.http("admin-donnees", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../admin").donnees(request, context);
-    } catch (e) {
-      context.error("admin-donnees :", e);
-      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
-    }
-  },
-});
-
-app.http("admin-activer", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../admin").activer(request, context);
-    } catch (e) {
-      context.error("admin-activer :", e);
-      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
-    }
-  },
-});
-
-app.http("lead", {
-  methods: ["POST", "OPTIONS"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../lead").lead(request, context);
-    } catch (e) {
-      context.error("lead :", e);
-      return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
-    }
-  },
-});
+/* Découverte du 21/08 (SWA neuve, données complètes) : l'indexation ne
+   retient que les DEUX premières déclarations app.http d'un même fichier
+   (documents.js : 2/2 routées ; me.js : me et ping routées, les trois
+   suivantes ignorées quelle que soit leur forme). Les routes admin et
+   lead sont donc déclarées dans des fichiers n'en portant qu'une :
+   admin-donnees → demande.js, admin-activer → dashboard.js,
+   lead → echeances.js. Ce fichier reste à 2 déclarations — ne JAMAIS
+   en ajouter une troisième ici (ni ailleurs). */

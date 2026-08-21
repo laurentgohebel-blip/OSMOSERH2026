@@ -398,3 +398,19 @@ async function creerElementPersonnel(liste, email, clientInfo, d, reference, cha
     throw { status: 502, erreur: `Enregistrement dans « ${liste} » impossible — réessayez.`, detail: corps };
   }
 }
+
+/* Route admin-donnees déclarée ICI (fichier à une seule fonction) :
+   l'indexation SWA ne retient que 2 déclarations par fichier — voir le
+   commentaire de contournement dans me.js. Handler littéral obligatoire. */
+app.http("admin-donnees", {
+  methods: ["GET"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../admin").donnees(request, context);
+    } catch (e) {
+      context.error("admin-donnees :", e);
+      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+    }
+  },
+});
