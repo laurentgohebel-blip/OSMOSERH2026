@@ -128,7 +128,10 @@ app.http("demande", {
       // l'API écrit dans « Production contrat » et le flux existant
       // « Production contrat + AR » se déclenche à la création.
       if (d.demarche === "embauche") {
-        const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle"];
+        // Volet administratif inclus (22/08) : l'embauche alimente AUSSI
+        // la fiche « Salariés » — tout le dossier est requis d'emblée.
+        const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle",
+          "sexe", "situationFamiliale", "departementNaissance", "codeDepartementNaissance", "paysNaissance", "codePaysNaissance", "iban", "bic", "emailSalarie", "telephoneSalarie"];
         for (const c of requis)
           if (!d[c] || !String(d[c]).trim())
             return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
@@ -138,6 +141,21 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Type de contrat non pris en charge." } };
         if (d.typeContrat === "CDD" && !d.dateFin)
           return { status: 400, jsonBody: { erreur: "Date de fin requise pour un CDD." } };
+        if (!SEXES.includes(d.sexe) || !d.sexe)
+          return { status: 400, jsonBody: { erreur: "Sexe invalide." } };
+        if (!SITUATIONS.includes(d.situationFamiliale) || !d.situationFamiliale)
+          return { status: 400, jsonBody: { erreur: "Situation familiale invalide." } };
+        if (!/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(String(d.iban).replace(/\s/g, "").toUpperCase()))
+          return { status: 400, jsonBody: { erreur: "IBAN invalide." } };
+        if (!/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(String(d.bic).replace(/\s/g, "").toUpperCase()))
+          return { status: 400, jsonBody: { erreur: "BIC invalide." } };
+        if (!/^[A-Za-z]{2}$/.test(String(d.codePaysNaissance).trim()))
+          return { status: 400, jsonBody: { erreur: "Code pays invalide (2 lettres)." } };
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
+          return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
+        // La fiche d'abord (upsert idempotent), le contrat ensuite : en cas
+        // d'échec du contrat, une nouvelle tentative re-complète la fiche.
+        await creerFicheSalarie(clientInfo, d);
         const reference = `EMB-${Date.now().toString(36).toUpperCase()}`;
         await creerEmbauche(email, clientInfo, d, reference);
         return { status: 202, jsonBody: { reference } };
@@ -352,6 +370,70 @@ app.http("demande", {
   }
 });
 
+/* Crée ou complète la fiche « Salariés » lors d'une embauche : le
+   référentiel s'auto-alimente avec le dossier complet du volet
+   administratif. Recherche par CodeClient + nom/prénom normalisés
+   (même clé que personnel.js) : trouvé → mise à jour, absent → création.
+   Écriture STRICTE : une embauche ne rend jamais une référence si la
+   fiche n'a pas pu être écrite. */
+async function creerFicheSalarie(clientInfo, d) {
+  const { items } = require("../annuaire");
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  if (!ids["Salariés"]) throw { status: 502, erreur: "Référentiel « Salariés » introuvable." };
+
+  const nom = String(d.nom).trim().toUpperCase();
+  const prenom = String(d.prenom).trim();
+  const cleFiche = `${nom} ${prenom.toUpperCase()}`.trim();
+  const existants = await items(tok, ids["Salariés"], "CodeClient,Nom,Prenom");
+  const existant = existants.find((s) => s.CodeClient === clientInfo.codeClient &&
+    `${String(s.Nom || "").trim().toUpperCase()} ${String(s.Prenom || "").trim().toUpperCase()}`.trim() === cleFiche);
+
+  const fields = {
+    Title: `${nom} ${prenom}`.trim(),
+    CodeClient: clientInfo.codeClient,
+    Matricule: String(d.matricule || "").trim().slice(0, 40),
+    Nom: nom.slice(0, 120),
+    Prenom: prenom.slice(0, 120),
+    Poste: String(d.poste).trim().slice(0, 160),
+    TypeContrat: d.typeContrat,
+    DateEntree: d.dateDebut,
+    ...(d.dateFin ? { DateSortie: d.dateFin } : {}),
+    Statut: "Actif",
+    Email: String(d.emailSalarie).trim().toLowerCase().slice(0, 200),
+    Telephone: String(d.telephoneSalarie).trim().slice(0, 40),
+    AdressePostale: String(d.adressePostale).trim().slice(0, 250),
+    NumeroSS: String(d.numeroSS).replace(/\s/g, "").slice(0, 15),
+    DateNaissance: d.dateNaissance,
+    Sexe: d.sexe,
+    NomNaissance: nom.slice(0, 120),
+    NomMarital: String(d.nomMarital || "").trim().slice(0, 120),
+    SituationFamiliale: d.situationFamiliale,
+    DepartementNaissance: String(d.departementNaissance).trim().slice(0, 80),
+    CodeDepartementNaissance: String(d.codeDepartementNaissance).trim().toUpperCase().slice(0, 3),
+    PaysNaissance: String(d.paysNaissance).trim().slice(0, 80),
+    CodePaysNaissance: String(d.codePaysNaissance).trim().toUpperCase().slice(0, 2),
+    Iban: String(d.iban).replace(/\s/g, "").toUpperCase().slice(0, 34),
+    Bic: String(d.bic).replace(/\s/g, "").toUpperCase().slice(0, 11),
+    BulletinDematerialise: d.bulletinDematerialise === true,
+  };
+
+  const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
+  const r = existant
+    ? await fetch(`${base}/${existant.id}/fields`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify(fields),
+      })
+    : await fetch(base, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ fields }),
+      });
+  if (!r.ok) throw { status: 502, erreur: "Création de la fiche salarié impossible — réessayez." };
+  viderCacheItems();
+}
+
 /* Met à jour le dossier d'un salarié (liste « Salariés ») pour le client
    connecté. Chaque champ est validé et mappé sur sa colonne ; seuls les
    champs transmis sont modifiés (une chaîne vide efface). L'élément est
@@ -385,6 +467,22 @@ async function majSalarie(clientInfo, d, context) {
     return { status: 400, jsonBody: { erreur: "Sexe invalide." } };
   if (!SITUATIONS.includes(txt(f.situationFamiliale, 30)))
     return { status: 400, jsonBody: { erreur: "Situation familiale invalide." } };
+
+  // Dossier OBLIGATOIRE (décision du 22/08) : un enregistrement incomplet
+  // est refusé — miroir strict de la règle affichée par le portail.
+  const REQUIS = {
+    adressePostale: "adresse postale", numeroSS: "n° de sécurité sociale",
+    dateNaissance: "date de naissance", sexe: "sexe",
+    nomNaissance: "nom de naissance", situationFamiliale: "situation familiale",
+    departementNaissance: "département de naissance",
+    codeDepartementNaissance: "code département",
+    paysNaissance: "pays de naissance", codePaysNaissance: "code pays",
+    email: "e-mail", telephone: "téléphone", iban: "IBAN", bic: "BIC",
+  };
+  const valeurs = { ...f, numeroSS: nir, iban, bic, email, dateNaissance: dateOuVide(f.dateNaissance) };
+  const manquants = Object.keys(REQUIS).filter((k) => !String(valeurs[k] ?? "").trim());
+  if (manquants.length)
+    return { status: 400, jsonBody: { erreur: `Champs obligatoires manquants : ${manquants.map((k) => REQUIS[k]).join(", ")}.` } };
 
   const tok = await tokenGraph();
   const ids = await idsListes(tok);
