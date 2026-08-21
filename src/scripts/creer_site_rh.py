@@ -112,6 +112,19 @@ LISTES = [
         col("Message", TL()), col("Reference", T()), col("CodeClient", T()),
         col("RaisonSociale", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
         col("Statut", CH(["Nouveau", "Répondu"], "Nouveau")),
+        # Fil de discussion du portail (docs/Fil-messagerie-portail.md) :
+        # un élément = un fil ; message initial dans Message, réponses en
+        # JSON dans Echanges [{qui, quand, texte}]. Relancer ce script
+        # ajoute ces colonnes aux listes existantes (traiter_liste).
+        col("Echanges", TL()), col("DerniereMaj", DH()), col("DernierAuteur", T()),
+        col("Clos", B(False)), col("NonLuClient", B(False)), col("NonLuGestionnaire", B(False)),
+        # Dernier texte du gestionnaire, recopié à plat par l'API : le
+        # flux e-mail le cite d'un simple jeton, sans parser Echanges.
+        col("DerniereReponse", TL()),
+        # Anti-doublon du flux « réponse gestionnaire → e-mail client » :
+        # l'API la passe à faux à chaque réponse, le flux notifie puis la
+        # remet à vrai. Défaut vrai : l'existant ne déclenche rien.
+        col("NotifEnvoyee", B(True)),
     ]),
     ("Variables de paie", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("Mois", T()),

@@ -10,7 +10,7 @@
 // { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
 import React, { useEffect, useState } from "react";
-import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check } from "lucide-react";
+import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check, Send, ArrowLeft, Archive } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
 const T = {
@@ -369,11 +369,204 @@ function RepriseEffectif({ clients, notifier }) {
   );
 }
 
-export default function AdminActivation({ user, onLogout }) {
+/* ── Messagerie : boîte de réception des fils clients ─────────────────
+   GET /api/me?vue=admin&onglet=messages (tous les fils, tous clients) ;
+   réponse et clôture via POST /api/demande { action: "messageRepondre" |
+   "messageStatut" } — le rôle gestionnaire est déduit du jeton côté API. */
+const frCourt = (iso) => { const d = new Date(iso || ""); return isNaN(d) ? "" : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
+const frLong = (iso) => { const d = new Date(iso || ""); return isNaN(d) ? "" : `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}, ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`; };
+
+function PastilleFil({ fil }) {
+  const [bg, fg, lib] = fil.clos ? ["#F1EFE8", "#444441", "Clos"]
+    : fil.statut === "Répondu" ? ["#E1F5EE", "#085041", "Répondu"]
+    : ["#FAEEDA", "#854F0B", "À répondre"];
+  return <span style={{ background: bg, color: fg, fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", flexShrink: 0 }}>{lib}</span>;
+}
+
+/* Réplique côté gestionnaire : le client à gauche (carte), vous à droite
+   (bleu) — miroir exact de l'écran client. */
+function BulleAdmin({ fil, qui, quand, texte }) {
+  const moi = qui === "gestionnaire";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: moi ? "flex-end" : "flex-start" }}>
+      <div style={{
+        maxWidth: "85%", padding: "10px 14px", fontSize: 13.5, lineHeight: 1.55, color: T.ink,
+        whiteSpace: "pre-wrap", overflowWrap: "anywhere",
+        background: moi ? "#E6F1FB" : T.card,
+        border: `1px solid ${moi ? "#CBDFF5" : T.border}`,
+        borderRadius: moi ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+      }}>{texte}</div>
+      <span style={{ fontSize: 11, color: T.mut, margin: "4px 2px 0" }}>
+        {moi ? "Vous" : `${fil.raisonSociale || fil.codeClient}${fil.emailDemandeur ? ` (${fil.emailDemandeur})` : ""}`} — {frLong(quand)}
+      </span>
+    </div>
+  );
+}
+
+function BoiteMessages({ boite, recharger, notifier, filInitial }) {
+  const [ouvert, setOuvert] = useState(null);
+  const [rep, setRep] = useState("");
+  const [envoi, setEnvoi] = useState(false);
+
+  // Lien profond ?msg= : le fil s'ouvre dès que la boîte est chargée.
+  useEffect(() => {
+    if (filInitial && Array.isArray(boite?.fils)) {
+      const f = boite.fils.find((x) => String(x.id) === String(filInitial));
+      if (f) ouvrir(f);
+    }
+  }, [boite === null]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const poster = async (corps, okMsg) => {
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(corps),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEnvoi(false);
+      if (!r.ok) { notifier(j.erreur || `Refusé (HTTP ${r.status}).`); return false; }
+      if (okMsg) notifier(okMsg);
+      recharger();
+      return true;
+    } catch {
+      setEnvoi(false);
+      notifier("API injoignable — réessayez.");
+      return false;
+    }
+  };
+
+  const ouvrir = (f) => {
+    setOuvert(f.id); setRep("");
+    if (f.nonLuGestionnaire) {
+      // marquage lu silencieux — l'échec n'empêche pas la lecture
+      apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "messageStatut", id: f.id, lu: true }),
+      }).catch(() => {});
+    }
+  };
+
+  if (boite === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des messages…</p>;
+  if (boite.erreur) return (
+    <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>
+      {boite.erreur}
+    </p>
+  );
+
+  const fil = boite.fils.find((f) => f.id === ouvert);
+
+  // ── Conversation ──
+  if (fil) {
+    return (
+      <>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+          <button onClick={() => setOuvert(null)} aria-label="Retour à la boîte" style={{ all: "unset", cursor: "pointer", color: T.mut, padding: 4, display: "flex" }}><ArrowLeft size={17} /></button>
+          <h2 style={{ margin: 0, fontSize: 17, fontFamily: T.serif, fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{fil.objet}</h2>
+          <PastilleFil fil={fil} />
+          <button onClick={() => poster({ action: "messageStatut", id: fil.id, clos: !fil.clos }, fil.clos ? "✓ Fil rouvert." : "✓ Fil clos.")}
+            disabled={envoi} title={fil.clos ? "Rouvrir le fil" : "Clore le fil (résolu)"}
+            style={{ all: "unset", cursor: "pointer", marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut, border: `1px solid ${T.border}`, borderRadius: 8, padding: "6px 10px", background: "#fff" }}>
+            <Archive size={13} /> {fil.clos ? "Rouvrir" : "Clore"}
+          </button>
+        </div>
+        <p style={{ margin: "0 0 16px 31px", fontSize: 11.5, color: T.mut }}>
+          {fil.raisonSociale || fil.codeClient} ({fil.codeClient}) — réf. {fil.reference || "—"} — ouvert le {frCourt(fil.creeLe)}
+        </p>
+        <div style={{ display: "grid", gap: 14 }}>
+          <BulleAdmin fil={fil} qui="client" quand={fil.creeLe} texte={fil.message} />
+          {(fil.echanges || []).map((e, i) => <BulleAdmin key={i} fil={fil} qui={e.qui} quand={e.quand} texte={e.texte} />)}
+        </div>
+        {fil.clos ? (
+          <p style={{ marginTop: 16, fontSize: 12.5, color: T.mut }}>Fil clos — rouvrez-le pour répondre.</p>
+        ) : (
+          <div style={{ marginTop: 16 }}>
+            <textarea rows={3} value={rep} onChange={(e) => setRep(e.target.value)}
+              placeholder={`Répondre à ${fil.raisonSociale || fil.codeClient}…`}
+              style={{ ...champ, resize: "vertical" }} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 10 }}>
+              <span style={{ fontSize: 11.5, color: T.mut }}>
+                La réponse s'ajoute au fil du portail client et passe le statut en « Répondu ».
+              </span>
+              <button onClick={async () => { if (rep.trim() && await poster({ action: "messageRepondre", id: fil.id, texte: rep.trim() }, "✓ Réponse ajoutée au fil.")) setRep(""); }}
+                disabled={envoi || !rep.trim()} style={{
+                  all: "unset", cursor: envoi || !rep.trim() ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8,
+                  background: T.accent, color: "#fff", borderRadius: 8, padding: "9px 18px",
+                  fontSize: 13, fontWeight: 600, fontFamily: T.sans, opacity: envoi || !rep.trim() ? 0.6 : 1, flexShrink: 0,
+                }}>
+                <Send size={14} /> {envoi ? "Envoi…" : "Répondre"}
+              </button>
+            </div>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  // ── Liste ──
+  if (!boite.fils.length) return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+      Aucun message client. ✨
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {boite.total > boite.fils.length && (
+        <p style={{ margin: 0, fontSize: 12, color: T.mut }}>
+          Les {boite.fils.length} fils les plus récents (sur {boite.total}) — le reste est dans la liste SharePoint.
+        </p>
+      )}
+      {boite.fils.map((f) => (
+        <button key={f.id} onClick={() => ouvrir(f)} style={{
+          all: "unset", boxSizing: "border-box", display: "block", width: "100%", minWidth: 0, overflow: "hidden",
+          cursor: "pointer", background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "12px 16px", fontFamily: T.sans,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+            <span style={{ fontSize: 13.5, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <strong>{f.raisonSociale || f.codeClient}</strong>
+              <span style={{ color: T.mut }}> — {f.objet}</span>
+            </span>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <span style={{ fontSize: 11.5, color: T.mut }}>{frCourt(f.derniereMaj)}</span>
+              <PastilleFil fil={f} />
+            </span>
+          </div>
+          <div style={{ fontSize: 12.5, color: T.mut, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {f.dernierAuteur === "gestionnaire" ? "Vous : " : ""}{((f.echanges && f.echanges.length ? f.echanges[f.echanges.length - 1].texte : f.message) || "").trim()}
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function AdminActivation({ user, onLogout, msgInitial: msgProp }) {
   const [donnees, setDonnees] = useState(null); // null | { demandes, clients, options } | { erreur }
+  const [boite, setBoite] = useState(null);     // null | { fils, total } | { erreur }
+  // Lien profond des e-mails : ?msg=<id> ouvre l'onglet Messages sur ce
+  // fil. Lecture PURE (StrictMode double-invoque les initialisateurs) —
+  // l'URL est nettoyée dans l'effet ci-dessous, une seule fois.
+  const [msgInitial] = useState(() => msgProp || new URLSearchParams(window.location.search).get("msg"));
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("msg")) { // seul msg est retiré — les autres paramètres restent
+      params.delete("msg");
+      const reste = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (reste ? `?${reste}` : ""));
+    }
+  }, []);
+  const [onglet, setOnglet] = useState(msgInitial ? "messages" : "acces");
   const [toast, setToast] = useState(null);
   const notifier = (m) => { setToast(m); setTimeout(() => setToast(null), 4200); };
 
+  const chargerBoite = () => {
+    apiFetch("/api/me?vue=admin&onglet=messages")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        setBoite(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
+      })
+      .catch(() => setBoite({ erreur: "API injoignable — rechargez la page." }));
+  };
   const charger = () => {
     setDonnees(null);
     apiFetch("/api/me?vue=admin")
@@ -382,8 +575,13 @@ export default function AdminActivation({ user, onLogout }) {
         setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
       })
       .catch(() => setDonnees({ erreur: "API injoignable — rechargez la page." }));
+    chargerBoite();
   };
   useEffect(charger, []);
+
+  // Fils où la balle est côté cabinet : compteur de l'onglet Messages.
+  const aRepondre = Array.isArray(boite?.fils)
+    ? boite.fils.filter((f) => !f.clos && f.statut !== "Répondu").length : 0;
 
   const retirer = (id) =>
     setDonnees((d) => ({ ...d, demandes: d.demandes.filter((x) => x.id !== id) }));
@@ -399,7 +597,7 @@ export default function AdminActivation({ user, onLogout }) {
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
       <header style={{ background: T.navy, color: "#fff", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
         <span style={{ fontFamily: T.serif, fontSize: 18 }}>Osmose <em style={{ color: "#7FB0E8" }}>RH</em></span>
-        <span style={{ fontSize: 12.5, color: "#9FB2C9" }}>Administration — demandes d'accès</span>
+        <span style={{ fontSize: 12.5, color: "#9FB2C9" }}>Administration</span>
         <span style={{ marginLeft: "auto", fontSize: 12, color: "#9FB2C9" }}>{user?.email}</span>
         <button onClick={charger} title="Actualiser" style={{ all: "unset", cursor: "pointer", color: "#9FB2C9", display: "flex" }}><RefreshCw size={15} /></button>
         <button onClick={onLogout} style={{ all: "unset", cursor: "pointer", color: "#9FB2C9", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}>
@@ -407,7 +605,26 @@ export default function AdminActivation({ user, onLogout }) {
         </button>
       </header>
 
+      <nav style={{ background: "#fff", borderBottom: `1px solid ${T.border}`, display: "flex", gap: 4, padding: "0 24px" }}>
+        {[
+          ["acces", `Demandes d'accès${donnees?.demandes?.length ? ` (${donnees.demandes.length})` : ""}`],
+          ["messages", `Messages clients${aRepondre ? ` (${aRepondre})` : ""}`],
+        ].map(([id, lib]) => (
+          <button key={id} onClick={() => setOnglet(id)} style={{
+            all: "unset", cursor: "pointer", padding: "12px 14px", fontSize: 13.5,
+            fontWeight: onglet === id ? 600 : 400,
+            color: onglet === id ? T.accent : T.mut,
+            borderBottom: `2px solid ${onglet === id ? T.accent : "transparent"}`,
+          }}>{lib}</button>
+        ))}
+      </nav>
+
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "26px 18px 60px" }}>
+        {onglet === "messages" && (
+          <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} filInitial={msgInitial} />
+        )}
+
+        {onglet === "acces" && (<>
         {donnees === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des demandes…</p>}
         {donnees?.erreur && (
           <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>
@@ -462,6 +679,7 @@ export default function AdminActivation({ user, onLogout }) {
             <RepriseEffectif clients={donnees.clients} notifier={notifier} />
           </section>
         )}
+        </>)}
       </main>
 
       {toast && (
