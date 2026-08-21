@@ -1316,6 +1316,16 @@ const ChampReq = ({ label, erreur, large, children }) => (
   </div>
 );
 
+// Jumeau facultatif de ChampReq : même mise en page, sans l'étoile —
+// l'erreur ne sert qu'aux contrôles de FORMAT d'un champ renseigné.
+const ChampOpt = ({ label, erreur, large, children }) => (
+  <div style={{ gridColumn: large ? "1 / -1" : "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+    <label style={{ fontSize: 12, color: T.mut }}>{label}</label>
+    {children}
+    {erreur && <span style={{ fontSize: 11, color: T.err }}>{erreur}</span>}
+  </div>
+);
+
 function DemandeAcompte({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
@@ -1496,12 +1506,19 @@ function DemandeEmbauche({ user, client, onRetour }) {
     type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
     nationalite: "", numeroSS: "", adresse: "", emailSalarie: "",
     telephone: "", debut: "", fin: "", poste: "", duree: "",
-    // Volet administratif (dossier du salarié — alimenté dans « Salariés »)
+    // Volet administratif (dossier du salarié — alimenté dans « Salariés »).
+    // FACULTATIF depuis le modèle « PJ obligatoires » : Osmose transcrit
+    // depuis les pièces jointes, le client peut pré-remplir s'il veut.
     sexe: "", nomMarital: "", situationFamiliale: "",
     deptNaissance: "", codeDeptNaissance: "",
     paysNaissance: "France", codePaysNaissance: "FR",
     iban: "", bic: "", bulletinDemat: true, matricule: "",
   });
+  // Pièces jointes OBLIGATOIRES (modèle B du 22/08) : pièce d'identité,
+  // carte vitale ou attestation de droits, RIB.
+  const [pj, setPj] = useState({ identite: null, vitale: null, rib: null });
+  const majPj = (k, fichier) => { setPj((p) => ({ ...p, [k]: fichier })); setErr((e) => ({ ...e, ["pj" + k]: false })); };
+  const pjValide = (fichier) => !!fichier && /\.(pdf|jpe?g|png)$/i.test(fichier.name) && fichier.size <= 10 * 1024 * 1024;
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
   const [envoi, setEnvoi] = useState(false);
@@ -1523,17 +1540,18 @@ function DemandeEmbauche({ user, client, onRetour }) {
       fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
       poste: f.poste.trim().length < 2,
       duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
-      // Volet administratif — tout est requis sauf nom marital et matricule
-      sexe: !f.sexe,
-      situationFamiliale: !f.situationFamiliale,
-      deptNaissance: f.deptNaissance.trim().length < 2,
-      codeDeptNaissance: !/^(\d{2,3}|2[AB]|9[78]\d)$/i.test(f.codeDeptNaissance.trim()),
-      paysNaissance: f.paysNaissance.trim().length < 2,
-      codePaysNaissance: !/^[A-Za-z]{2}$/.test(f.codePaysNaissance.trim()),
-      emailSalarie: !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.emailSalarie.trim()),
-      telephone: f.telephone.replace(/\D/g, "").length < 6,
-      iban: !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(f.iban.replace(/\s/g, "").toUpperCase()),
-      bic: !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(f.bic.replace(/\s/g, "").toUpperCase()),
+      // Volet administratif FACULTATIF : contrôles de format uniquement
+      // si le champ est renseigné.
+      codeDeptNaissance: !!f.codeDeptNaissance.trim() && !/^(\d{2,3}|2[AB]|9[78]\d)$/i.test(f.codeDeptNaissance.trim()),
+      codePaysNaissance: !!f.codePaysNaissance.trim() && !/^[A-Za-z]{2}$/.test(f.codePaysNaissance.trim()),
+      emailSalarie: !!f.emailSalarie.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.emailSalarie.trim()),
+      telephone: !!f.telephone.trim() && f.telephone.replace(/\D/g, "").length < 6,
+      iban: !!f.iban.trim() && !/^[A-Z]{2}\d{2}[A-Z0-9]{10,30}$/.test(f.iban.replace(/\s/g, "").toUpperCase()),
+      bic: !!f.bic.trim() && !/^[A-Z]{6}[A-Z0-9]{2}([A-Z0-9]{3})?$/.test(f.bic.replace(/\s/g, "").toUpperCase()),
+      // Les trois pièces jointes sont OBLIGATOIRES (PDF/JPG/PNG, 10 Mo max)
+      pjidentite: !pjValide(pj.identite),
+      pjvitale: !pjValide(pj.vitale),
+      pjrib: !pjValide(pj.rib),
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -1543,8 +1561,40 @@ function DemandeEmbauche({ user, client, onRetour }) {
     if (!valider()) return;
     setEnvoi(true);
     setErrbar("");
+
+    // 1. Téléverser les trois pièces jointes (GED, dossier Dépôts du
+    // client) — noms structurés pour que le gestionnaire les retrouve.
+    const horodatage = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const televerser = async (fichier, type) => {
+      const ext = (fichier.name.split(".").pop() || "pdf").toLowerCase();
+      const nom = `PJ-Embauche_${f.nom.trim().toUpperCase()}-${f.prenom.trim()}_${type}_${horodatage}.${ext}`;
+      const r = await apiFetch(`/api/depot?nom=${encodeURIComponent(nom)}`, {
+        method: "POST",
+        headers: { "Content-Type": fichier.type || "application/octet-stream" },
+        body: fichier,
+      });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        throw new Error(j.erreur || `dépôt « ${type} » refusé (HTTP ${r.status})`);
+      }
+      return (await r.json().catch(() => ({}))).nom || nom;
+    };
+    let nomsPj;
+    try {
+      nomsPj = {
+        pjIdentite: await televerser(pj.identite, "piece-identite"),
+        pjVitale: await televerser(pj.vitale, "carte-vitale"),
+        pjRib: await televerser(pj.rib, "rib"),
+      };
+    } catch (e) {
+      setErrbar(`Pièces jointes : ${e.message}`);
+      setEnvoi(false);
+      return;
+    }
+
     const payload = {
       demarche: "embauche",
+      ...nomsPj,
       client, // indicatif : l'API impose le client résolu côté serveur
       typeContrat: f.type,
       nom: f.nom.trim(),
@@ -1684,13 +1734,13 @@ function DemandeEmbauche({ user, client, onRetour }) {
             <input style={err.adresse ? inputInvalid : inputStyle} placeholder="Ex. 12 rue des Lilas, 34000 Montpellier" value={f.adresse} onChange={(e) => maj("adresse", e.target.value)} />
           </ChampReq>
 
-          <ChampReq label="Email personnel du salarié" erreur={err.emailSalarie && "Adresse e-mail valide requise."}>
+          <ChampOpt label="Email personnel du salarié (facultatif)" erreur={err.emailSalarie && "Adresse e-mail invalide."}>
             <input style={err.emailSalarie ? inputInvalid : inputStyle} value={f.emailSalarie} onChange={(e) => maj("emailSalarie", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="Téléphone personnel du salarié" erreur={err.telephone && "Numéro de téléphone requis."}>
+          <ChampOpt label="Téléphone personnel du salarié (facultatif)" erreur={err.telephone && "Numéro trop court."}>
             <input inputMode="tel" style={err.telephone ? inputInvalid : inputStyle} value={f.telephone} onChange={(e) => maj("telephone", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
           <ChampReq label="Date de début" erreur={err.debut && "Date requise."}>
             <input type="date" style={err.debut ? inputInvalid : inputStyle} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
@@ -1704,27 +1754,48 @@ function DemandeEmbauche({ user, client, onRetour }) {
             <input inputMode="decimal" style={err.duree ? inputInvalid : inputStyle} placeholder="Ex. 151,67" value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
           </ChampReq>
 
-          {/* ── Volet administratif : alimente le dossier du salarié ─── */}
+          {/* ── Pièces jointes OBLIGATOIRES (modèle B) : Osmose transcrit ── */}
           <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
             <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Volet administratif — dossier du salarié
+              Pièces du salarié <span style={{ color: T.err }}>*</span>
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: T.mut }}>
+              PDF, JPG ou PNG — 10 Mo max par fichier. Déposées dans vos Documents, elles servent à constituer le dossier du salarié.
             </p>
           </div>
 
-          <ChampReq label="Sexe" erreur={err.sexe && "Sélection requise."}>
+          {[["identite", "Pièce d'identité (CNI, passeport, titre de séjour)"], ["vitale", "Carte vitale ou attestation de droits"], ["rib", "RIB"]].map(([k, lib]) => (
+            <ChampReq key={k} large label={lib} erreur={err["pj" + k] && "Fichier requis (PDF/JPG/PNG, 10 Mo max)."}>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                style={err["pj" + k] ? inputInvalid : inputStyle}
+                onChange={(e) => majPj(k, e.target.files && e.target.files[0])} />
+            </ChampReq>
+          ))}
+
+          {/* ── Volet administratif : alimente le dossier du salarié ─── */}
+          <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+            <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Volet administratif — dossier du salarié (facultatif)
+            </p>
+            <p style={{ margin: "4px 0 0", fontSize: 12, color: T.mut }}>
+              Osmose RH complètera le dossier à partir des pièces jointes ci-dessous — remplissez seulement ce que vous connaissez déjà.
+            </p>
+          </div>
+
+          <ChampOpt label="Sexe">
             <select style={err.sexe ? inputInvalid : inputStyle} value={f.sexe} onChange={(e) => maj("sexe", e.target.value)}>
               <option value="">—</option>
               <option value="Masculin">Masculin</option>
               <option value="Féminin">Féminin</option>
             </select>
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="Situation familiale" erreur={err.situationFamiliale && "Sélection requise."}>
+          <ChampOpt label="Situation familiale">
             <select style={err.situationFamiliale ? inputInvalid : inputStyle} value={f.situationFamiliale} onChange={(e) => maj("situationFamiliale", e.target.value)}>
               <option value="">—</option>
               {["Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)", "Séparé(e)", "Veuf(ve)", "Union libre"].map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
-          </ChampReq>
+          </ChampOpt>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             <label style={{ fontSize: 12, color: T.mut }}>Nom marital (facultatif)</label>
@@ -1736,29 +1807,29 @@ function DemandeEmbauche({ user, client, onRetour }) {
             <input style={inputStyle} value={f.matricule} onChange={(e) => maj("matricule", e.target.value)} />
           </div>
 
-          <ChampReq label="Département de naissance" erreur={err.deptNaissance && "Champ requis."}>
+          <ChampOpt label="Département de naissance">
             <input style={err.deptNaissance ? inputInvalid : inputStyle} placeholder="Ex. Var" value={f.deptNaissance} onChange={(e) => maj("deptNaissance", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="Code département" erreur={err.codeDeptNaissance && "Code invalide (ex. 83, 2A, 99)."}>
+          <ChampOpt label="Code département" erreur={err.codeDeptNaissance && "Code invalide (ex. 83, 2A, 99)."}>
             <input style={err.codeDeptNaissance ? inputInvalid : inputStyle} placeholder="Ex. 83" value={f.codeDeptNaissance} onChange={(e) => maj("codeDeptNaissance", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="Pays de naissance" erreur={err.paysNaissance && "Champ requis."}>
+          <ChampOpt label="Pays de naissance">
             <input style={err.paysNaissance ? inputInvalid : inputStyle} value={f.paysNaissance} onChange={(e) => maj("paysNaissance", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="Code pays (2 lettres)" erreur={err.codePaysNaissance && "Ex. FR, PT, DZ."}>
+          <ChampOpt label="Code pays (2 lettres)" erreur={err.codePaysNaissance && "Ex. FR, PT, DZ."}>
             <input style={err.codePaysNaissance ? inputInvalid : inputStyle} placeholder="Ex. FR" value={f.codePaysNaissance} onChange={(e) => maj("codePaysNaissance", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="IBAN" erreur={err.iban && "IBAN invalide."}>
+          <ChampOpt label="IBAN" erreur={err.iban && "IBAN invalide."}>
             <input style={err.iban ? inputInvalid : inputStyle} placeholder="Ex. FR76 3000 6000 0112 3456 7890 189" value={f.iban} onChange={(e) => maj("iban", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
-          <ChampReq label="BIC" erreur={err.bic && "BIC invalide (8 ou 11 caractères)."}>
+          <ChampOpt label="BIC" erreur={err.bic && "BIC invalide (8 ou 11 caractères)."}>
             <input style={err.bic ? inputInvalid : inputStyle} placeholder="Ex. AGRIFRPP" value={f.bic} onChange={(e) => maj("bic", e.target.value)} />
-          </ChampReq>
+          </ChampOpt>
 
           <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
             <input type="checkbox" id="bulletinDemat" checked={!!f.bulletinDemat} onChange={(e) => maj("bulletinDemat", e.target.checked)} />

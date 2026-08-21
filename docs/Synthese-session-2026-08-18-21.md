@@ -86,3 +86,27 @@ routes historiques :
 3. Communication clients + reprise des clients réels (outils prêts).
 4. **J+30** : décommissionnement ancien tenant synapse, ancienne SWA,
    options OVH, `mx.ovh.com` hors SPF, retirer `ping` si sain.
+
+## Décision métier du 22/08 — embauche « modèle B » (PJ obligatoires)
+
+Question tranchée : qui saisit le dossier administratif du salarié ?
+**Osmose RH compile les données, pas le client.** Le formulaire
+d'embauche demande donc :
+- les informations du **contrat** (11 champs d'origine, inchangés) ;
+- **trois pièces jointes obligatoires** — pièce d'identité, carte
+  Vitale, RIB — contrôlées (pdf/jpg/png, 10 Mo max), déposées via
+  `/api/depot` dans `{code}/Dépôts` sous le nom
+  `PJ-Embauche_{NOM}-{Prénom}_{type}_{date}.{ext}` ; l'API refuse
+  l'embauche sans les trois noms (`pjIdentite`/`pjVitale`/`pjRib`) ;
+- le **volet administratif reste disponible mais FACULTATIF** : chaque
+  champ transmis est validé (sexe, situation, IBAN/BIC, code pays,
+  e-mail), aucun n'est exigé ; un champ vide n'est jamais écrit dans la
+  fiche « Salariés » (pas d'écrasement à l'upsert).
+
+Le circuit de complétion : Osmose transcrit les pièces dans l'onglet
+**Dossier** de la gestion du personnel — le bandeau « ⚠ Dossier
+incomplet » y liste les champs manquants (règle `majSalarie`
+inchangée : dossier complet exigé à l'enregistrement). **v2 (après
+lancement)** : pré-remplissage par OCR des pièces (Azure Document
+Intelligence) — le client scanne, le logiciel remplit, Osmose valide.
+`VERSION_API = 2026-08-22-pj-embauche`.
