@@ -141,6 +141,26 @@ statut « Sorti » déduit, CDD visible en Échéances, ré-import = 0 créé.
 Modèle dédié `Modele_reprise_effectif.xlsx` (portail) — distinct de
 `Modele_import_salaries.xlsx` qui reste au circuit PAIE.
 
+### 21/08 — bascule osmoserh ET doctrine définitive des routes SWA
+
+Bascule engagée : listes SharePoint créées par scripts, flux importés
+par solution (re-pointage en cours), nouvelle SWA « OsmoseRH2026 »
+(lemon-meadow-07fadfb10, offre Free) déployée depuis le workflow unifié.
+
+**Doctrine des routes (définitive)** : sur la SWA NEUVE, mêmes symptômes
+que sur l'ancienne — seules les 9 fonctions de juillet + ping sont
+routées. Cinq hypothèses testées et éliminées (table figée, casse,
+handler littéral, nombre par fichier, position dans le fichier —
+admin-activer ligne 14 en 404 quand ping ligne 49 passe). Conclusion :
+la découverte des fonctions par la plateforme est opaque et non fiable.
+**Architecture définitive** : ne plus JAMAIS créer de route /api/<nom> —
+tout passe par les routes historiques (détail dans me.js) :
+- admin : `me?vue=admin` + `demande{action:adminActiver|adminImportSalaries}` ;
+- leads vitrine : `POST /api/demande` `{action:"lead"}` en **text/plain**
+  (requête simple, pas de préflight) — formulaires OVH re-livrés en ce sens ;
+- santé : `/api/ping` (champ `version` = déploiement réellement servi).
+Matière à ticket GitHub Azure/static-web-apps si l'envie prend un jour.
+
 ### 18/08 (soir, suite) — constat DNS e-mail
 
 - Le MX de **synapserh.fr** pointe vers Microsoft 365 (pas OVH) : une

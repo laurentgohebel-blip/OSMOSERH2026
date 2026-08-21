@@ -102,10 +102,10 @@ décision du 18/08 : plus aucun SMTP OVH), expéditeurs @osmoserh.fr,
 - [ ] Variables d'application (tableau de la synthèse) : `GRAPH_*` du
       tenant osmose, `RH_SITE_ID`, `AUTH_*` CIAM **inchangées**,
       `ADMIN_EMAILS` — **PAS de FLOW_URL_\*** (démarches en standard)
-- [ ] Premier déploiement vert → tests immédiats sur l'URL azurestaticapps :
-      `/api/admin-donnees` → `{"erreur":"Connexion requise."}` (pas de 404 :
-      l'indexation des routes est saine — sinon voir le contournement dans
-      me.js, déjà en place) ; `/api/lead` répond au POST
+- [ ] Premier déploiement vert → test immédiat sur l'URL azurestaticapps :
+      `/api/ping` répond avec le bon `version` (doctrine du 21/08 :
+      aucune nouvelle route /api/<nom> — admin et leads passent par les
+      routes historiques, voir me.js)
 - [ ] Domaine personnalisé **espace.osmoserh.fr** (CNAME OVH → validation)
 - [ ] URI de redirection `https://espace.osmoserh.fr` ajoutée à l'app
       CIAM « Portail Osmose RH »

@@ -7,23 +7,6 @@
 const { app } = require("@azure/functions");
 const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
 
-/* Route admin-activer déclarée EN TÊTE de fichier : l'indexation de la
-   plateforme SWA ne lit que le début de chaque fichier (constat du
-   21/08 : toute déclaration au-delà de ~la ligne 100 est ignorée —
-   voir me.js). Handler littéral obligatoire, jamais après un gros bloc. */
-app.http("admin-activer", {
-  methods: ["POST"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../admin").activer(request, context);
-    } catch (e) {
-      context.error("admin-activer :", e);
-      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
-    }
-  },
-});
-
 const MOIS_COURTS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
 
 app.http("dashboard", {

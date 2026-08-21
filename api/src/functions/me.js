@@ -52,26 +52,22 @@ app.http("ping", {
   handler: async () => ({ status: 200, jsonBody: { ok: true, version: VERSION_API, quand: new Date().toISOString() } }),
 });
 
-/* Contournement SWA (18/08) — bilan de la journée de diagnostic :
-   la table de routage de CETTE Static Web App est figée côté plateforme.
-   Le code exécuté est bien le dernier (prouvé : ping renvoie `version`),
-   mais AUCUN nouveau nom de fonction n'entre dans la table — ni en
-   nouveau fichier, ni via require(), ni déclaré directement ici (seule
-   ping, à 16h34, est passée ; adminDonnees déclarée à l'identique dans
-   ce même fichier reste en 404). Conséquences :
-   1. L'écran d'administration passe par les routes HISTORIQUES,
-      indexées depuis juillet : GET /api/me?vue=admin (données) et
-      POST /api/demande { action: "adminActiver", … } (activation).
-   2. Les déclarations ci-dessous restent : inopérantes ici, elles
-      donneront les vraies routes sur la NOUVELLE SWA (migration Osmose),
-      où /api/lead est de toute façon indispensable au site vitrine.
-   Modules en chargement paresseux : un module inchargeable donne un 500
-   avec la cause — jamais un 404 muet. */
-/* Découverte du 21/08 (SWA neuve, données complètes) : l'indexation ne
-   retient que les DEUX premières déclarations app.http d'un même fichier
-   (documents.js : 2/2 routées ; me.js : me et ping routées, les trois
-   suivantes ignorées quelle que soit leur forme). Les routes admin et
-   lead sont donc déclarées dans des fichiers n'en portant qu'une :
-   admin-donnees → demande.js, admin-activer → dashboard.js,
-   lead → echeances.js. Ce fichier reste à 2 déclarations — ne JAMAIS
-   en ajouter une troisième ici (ni ailleurs). */
+/* ═══ DOCTRINE DÉFINITIVE (21/08) — À LIRE AVANT TOUTE NOUVELLE ROUTE ═══
+   La découverte des fonctions par la plateforme Static Web Apps est
+   OPAQUE ET NON FIABLE : cinq hypothèses testées et éliminées sur une
+   SWA NEUVE (table figée, casse du nom, handler non littéral, nombre de
+   déclarations par fichier, position dans le fichier — admin-activer
+   déclarée ligne 14 restait en 404 quand ping ligne 49 passait). Seules
+   les 10 routes historiques de juillet + ping sont servies, sur les
+   deux SWA, quel que soit le code.
+   RÈGLE : ne JAMAIS compter sur une nouvelle route /api/<nom>. Toute
+   nouvelle capacité passe par les routes existantes :
+   - gestionnaire : GET /api/me?vue=admin (données d'administration) et
+     POST /api/demande { action: "adminActiver" | "adminImportSalaries" } ;
+   - formulaires publics vitrine : POST /api/demande { action: "lead" }
+     en Content-Type text/plain (requête simple, pas de préflight) ;
+   - santé/version : GET /api/ping (champ `version` = déploiement servi).
+   Les modules admin et lead (src/) n'exportent que des handlers,
+   chargés paresseusement — un module inchargeable donne un 500 avec la
+   cause, jamais un 404 muet. Dossier d'expériences complet :
+   Point-de-reprise-2026-08-17.md (§ 18/08 et 21/08). */

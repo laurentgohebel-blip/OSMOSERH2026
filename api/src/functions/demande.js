@@ -13,23 +13,6 @@
 const { app } = require("@azure/functions");
 const { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, creerVariablesPaie, creerFinContrat, tokenGraph, idsListes } = require("../annuaire");
 
-/* Route admin-donnees déclarée EN TÊTE de fichier : l'indexation de la
-   plateforme SWA ne lit que le début de chaque fichier (constat du
-   21/08 : toute déclaration au-delà de ~la ligne 100 est ignorée —
-   voir me.js). Handler littéral obligatoire, jamais après un gros bloc. */
-app.http("admin-donnees", {
-  methods: ["GET"],
-  authLevel: "anonymous",
-  handler: async (request, context) => {
-    try {
-      return await require("../admin").donnees(request, context);
-    } catch (e) {
-      context.error("admin-donnees :", e);
-      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
-    }
-  },
-});
-
 app.http("demande", {
   methods: ["POST"],
   authLevel: "anonymous",
@@ -41,10 +24,25 @@ app.http("demande", {
     // 1. Honeypot : un humain ne remplit jamais ce champ caché
     if (d.xq_note || d.website) return { status: 202, jsonBody: { reference: "OK" } }; // on ne renseigne pas le bot
 
-    // 1 bis. Détour gestionnaire : l'activation des demandes d'accès passe
-    // par cette route car la table de routage de la SWA n'accepte plus de
-    // nouveau nom (voir me.js). Le module admin re-vérifie lui-même le
-    // jeton ET la liste ADMIN_EMAILS — un client ordinaire reçoit un 403.
+    // 1 bis. Leads du site vitrine : la plateforme SWA ne route pas de
+    // nouvelle fonction de façon fiable (constat définitif du 21/08, voir
+    // me.js) — les formulaires publics postent donc ICI, en Content-Type
+    // text/plain (requête « simple », pas de préflight OPTIONS à router).
+    // Anonyme par nature : AVANT le verrou jeton, protégé par le pot de
+    // miel ci-dessus + les validations et le CORS du module lead.
+    if (d.action === "lead") {
+      try {
+        return await require("../lead").lead(request, context, d);
+      } catch (e) {
+        context.error("demande/lead :", e);
+        return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
+      }
+    }
+
+    // 1 ter. Détour gestionnaire : même contournement — l'activation des
+    // demandes d'accès et l'import d'effectif passent par cette route.
+    // Le module admin re-vérifie lui-même le jeton ET la liste
+    // ADMIN_EMAILS — un client ordinaire reçoit un 403.
     if (d.action === "adminActiver" || d.action === "adminImportSalaries") {
       try {
         const admin = require("../admin");
