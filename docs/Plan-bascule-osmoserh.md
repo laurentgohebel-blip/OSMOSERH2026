@@ -110,9 +110,8 @@ décision du 18/08 : plus aucun SMTP OVH), expéditeurs @osmoserh.fr,
       `/api/ping` répond avec le bon `version` (doctrine du 21/08 :
       aucune nouvelle route /api/<nom> — admin et leads passent par les
       routes historiques, voir me.js)
-- [ ] Domaine personnalisé **espace.osmoserh.fr** (CNAME OVH → validation)
-- [ ] URI de redirection `https://espace.osmoserh.fr` ajoutée à l'app
-      CIAM « Portail Osmose RH »
+- [x] Domaine personnalisé **espace.osmoserh.fr** — ✅ actif le 21/08 (CNAME + SSL)
+- [x] URI de redirection `https://espace.osmoserh.fr` déclarée (app 19d1eb4c) ✅
 
 **✅ Phase 3 validée le 21/08** : SWA « OsmoseRH2026 » (Free) déployée
 depuis le workflow unifié, variables posées, tenant clients recréé et
@@ -131,8 +130,9 @@ vérifiée en réel. Reste de la phase 3 : domaine espace.osmoserh.fr.
 
 ## Phase 5 — bascule et nettoyage
 
-- [ ] Site vitrine : rebasculer les liens `TEMPORAIRE` (index.html,
-      Connexion.html) vers espace.osmoserh.fr, re-téléverser, re-tester
+- [ ] Site vitrine : téléverser le lot du 21/08 (index, Connexion,
+      lancement, contact — liens espace.osmoserh.fr + formulaires
+      /api/demande) et re-tester les boutons
 - [ ] Communication aux clients existants
 - [ ] J+30 sans incident : décommissionner l'ancien tenant (licences),
       supprimer l'app d28a8309, l'ancienne SWA (espace.synapserh.fr),
