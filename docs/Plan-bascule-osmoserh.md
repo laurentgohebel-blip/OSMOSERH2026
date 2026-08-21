@@ -103,7 +103,7 @@ décision du 18/08 : plus aucun SMTP OVH), expéditeurs @osmoserh.fr,
       tenant osmose, `RH_SITE_ID`, `AUTH_*` CIAM **inchangées**,
       `ADMIN_EMAILS` — **PAS de FLOW_URL_\*** (démarches en standard)
 - [ ] Premier déploiement vert → tests immédiats sur l'URL azurestaticapps :
-      `/api/adminDonnees` → `{"erreur":"Connexion requise."}` (pas de 404 :
+      `/api/admin-donnees` → `{"erreur":"Connexion requise."}` (pas de 404 :
       l'indexation des routes est saine — sinon voir le contournement dans
       me.js, déjà en place) ; `/api/lead` répond au POST
 - [ ] Domaine personnalisé **espace.osmoserh.fr** (CNAME OVH → validation)

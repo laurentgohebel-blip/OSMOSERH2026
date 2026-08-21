@@ -131,3 +131,19 @@ async function modeAlertes(context) {
   context.log(`Échéances CDD : ${aAlerter.length} contrat(s), ${alertes.length} destinataire(s).`);
   return { status: 200, jsonBody: { alertes } };
 }
+
+/* Route lead déclarée ICI (fichier à une seule fonction) :
+   l'indexation SWA ne retient que 2 déclarations par fichier — voir le
+   commentaire de contournement dans me.js. Handler littéral obligatoire. */
+app.http("lead", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../lead").lead(request, context);
+    } catch (e) {
+      context.error("lead :", e);
+      return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
+    }
+  },
+});

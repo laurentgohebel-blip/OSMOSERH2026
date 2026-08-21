@@ -111,3 +111,19 @@ app.http("dashboard", {
     }
   }
 });
+
+/* Route admin-activer déclarée ICI (fichier à une seule fonction) :
+   l'indexation SWA ne retient que 2 déclarations par fichier — voir le
+   commentaire de contournement dans me.js. Handler littéral obligatoire. */
+app.http("admin-activer", {
+  methods: ["POST"],
+  authLevel: "anonymous",
+  handler: async (request, context) => {
+    try {
+      return await require("../admin").activer(request, context);
+    } catch (e) {
+      context.error("admin-activer :", e);
+      return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
+    }
+  },
+});
