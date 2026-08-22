@@ -17,7 +17,7 @@
 //   passe la demande en « Traitée », vide le cache de lecture (effet
 //   immédiat pour le client qui recharge).
 
-const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems } = require("./annuaire");
+const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems, dateParis } = require("./annuaire");
 
 const OPTIONS_VALIDES = ["embauche", "acompte", "attestation", "paie"];
 
@@ -72,7 +72,40 @@ async function donnees(request, context) {
       .map((c) => ({ codeClient: c.CodeClient, raisonSociale: c.RaisonSociale || "" }))
       .sort((a, b) => a.codeClient.localeCompare(b.codeClient));
 
-    return { status: 200, jsonBody: { demandes, clients, options: OPTIONS_VALIDES } };
+    // Embauches récentes (« Production contrat ») avec leur état DPAE —
+    // lecture DIRECTE (hors cache items(), dont la clé ignore le $select).
+    // Les colonnes Dpae* absentes (script pas encore passé) ne bloquent
+    // pas : SharePoint ignore les champs inconnus du $select.
+    const embauches = [];
+    try {
+      let urlE = graphListe(ids["Production contrat"],
+        "/items?$expand=fields($select=CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Dateded_x00e9_but,Datedefin,Created,DpaeStatut,DpaeIdFlux)&$top=200");
+      while (urlE) {
+        const r = await fetch(urlE, { headers: { Authorization: `Bearer ${tok}` } });
+        if (!r.ok) break;
+        const j = await r.json();
+        for (const i of j.value) {
+          const f = i.fields || {};
+          embauches.push({
+            id: i.id,
+            codeClient: f.CodeClient || "",
+            nom: String(f.Nom || "").toUpperCase(),
+            prenom: f["Pr_x00e9_nom"] || "",
+            type: f["Type_x0020_contrat"] || "",
+            debut: dateParis(f["Dateded_x00e9_but"]),
+            fin: dateParis(f.Datedefin),
+            recueLe: f.Created || i.createdDateTime || null,
+            dpaeStatut: f.DpaeStatut || "",
+            dpaeIdFlux: f.DpaeIdFlux || "",
+          });
+        }
+        urlE = j["@odata.nextLink"] || null;
+      }
+    } catch (e) { context.error("admin/donnees embauches :", e); }
+    embauches.sort((a, b) => String(b.recueLe).localeCompare(String(a.recueLe)));
+
+    const dpaeMode = require("./dpae").configuree() ? (process.env.DPAE_MODE || "test") : null;
+    return { status: 200, jsonBody: { demandes, clients, options: OPTIONS_VALIDES, embauches: embauches.slice(0, 100), dpaeMode } };
   } catch (e) {
     if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
     context.error("admin/donnees :", e);
@@ -258,4 +291,203 @@ async function importerSalaries(request, context, corps) {
   }
 }
 
-module.exports = { donnees, activer, importerSalaries };
+/* ── DPAE (déclaration préalable à l'embauche, API URSSAF) ────────────── */
+/* Détour /api/demande, action "adminDpae", trois phases :
+   - { phase:"preparer", idContrat }  → brouillon pré-rempli : employeur
+     (Paramètres clients), salarié (Production contrat + fiche « Salariés »,
+     sexe et département déduits du NIR à défaut), contrat. `manques` liste
+     ce que le gestionnaire doit compléter avant l'envoi.
+   - { phase:"deposer", idContrat, dpae:{employeur,salarie,contrat} } →
+     validation stricte, authentification URSSAF, dépôt du message, écriture
+     DpaeStatut/DpaeIdFlux/DpaeDeclareLe sur l'élément.
+   - { phase:"retour", idContrat } → consultation du bilan : Conforme
+     (+ certificat) ou Refusée (+ motif URSSAF) ; « pas encore publié »
+     rend { pret:false } et le front redemande.
+   Le protocole vit dans dpae.js ; le compte URSSAF reste en variables
+   d'application (DPAE_*) — jamais dans les payloads ni les réponses. */
+
+const cleContrat = cleSalarie; // même normalisation nom+prénom
+
+async function lireContrat(tok, ids, idContrat) {
+  if (!/^\d+$/.test(String(idContrat || "")))
+    throw { status: 400, erreur: "Embauche introuvable." };
+  const r = await fetch(graphListe(ids["Production contrat"], `/items/${encodeURIComponent(String(idContrat))}?$expand=fields`),
+    { headers: { Authorization: `Bearer ${tok}` } });
+  if (r.status === 404) throw { status: 404, erreur: "Embauche introuvable." };
+  if (!r.ok) throw { status: 502, erreur: "Lecture de l'embauche impossible." };
+  return r.json();
+}
+
+async function majContrat(tok, ids, idContrat, champs, context) {
+  const r = await fetch(graphListe(ids["Production contrat"], `/items/${encodeURIComponent(String(idContrat))}/fields`), {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+    body: JSON.stringify(champs),
+  });
+  if (!r.ok) {
+    context.error("admin/dpae maj contrat :", r.status, (await r.text().catch(() => "")).slice(0, 300));
+    throw { status: 502, erreur: "Écriture du suivi DPAE impossible — les colonnes Dpae* existent-elles sur « Production contrat » (script creer_site_rh.py) ?" };
+  }
+}
+
+// 1 → homme, 2 → femme (7/8 : NIR provisoires, 3/4 : historiques).
+const sexeDepuisNir = (nir) => ({ 1: "1", 3: "1", 7: "1", 2: "2", 4: "2", 8: "2" }[String(nir)[0]] || "");
+const NIR_13 = /^[1-478]\d{4}(?:\d{2}|2[AB])\d{6}$/;
+
+async function dpae(request, context, corps) {
+  try {
+    await exigerAdmin(request);
+    const dpaeApi = require("./dpae");
+    if (!dpaeApi.configuree())
+      return { status: 400, jsonBody: { erreur: "API DPAE non configurée — renseignez DPAE_MODE, DPAE_SIRET, DPAE_NOM, DPAE_PRENOM et DPAE_MDP dans les variables de la SWA (docs/DPAE-API.md)." } };
+    const d = corps || {};
+    const tok = await tokenGraph();
+    const ids = await idsListes(tok);
+    if (!ids["Production contrat"]) throw { status: 502, erreur: "Liste « Production contrat » introuvable." };
+    const enTest = dpaeApi.indicateurTest() !== 120;
+    const suffixe = enTest ? " (test)" : "";
+
+    /* ---- Phase 1 : brouillon pré-rempli ------------------------------- */
+    if (d.phase === "preparer") {
+      const item = await lireContrat(tok, ids, d.idContrat);
+      const f = item.fields || {};
+      const codeClient = f.CodeClient || "";
+
+      const params = (await items(tok, ids["Paramètres clients"],
+        "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options,CodeUrssaf,CodeApe,VilleEntreprise,CodePostalEntreprise,TelephoneEntreprise,SanteTravail"))
+        .find((c) => c.CodeClient === codeClient) || {};
+
+      // Fiche « Salariés » du même salarié (même $select que personnel.js —
+      // le cache items() est par liste, un $select réduit l'appauvrirait).
+      const fiche = (await items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise"))
+        .find((s) => s.CodeClient === codeClient && cleContrat(s.Nom, s.Prenom) === cleContrat(f.Nom, f["Pr_x00e9_nom"]));
+
+      const nirBrut = String(fiche?.NumeroSS || f["N_x00b0_S_x00e9_curit_x00e9_Soci"] || "").replace(/\s/g, "").toUpperCase();
+      const nir = nirBrut.slice(0, 13);
+      const cle = nirBrut.length >= 15 ? nirBrut.slice(13, 15) : dpaeApi.cleNir(nir);
+      const sexeFiche = { "Masculin": "1", "Féminin": "2" }[fiche?.Sexe || ""] || "";
+      const deptFiche = String(fiche?.CodeDepartementNaissance || "").toUpperCase().slice(0, 2);
+
+      const brouillon = {
+        employeur: {
+          siret: String(params.Siret || "").replace(/\s/g, ""),
+          designation: params.RaisonSociale || "",
+          codeApe: String(params.CodeApe || "").replace(".", "").toUpperCase(),
+          codeUrssaf: String(params.CodeUrssaf || ""),
+          adresse: params.AdresseEntreprise || "",
+          ville: params.VilleEntreprise || "",
+          codePostal: String(params.CodePostalEntreprise || ""),
+          telephone: String(params.TelephoneEntreprise || ""),
+          santeTravail: String(params.SanteTravail || "01"),
+        },
+        salarie: {
+          nom: String(f.Nom || "").toUpperCase(),
+          prenom: f["Pr_x00e9_nom"] || "",
+          sexe: sexeFiche || sexeDepuisNir(nir),
+          nir, cleNir: cle,
+          dateNaissance: dateParis(f.Datedenaissance) || dateParis(fiche?.DateNaissance) || "",
+          communeNaissance: f.Lieudenaissance || "",
+          departementNaissance: deptFiche || (NIR_13.test(nir) ? nir.slice(5, 7) : ""),
+        },
+        contrat: {
+          nature: ["CDI", "CDD", "CTT"].includes(f["Type_x0020_contrat"]) ? f["Type_x0020_contrat"] : "CDI",
+          dateDebut: dateParis(f["Dateded_x00e9_but"]) || "",
+          heureDebut: "09:00:00",
+          dateFin: dateParis(f.Datedefin) || "",
+        },
+      };
+      const manques = [];
+      if (!brouillon.employeur.siret) manques.push("SIRET de l'employeur (fiche client)");
+      if (!brouillon.employeur.codeUrssaf) manques.push("code URSSAF (fiche client)");
+      if (!brouillon.employeur.codeApe) manques.push("code APE (fiche client)");
+      if (!brouillon.employeur.ville || !brouillon.employeur.codePostal) manques.push("ville et code postal de l'employeur (fiche client)");
+      if (!NIR_13.test(brouillon.salarie.nir)) manques.push("NIR du salarié (13 chiffres)");
+      const cleAttendue = dpaeApi.cleNir(brouillon.salarie.nir);
+      if (cle && cleAttendue && cle !== cleAttendue)
+        manques.push(`clé du NIR incohérente (${cle} saisie, ${cleAttendue} calculée) — vérifiez la carte Vitale`);
+      if (!brouillon.salarie.sexe) manques.push("sexe du salarié");
+      if (!brouillon.salarie.dateNaissance) manques.push("date de naissance");
+      if (!brouillon.salarie.communeNaissance) manques.push("commune de naissance");
+      return { status: 200, jsonBody: { brouillon, manques, mode: enTest ? "test" : "production", statut: f.DpaeStatut || "", idflux: f.DpaeIdFlux || "" } };
+    }
+
+    /* ---- Phase 2 : validation stricte + dépôt ------------------------- */
+    if (d.phase === "deposer") {
+      const item = await lireContrat(tok, ids, d.idContrat);
+      const p = d.dpae || {};
+      const e = p.employeur || {}, s = p.salarie || {}, c = p.contrat || {};
+      const err = (m) => ({ status: 400, jsonBody: { erreur: m } });
+
+      const siret = String(e.siret || "").replace(/\s/g, "");
+      if (!/^\d{14}$/.test(siret)) return err("SIRET employeur invalide (14 chiffres).");
+      if (String(e.designation || "").trim().length < 2) return err("Dénomination de l'employeur requise.");
+      if (!/^\d{4}[A-Z]$/.test(String(e.codeApe || "").replace(".", "").toUpperCase())) return err("Code APE invalide (ex. 1623Z).");
+      if (!/^\d{3}$/.test(String(e.codeUrssaf || "").trim())) return err("Code URSSAF invalide (3 chiffres — voir la fiche d'identification URSSAF du client).");
+      if (String(e.adresse || "").trim().length < 4) return err("Adresse de l'employeur requise.");
+      if (String(e.ville || "").trim().length < 2) return err("Ville de l'employeur requise.");
+      if (!/^\d{5}$/.test(String(e.codePostal || "").trim())) return err("Code postal employeur invalide.");
+      const nir = String(s.nir || "").replace(/\s/g, "").toUpperCase();
+      if (!NIR_13.test(nir)) return err("NIR invalide (13 caractères, 2A/2B admis pour la Corse).");
+      const cle = String(s.cleNir || "").trim();
+      if (!/^\d{2}$/.test(cle)) return err("Clé du NIR invalide (2 chiffres).");
+      const cleCalc = require("./dpae").cleNir(nir);
+      if (cleCalc && cle !== cleCalc) return err(`Clé du NIR incohérente (attendue : ${cleCalc}).`);
+      if (!["1", "2"].includes(String(s.sexe))) return err("Sexe du salarié requis (1 ou 2).");
+      if (String(s.nom || "").trim().length < 2 || !String(s.prenom || "").trim()) return err("Nom et prénom du salarié requis.");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s.dateNaissance || ""))) return err("Date de naissance invalide (AAAA-MM-JJ).");
+      if (String(s.communeNaissance || "").trim().length < 2) return err("Commune de naissance requise.");
+      if (!/^(\d{2}|2A|2B)$/.test(String(s.departementNaissance || "").toUpperCase())) return err("Département de naissance invalide (2 caractères, 99 si né à l'étranger).");
+      if (!["CDI", "CDD", "CTT"].includes(c.nature)) return err("Nature du contrat invalide (CDI, CDD ou CTT).");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(c.dateDebut || ""))) return err("Date d'embauche invalide (AAAA-MM-JJ).");
+      const heure = String(c.heureDebut || "").trim();
+      if (!/^([01]\d|2[0-3]):[0-5]\d(:[0-5]\d)?$/.test(heure)) return err("Heure d'embauche invalide (HH:MM).");
+      if ((c.nature === "CDD" || c.nature === "CTT") && !/^\d{4}-\d{2}-\d{2}$/.test(String(c.dateFin || "")))
+        return err("Date de fin requise pour un CDD/CTT.");
+
+      const message = require("./dpae").construireMessage({
+        employeur: { ...e, siret, codeApe: String(e.codeApe).replace(".", "").toUpperCase(), santeTravail: String(e.santeTravail || "01") },
+        salarie: { ...s, nir, cleNir: cle, departementNaissance: String(s.departementNaissance).toUpperCase() },
+        contrat: { ...c, heureDebut: heure.length === 5 ? `${heure}:00` : heure },
+      });
+      const jeton = await dpaeApi.authentifier();
+      const idflux = await dpaeApi.deposer(jeton, message);
+      await majContrat(tok, ids, d.idContrat, {
+        DpaeStatut: `Déposée${suffixe}`,
+        DpaeIdFlux: idflux,
+        DpaeDeclareLe: new Date().toISOString(),
+        DpaeMessage: "", DpaeCertificat: "",
+      }, context);
+      viderCacheItems();
+      return { status: 200, jsonBody: { ok: true, idflux, statut: `Déposée${suffixe}` } };
+    }
+
+    /* ---- Phase 3 : consultation du bilan ------------------------------ */
+    if (d.phase === "retour") {
+      const item = await lireContrat(tok, ids, d.idContrat);
+      const f = item.fields || {};
+      const idflux = String(d.idflux || f.DpaeIdFlux || "").trim();
+      if (!idflux) return { status: 400, jsonBody: { erreur: "Aucun dépôt DPAE enregistré pour cette embauche." } };
+      const enTestDepot = /\(test\)/.test(String(f.DpaeStatut || "")) || enTest;
+      const suffixeDepot = enTestDepot ? " (test)" : "";
+      const jeton = await dpaeApi.authentifier();
+      const retour = await dpaeApi.consulterRetour(jeton, idflux);
+      if (!retour.pret) return { status: 200, jsonBody: { pret: false, statut: f.DpaeStatut || "" } };
+      const statut = retour.conforme ? `Conforme${suffixeDepot}` : `Refusée${suffixeDepot}`;
+      await majContrat(tok, ids, d.idContrat, {
+        DpaeStatut: statut,
+        DpaeCertificat: retour.conforme ? String(retour.certificat).slice(0, 255) : "",
+        DpaeMessage: retour.conforme ? "" : String(retour.message).slice(0, 2000),
+      }, context);
+      viderCacheItems();
+      return { status: 200, jsonBody: { pret: true, conforme: retour.conforme, statut, certificat: retour.certificat || "", message: retour.message || "" } };
+    }
+
+    return { status: 400, jsonBody: { erreur: "Phase DPAE inconnue (preparer, deposer ou retour)." } };
+  } catch (e) {
+    if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+    context.error("admin/dpae :", e);
+    return { status: 502, jsonBody: { erreur: "DPAE momentanément indisponible — réessayez." } };
+  }
+}
+
+module.exports = { donnees, activer, importerSalaries, dpae };

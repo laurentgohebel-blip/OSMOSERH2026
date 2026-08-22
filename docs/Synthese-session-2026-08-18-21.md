@@ -110,3 +110,13 @@ inchangée : dossier complet exigé à l'enregistrement). **v2 (après
 lancement)** : pré-remplissage par OCR des pièces (Azure Document
 Intelligence) — le client scanne, le logiciel remplit, Osmose valide.
 `VERSION_API = 2026-08-22-pj-embauche`.
+
+## 22/08 (suite) — API DPAE branchée
+
+L'écran gestionnaire déclare désormais les embauches à l'URSSAF
+(section « DPAE — déclarations d'embauche » : brouillon pré-rempli,
+dépôt, certificat de conformité). Mise en service, protocole et recette :
+**`docs/DPAE-API.md`**. À faire : compte urssaf.fr habilité DPAE +
+variables `DPAE_*` sur la SWA + relance de `creer_site_rh.py`
+(colonnes DPAE et identification URSSAF des clients).
+`VERSION_API = 2026-08-22-dpae`.
