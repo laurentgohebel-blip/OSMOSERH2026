@@ -211,6 +211,16 @@ async function creerEmbauche(email, clientInfo, d, reference) {
     "Dur_x00e9_edutempsdetravail_x002": Number(String(d.dureeMensuelle).replace(",", ".")),
   };
   if (d.dateFin) fields.Datedefin = d.dateFin;
+  // Salarié étranger : le titre de séjour suit l'embauche — son
+  // authentification préfectorale (R.5221-41 s.) est pilotée depuis
+  // l'écran gestionnaire, statut initial « À authentifier ».
+  if (d.titreSejourType) {
+    fields.TitreSejourType = String(d.titreSejourType).trim().slice(0, 60);
+    fields.TitreSejourNumero = String(d.titreSejourNumero || "").trim().toUpperCase().slice(0, 40);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || "")))
+      fields.TitreSejourExpiration = d.titreSejourExpiration;
+    fields.TitreSejourStatut = "À authentifier";
+  }
 
   const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
     method: "POST",

@@ -637,8 +637,83 @@ function BulleAdmin({ fil, qui, quand, texte }) {
   );
 }
 
-function SectionDpae({ embauches, clients, dpaeMode, onStatut, notifier }) {
-  const [ouvert, setOuvert] = useState(null); // id du panneau ouvert
+/* ── Titre de séjour (salariés étrangers) : suivi de l'authentification
+   préfectorale. La demande part par courriel à la préfecture du lieu
+   d'embauche (mail type pré-rempli) au moins 2 jours ouvrables avant la
+   prise de poste ; la réponse est consignée ici (Authentifié / Refusé). */
+const BADGE_TITRE = (e) => {
+  if (!e.titreType) return <span style={{ color: T.mut, fontSize: 12 }}>—</span>;
+  const s = e.titreStatut || "À authentifier";
+  const teinte = s === "Authentifié" ? { bg: "#E4F3EE", fg: T.ok }
+    : s === "Refusé" ? { bg: "#FCEBEB", fg: T.err }
+    : { bg: "#FAEEDA", fg: "#854F0B" };
+  return (
+    <span style={{ background: teinte.bg, color: teinte.fg, borderRadius: 20, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+      {s}
+    </span>
+  );
+};
+
+function PanneauTitre({ embauche: e, raisonSociale, onTitre, onFermer, notifier }) {
+  const [envoi, setEnvoi] = useState(false);
+  const decider = async (decision) => {
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminTitreSejour", idContrat: e.id, decision }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      else { onTitre(e.id, j.statut); notifier(`✓ Titre de séjour : ${j.statut}.`); onFermer(); }
+    } catch { notifier("API injoignable — réessayez."); }
+    setEnvoi(false);
+  };
+
+  const sujet = encodeURIComponent("Demande d'authentification d'un titre de séjour avant embauche (art. R.5221-41 du code du travail)");
+  const corps = encodeURIComponent(
+    `Madame, Monsieur,\n\nEn application des articles L.5221-8 et R.5221-41 et suivants du code du travail, je vous prie de bien vouloir authentifier le titre de séjour du salarié que l'entreprise ci-dessous envisage d'embaucher :\n\n` +
+    `Employeur : ${raisonSociale}\nSalarié : ${e.nom} ${e.prenom} (nationalité : ${e.nationalite || "—"})\n` +
+    `Titre présenté : ${e.titreType}\nNuméro du titre : ${e.titreNumero || "—"}\nDate d'expiration : ${e.titreExpiration || "—"}\n` +
+    `Date d'embauche prévue : ${e.debut || "—"}\n\n` +
+    `Copie du titre disponible sur demande.\n\nCordialement,\nOsmose RH, pour le compte de l'employeur`);
+
+  return (
+    <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+      <p style={{ margin: 0, fontSize: 12.5 }}>
+        <strong>{e.titreType}</strong> n° {e.titreNumero || "—"} — expire le {e.titreExpiration || "—"} ·
+        nationalité : {e.nationalite || "—"} · la copie du titre est dans les Documents du client
+        (Dépôts, fichier « PJ-Embauche_…_titre-sejour_… »).
+      </p>
+      <p style={{ margin: 0, fontSize: 12, color: T.mut }}>
+        1. Adressez la demande d'authentification à la préfecture du département du lieu
+        d'embauche (au moins 2 jours ouvrables avant la prise de poste). Sans réponse sous
+        2 jours ouvrables, l'obligation est réputée accomplie. 2. Consignez la réponse ici.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+        <a href={`mailto:?subject=${sujet}&body=${corps}`}
+          style={{ fontSize: 12.5, color: T.accent, fontWeight: 600, marginRight: "auto" }}>
+          ✉ Préparer le mail à la préfecture
+        </a>
+        <button onClick={onFermer} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, color: T.mut, padding: "8px 6px" }}>Fermer</button>
+        <button onClick={() => decider("refuse")} disabled={envoi}
+          style={{ all: "unset", cursor: "pointer", color: T.err, fontSize: 12.5, fontWeight: 600, padding: "8px 6px" }}>
+          Titre non valide
+        </button>
+        <button onClick={() => decider("authentifie")} disabled={envoi} style={{
+          all: "unset", cursor: envoi ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8,
+          background: T.ok, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600,
+        }}>
+          <ShieldCheck size={14} /> Authentifié par la préfecture
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SectionDpae({ embauches, clients, dpaeMode, onStatut, onTitre, notifier }) {
+  const [ouvert, setOuvert] = useState(null); // id du panneau DPAE ouvert
+  const [ouvertTitre, setOuvertTitre] = useState(null); // id du panneau titre ouvert
   const [verif, setVerif] = useState(null);   // id en cours de vérification
   const nomClient = (code) => clients.find((c) => c.codeClient === code)?.raisonSociale || code;
   const fr = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "");
@@ -681,7 +756,7 @@ function SectionDpae({ embauches, clients, dpaeMode, onStatut, notifier }) {
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead>
               <tr>
-                {["Reçue le", "Client", "Salarié", "Contrat", "Début", "DPAE", ""].map((h) => (
+                {["Reçue le", "Client", "Salarié", "Contrat", "Début", "Titre séjour", "DPAE", ""].map((h) => (
                   <th key={h} style={{ textAlign: "left", padding: "6px 8px", background: T.bg, borderBottom: `1px solid ${T.border}`, fontSize: 11.5, color: T.mut }}>{h}</th>
                 ))}
               </tr>
@@ -697,6 +772,14 @@ function SectionDpae({ embauches, clients, dpaeMode, onStatut, notifier }) {
                     </td>
                     <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{e.type}</td>
                     <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{e.debut || ""}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                      {e.titreType ? (
+                        <button onClick={() => { setOuvertTitre(ouvertTitre === e.id ? null : e.id); setOuvert(null); }}
+                          style={{ all: "unset", cursor: "pointer" }} title="Suivre l'authentification du titre">
+                          {BADGE_TITRE(e)}
+                        </button>
+                      ) : BADGE_TITRE(e)}
+                    </td>
                     <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{BADGE_DPAE(e.dpaeStatut)}</td>
                     <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", textAlign: "right" }}>
                       {dpaeMode && (e.dpaeStatut || "").startsWith("Déposée") && (
@@ -706,16 +789,24 @@ function SectionDpae({ embauches, clients, dpaeMode, onStatut, notifier }) {
                         </button>
                       )}
                       {dpaeMode && !(e.dpaeStatut || "").startsWith("Déposée") && !(e.dpaeStatut || "").startsWith("Conforme") && (
-                        <button onClick={() => setOuvert(ouvert === e.id ? null : e.id)}
+                        <button onClick={() => { setOuvert(ouvert === e.id ? null : e.id); setOuvertTitre(null); }}
                           style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600 }}>
                           {ouvert === e.id ? "Fermer" : (e.dpaeStatut || "").startsWith("Refusée") ? "Corriger" : "Déclarer"}
                         </button>
                       )}
                     </td>
                   </tr>
+                  {ouvertTitre === e.id && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: "0 8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                        <PanneauTitre embauche={e} raisonSociale={nomClient(e.codeClient)} notifier={notifier}
+                          onTitre={onTitre} onFermer={() => setOuvertTitre(null)} />
+                      </td>
+                    </tr>
+                  )}
                   {ouvert === e.id && (
                     <tr>
-                      <td colSpan={7} style={{ padding: "0 8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                      <td colSpan={8} style={{ padding: "0 8px 10px", borderBottom: `1px solid ${T.border}` }}>
                         <PanneauDpae embauche={e} notifier={notifier}
                           onStatut={onStatut} onFermer={() => setOuvert(null)} />
                       </td>
@@ -926,6 +1017,11 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
     setDonnees((d) => d?.embauches
       ? { ...d, embauches: d.embauches.map((e) => (e.id === id ? { ...e, dpaeStatut: statut } : e)) }
       : d);
+  // Idem pour l'authentification du titre de séjour.
+  const majStatutTitre = (id, statut) =>
+    setDonnees((d) => d?.embauches
+      ? { ...d, embauches: d.embauches.map((e) => (e.id === id ? { ...e, titreStatut: statut } : e)) }
+      : d);
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
@@ -1004,16 +1100,16 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
           <section style={{ marginTop: 30 }}>
             <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
               <ShieldCheck size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
-              DPAE — déclarations d'embauche
+              Embauches — DPAE & titres de séjour
             </h2>
             <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
               Chaque embauche reçue est à déclarer à l'URSSAF avant la prise de poste
-              (au plus tôt 8 jours avant). Le brouillon est pré-rempli depuis la fiche
-              client, le contrat et le dossier du salarié — complétez, déposez,
-              le certificat de conformité revient dans la foulée.
+              (au plus tôt 8 jours avant) — brouillon pré-rempli, dépôt, certificat.
+              Pour un salarié étranger, faites d'abord authentifier le titre de séjour
+              par la préfecture (2 jours ouvrables) : cliquez sur son badge.
             </p>
             <SectionDpae embauches={donnees.embauches} clients={donnees.clients}
-              dpaeMode={donnees.dpaeMode} onStatut={majStatutDpae} notifier={notifier} />
+              dpaeMode={donnees.dpaeMode} onStatut={majStatutDpae} onTitre={majStatutTitre} notifier={notifier} />
           </section>
         )}
 
