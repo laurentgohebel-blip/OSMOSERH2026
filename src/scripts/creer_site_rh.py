@@ -95,6 +95,7 @@ LISTES = [
         # (l'expiration alimentera le suivi de renouvellement)
         col("Nationalite", T()), col("TitreSejourType", T()),
         col("TitreSejourNumero", T()), col("TitreSejourExpiration", D()),
+        col("AlerteTitreSejour", T()),  # anti-doublon de l'alerte e-mail
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),

@@ -392,7 +392,7 @@ async function dpae(request, context, corps) {
 
       // Fiche « Salariés » du même salarié (même $select que personnel.js —
       // le cache items() est par liste, un $select réduit l'appauvrirait).
-      const fiche = (await items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration"))
+      const fiche = (await items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour"))
         .find((s) => s.CodeClient === codeClient && cleContrat(s.Nom, s.Prenom) === cleContrat(f.Nom, f["Pr_x00e9_nom"]));
 
       const nirBrut = String(fiche?.NumeroSS || f["N_x00b0_S_x00e9_curit_x00e9_Soci"] || "").replace(/\s/g, "").toUpperCase();

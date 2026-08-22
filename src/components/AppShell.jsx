@@ -67,6 +67,9 @@ const DEMO_ECHEANCES = {
   recentes: [
     { salarie: "LEROY Anne", poste: "Chargée de com", dateFin: dansNJours(-9), joursRestants: -9, alerte: dansNJours(-40) },
   ],
+  titres: [
+    { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), joursRestants: 48, alerte: new Date().toISOString() },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -956,6 +959,32 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.titres || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Titres de séjour à renouveler
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Titre</span><span>Expire le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.titres || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.titres.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.numero ? `N° ${x.numero}` : undefined}>{x.type || "Titre de séjour"}</span>
+                      <span>{fr(x.dateExpiration)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉ</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée le {fr(x.alerte)}</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-90</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {recentes.length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Terminés récemment</div>
@@ -975,7 +1004,7 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "En complément, un rappel automatique par e-mail est envoyé 30 jours avant chaque fin de CDD."}
+                  : "En complément, un rappel automatique par e-mail est envoyé 30 jours avant chaque fin de CDD et 90 jours avant l'expiration d'un titre de séjour."}
               </div>
             </>
           );
