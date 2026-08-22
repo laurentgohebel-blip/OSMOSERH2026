@@ -6,7 +6,7 @@
 // normalisée (les démarches saisissent le salarié en texte libre).
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, SELECT_SALARIES } = require("../annuaire");
 
 const cle = (nom, prenom) =>
   `${String(nom || "").trim().toUpperCase()} ${String(prenom || "").trim().toUpperCase()}`.trim();
@@ -24,7 +24,7 @@ app.http("personnel", {
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
       const [registre, contrats, absences, visites, mutuelles, fins] = await Promise.all([
-        items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour"),
+        items(tok, ids["Salariés"], SELECT_SALARIES),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
         items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),

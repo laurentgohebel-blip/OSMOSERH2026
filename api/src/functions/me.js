@@ -32,6 +32,17 @@ app.http("me", {
               return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
             }
           }
+          // &onglet=etrangers : brique « Salariés étrangers », vue tous
+          // clients (états des titres, dossier inspection).
+          if (request.query.get("onglet") === "etrangers") {
+            try {
+              return await require("../etrangers").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/etrangers :", e);
+              return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
+            }
+          }
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {
@@ -53,6 +64,17 @@ app.http("me", {
           return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
         }
       }
+      // ?vue=etrangers : brique « Salariés étrangers » du client (option) —
+      // même contournement, module paresseux src/etrangers.js.
+      if ((request.query && request.query.get && request.query.get("vue")) === "etrangers") {
+        try {
+          return await require("../etrangers").donneesClient(request, context);
+        } catch (e) {
+          if (e && e.status) throw e;
+          context.error("me/vue=etrangers :", e);
+          return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
+        }
+      }
       const c = await resoudreClient(email);
       // Pastille « messages non lus » de la tuile Mon gestionnaire —
       // best effort : une panne de lecture ne bloque jamais l'entrée.
@@ -72,7 +94,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-22-alertes-titres";
+const VERSION_API = "2026-08-22-brique-etrangers";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",

@@ -95,7 +95,12 @@ LISTES = [
         # (l'expiration alimentera le suivi de renouvellement)
         col("Nationalite", T()), col("TitreSejourType", T()),
         col("TitreSejourNumero", T()), col("TitreSejourExpiration", D()),
-        col("AlerteTitreSejour", T()),  # anti-doublon de l'alerte e-mail
+        col("AlerteTitreSejour", T()),  # dernier palier d'alerte e-mail
+        # Brique « Salariés étrangers » (option) : renouvellement + droit
+        # au travail + copies des pièces (dossier inspection)
+        col("TitreSejourPj", T()), col("RecepisseNumero", T()),
+        col("RecepisseFin", D()), col("RecepissePj", T()),
+        col("DroitTravail", T()), col("AutorisationTravail", T()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),

@@ -26,6 +26,7 @@ const champ = {
 const LIBELLES_OPTIONS = {
   embauche: "Embauche (contrats, personnel, fins)", acompte: "Acomptes",
   attestation: "Attestations", paie: "Variables de paie",
+  etrangers: "Salariés étrangers (titres de séjour)",
 };
 
 const N_VIDE = {
@@ -959,6 +960,126 @@ function BoiteMessages({ boite, recharger, notifier, filInitial }) {
   );
 }
 
+/* ── Brique « Salariés étrangers » — suivi tous clients & dossier
+   inspection. Chargée à l'ouverture (GET /api/me?vue=admin&onglet=etrangers) ;
+   qualification du droit au travail et suivi d'autorisation par ligne
+   (POST /api/demande { action:"adminEtrangers" }). ─────────────────────── */
+const BADGE_ETAT_ETR = (s) => {
+  const rendu = (bg, fg, txt) => <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>{txt}</span>;
+  switch (s.etat) {
+    case "expire": return rendu("#FCEBEB", "#791F1F", "EXPIRÉ");
+    case "en-renouvellement": return rendu("#EAF1FB", T.accent, "En renouvellement");
+    case "a-renouveler": return rendu("#FAEEDA", "#854F0B", `À renouveler (${s.joursRestants} j)`);
+    case "valide": return rendu("#E4F3EE", T.ok, "Valide");
+    default: return rendu(T.bg, T.mut, "À renseigner");
+  }
+};
+
+function SectionEtrangers({ notifier }) {
+  const [donnees, setDonnees] = useState(null); // null=fermé | "chargement" | {salaries…} | {erreur}
+  const [envoi, setEnvoi] = useState(null);
+
+  const charger = () => {
+    setDonnees("chargement");
+    apiFetch("/api/me?vue=admin&onglet=etrangers")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
+      })
+      .catch(() => setDonnees({ erreur: "API injoignable — réessayez." }));
+  };
+
+  const enregistrer = async (s, champ, valeur) => {
+    setEnvoi(s.id);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminEtrangers", id: s.id, [champ]: valeur }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      else setDonnees((d) => ({ ...d, salaries: d.salaries.map((x) => (x.id === s.id ? { ...x, [champ === "droitTravail" ? "droitTravail" : "autorisationTravail"]: valeur, ...(champ === "droitTravail" ? { droitSuggere: false } : {}) } : x)) }));
+    } catch { notifier("API injoignable — réessayez."); }
+    setEnvoi(null);
+  };
+
+  if (donnees === null) {
+    return (
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px" }}>
+        <button onClick={charger} style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 13, fontWeight: 600 }}>
+          Ouvrir le suivi des salariés étrangers (tous clients) →
+        </button>
+      </div>
+    );
+  }
+  if (donnees === "chargement") return <p style={{ fontSize: 13, color: T.mut }}>Chargement du suivi…</p>;
+  if (donnees.erreur) return <p style={{ fontSize: 13, color: T.err }}>{donnees.erreur}</p>;
+
+  const cpt = donnees.compteurs || {};
+  const salaries = donnees.salaries || [];
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px" }}>
+      <p style={{ margin: "0 0 6px", fontSize: 12.5 }}>
+        <strong style={{ color: cpt.expires ? T.err : T.ink }}>{cpt.expires || 0} expiré{cpt.expires > 1 ? "s" : ""}</strong>
+        {" · "}{cpt.enRenouvellement || 0} en renouvellement · {cpt.aRenouveler || 0} à renouveler · {cpt.valides || 0} valide{cpt.valides > 1 ? "s" : ""}
+      </p>
+      <p style={{ margin: "0 0 12px", fontSize: 11.5, color: T.mut }}>
+        Dossier inspection : les copies (colonnes « Pièces ») sont dans les Documents du client concerné.
+        Rappel : la première admission au travail d'un étranger déclenche la taxe employeur (OFII/DGFiP).
+        « Droit au travail » en italique = suggestion d'après le type de titre — qualifiez d'après la mention exacte.
+      </p>
+      {salaries.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Aucun salarié étranger suivi.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {["Client", "Salarié", "Nationalité", "Titre", "Fin des droits", "État", "Droit au travail", "Autorisation", "Pièces"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "6px 8px", background: T.bg, borderBottom: `1px solid ${T.border}`, fontSize: 11.5, color: T.mut }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {salaries.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{s.raisonSociale}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}><strong>{s.nom}</strong> {s.prenom}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{s.nationalite || "—"}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }} title={s.titre?.numero ? `N° ${s.titre.numero}` : undefined}>
+                    {s.titre?.type || "—"}{s.recepisse?.fin ? ` + récépissé → ${fr(s.recepisse.fin)}` : ""}
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{fr(s.finDroits)}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{BADGE_ETAT_ETR(s)}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                    <select value={s.droitTravail || ""} disabled={envoi === s.id}
+                      onChange={(e) => enregistrer(s, "droitTravail", e.target.value)}
+                      style={{ ...champ, padding: "5px 7px", fontSize: 11.5, fontStyle: s.droitSuggere ? "italic" : "normal", minWidth: 150 }}>
+                      {(donnees.droits || []).map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                    <select value={s.autorisationTravail || ""} disabled={envoi === s.id}
+                      onChange={(e) => enregistrer(s, "autorisationTravail", e.target.value)}
+                      style={{ ...champ, padding: "5px 7px", fontSize: 11.5, minWidth: 110 }}>
+                      {(donnees.autorisations || []).map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, fontSize: 11, color: T.mut, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={[s.titre?.pj, s.recepisse?.pj].filter(Boolean).join(" · ") || undefined}>
+                    {[s.titre?.pj, s.recepisse?.pj].filter(Boolean).join(" · ") || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminActivation({ user, onLogout, msgInitial: msgProp }) {
   const [donnees, setDonnees] = useState(null); // null | { demandes, clients, options } | { erreur }
   const [boite, setBoite] = useState(null);     // null | { fils, total } | { erreur }
@@ -1110,6 +1231,21 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
             </p>
             <SectionDpae embauches={donnees.embauches} clients={donnees.clients}
               dpaeMode={donnees.dpaeMode} onStatut={majStatutDpae} onTitre={majStatutTitre} notifier={notifier} />
+          </section>
+        )}
+
+        {donnees?.embauches && (
+          <section style={{ marginTop: 30 }}>
+            <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+              <ShieldCheck size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+              Salariés étrangers — suivi & dossier inspection
+            </h2>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
+              Tous clients : validité des titres, renouvellements en cours, qualification du
+              droit au travail et suivi des autorisations. Vendue en option « Salariés
+              étrangers » — activable client par client à l'activation de l'accès.
+            </p>
+            <SectionEtrangers notifier={notifier} />
           </section>
         )}
 
