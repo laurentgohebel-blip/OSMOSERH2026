@@ -43,11 +43,12 @@ app.http("demande", {
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
     // ADMIN_EMAILS — un client ordinaire reçoit un 403.
-    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae") {
+    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae" || d.action === "adminTitreSejour") {
       try {
         const admin = require("../admin");
         return d.action === "adminActiver" ? await admin.activer(request, context, d)
           : d.action === "adminDpae" ? await admin.dpae(request, context, d)
+          : d.action === "adminTitreSejour" ? await admin.titreSejour(request, context, d)
           : await admin.importerSalaries(request, context, d);
       } catch (e) {
         context.error(`demande/${d.action} :`, e);
@@ -178,6 +179,23 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Code pays invalide (2 lettres)." } };
         if (d.emailSalarie && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
           return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
+        // Salarié étranger (hors UE/EEE/Suisse) : titre de séjour EXIGÉ —
+        // type, numéro, date d'expiration et pièce jointe dédiée. Son
+        // authentification préfectorale est ensuite suivie par le
+        // gestionnaire (écran admin, statut « À authentifier »).
+        if (titreSejourRequis(d.nationalite)) {
+          for (const c of ["titreSejourType", "titreSejourNumero", "titreSejourExpiration", "pjTitreSejour"])
+            if (!d[c] || !String(d[c]).trim())
+              return { status: 400, jsonBody: { erreur: `Champ manquant (salarié étranger) : ${c}` } };
+          if (!TITRES_SEJOUR.includes(d.titreSejourType))
+            return { status: 400, jsonBody: { erreur: "Type de titre de séjour invalide." } };
+          if (!/\.(pdf|jpe?g|png)$/i.test(String(d.pjTitreSejour).trim()) || String(d.pjTitreSejour).length > 255)
+            return { status: 400, jsonBody: { erreur: "Pièce jointe du titre de séjour invalide — reprenez le dépôt." } };
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration)))
+            return { status: 400, jsonBody: { erreur: "Date d'expiration du titre invalide (AAAA-MM-JJ)." } };
+          if (String(d.titreSejourExpiration) < String(d.dateDebut))
+            return { status: 400, jsonBody: { erreur: "Le titre de séjour expire avant la date d'embauche — embauche impossible en l'état." } };
+        }
         // La fiche d'abord (upsert idempotent), le contrat ensuite : en cas
         // d'échec du contrat, une nouvelle tentative re-complète la fiche.
         await creerFicheSalarie(clientInfo, d);
@@ -446,6 +464,14 @@ async function creerFicheSalarie(clientInfo, d) {
     ...si("Bic", String(d.bic || "").replace(/\s/g, "").toUpperCase().slice(0, 11)),
     ...(d.bulletinDematerialise === true || d.bulletinDematerialise === false
       ? { BulletinDematerialise: d.bulletinDematerialise === true } : {}),
+    // Nationalité (toujours utile au dossier) + titre de séjour pour les
+    // salariés étrangers — l'expiration alimentera le suivi de
+    // renouvellement.
+    ...si("Nationalite", String(d.nationalite || "").trim().slice(0, 80)),
+    ...si("TitreSejourType", String(d.titreSejourType || "").trim().slice(0, 60)),
+    ...si("TitreSejourNumero", String(d.titreSejourNumero || "").trim().toUpperCase().slice(0, 40)),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || ""))
+      ? { TitreSejourExpiration: d.titreSejourExpiration } : {}),
   };
 
   const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
@@ -471,6 +497,23 @@ async function creerFicheSalarie(clientInfo, d) {
    un id d'un autre client donne 404, jamais une fuite. */
 const SEXES = ["", "Masculin", "Féminin"];
 const SITUATIONS = ["", "Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)", "Séparé(e)", "Veuf(ve)", "Union libre"];
+
+/* ── Salarié étranger (22/08) ─────────────────────────────────────────
+   Un ressortissant hors UE/EEE/Suisse ne peut être embauché qu'avec un
+   titre de séjour autorisant le travail, que l'employeur doit faire
+   AUTHENTIFIER par la préfecture au moins 2 jours ouvrables avant
+   l'embauche (art. L.8251-1 et R.5221-41 s. du code du travail).
+   La nationalité est saisie en texte libre : comparaison par radicaux,
+   sans accents (« Italienne », « italie », « portugais »…). Une
+   nationalité non reconnue déclenche le volet — sur-inclusif = prudent
+   (le gestionnaire tranche). Même liste côté front (AppShell). */
+const RADICAUX_UE_EEE_SUISSE = ["franc", "allemand", "autrich", "belg", "bulgar", "chypr", "croat", "danois", "danemark", "espagn", "eston", "finland", "grec", "hongr", "irland", "ital", "letton", "lituan", "luxembourg", "malt", "neerland", "holland", "pays-bas", "pays bas", "polon", "portug", "roumain", "slovaqu", "sloven", "sued", "tchec", "island", "liechtenstein", "norveg", "suisse"];
+function titreSejourRequis(nationalite) {
+  const n = String(nationalite || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!n.trim()) return false;
+  return !RADICAUX_UE_EEE_SUISSE.some((r) => n.includes(r));
+}
+const TITRES_SEJOUR = ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"];
 async function majSalarie(clientInfo, d, context) {
   const id = String(d.id || "").trim();
   if (!/^\d+$/.test(id)) return { status: 400, jsonBody: { erreur: "Fiche salarié introuvable." } };
@@ -543,6 +586,12 @@ async function majSalarie(clientInfo, d, context) {
     Iban: iban,
     Bic: bic,
     BulletinDematerialise: f.bulletinDematerialise === true,
+    // Nationalité et titre de séjour : FACULTATIFS (seuls les salariés
+    // étrangers sont concernés par le titre) — hors de la règle REQUIS.
+    Nationalite: txt(f.nationalite, 80),
+    TitreSejourType: txt(f.titreSejourType, 60),
+    TitreSejourNumero: txt(f.titreSejourNumero, 40).toUpperCase(),
+    TitreSejourExpiration: dateOuVide(f.titreSejourExpiration) || null,
   };
 
   const r = await fetch(`${base}/fields`, {

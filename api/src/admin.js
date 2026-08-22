@@ -79,7 +79,7 @@ async function donnees(request, context) {
     const embauches = [];
     try {
       let urlE = graphListe(ids["Production contrat"],
-        "/items?$expand=fields($select=CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Dateded_x00e9_but,Datedefin,Created,DpaeStatut,DpaeIdFlux)&$top=200");
+        "/items?$expand=fields($select=CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Dateded_x00e9_but,Datedefin,Created,DpaeStatut,DpaeIdFlux,Nationalit_x00e9_,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,TitreSejourStatut)&$top=200");
       while (urlE) {
         const r = await fetch(urlE, { headers: { Authorization: `Bearer ${tok}` } });
         if (!r.ok) break;
@@ -97,6 +97,11 @@ async function donnees(request, context) {
             recueLe: f.Created || i.createdDateTime || null,
             dpaeStatut: f.DpaeStatut || "",
             dpaeIdFlux: f.DpaeIdFlux || "",
+            nationalite: f["Nationalit_x00e9_"] || "",
+            titreType: f.TitreSejourType || "",
+            titreNumero: f.TitreSejourNumero || "",
+            titreExpiration: dateParis(f.TitreSejourExpiration),
+            titreStatut: f.TitreSejourStatut || "",
           });
         }
         urlE = j["@odata.nextLink"] || null;
@@ -387,7 +392,7 @@ async function dpae(request, context, corps) {
 
       // Fiche « Salariés » du même salarié (même $select que personnel.js —
       // le cache items() est par liste, un $select réduit l'appauvrirait).
-      const fiche = (await items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise"))
+      const fiche = (await items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration"))
         .find((s) => s.CodeClient === codeClient && cleContrat(s.Nom, s.Prenom) === cleContrat(f.Nom, f["Pr_x00e9_nom"]));
 
       const nirBrut = String(fiche?.NumeroSS || f["N_x00b0_S_x00e9_curit_x00e9_Soci"] || "").replace(/\s/g, "").toUpperCase();
@@ -436,6 +441,8 @@ async function dpae(request, context, corps) {
       if (!brouillon.salarie.sexe) manques.push("sexe du salarié");
       if (!brouillon.salarie.dateNaissance) manques.push("date de naissance");
       if (!brouillon.salarie.communeNaissance) manques.push("commune de naissance");
+      if (f.TitreSejourType && f.TitreSejourStatut !== "Authentifié")
+        manques.push("titre de séjour NON AUTHENTIFIÉ — à faire valider par la préfecture avant l'embauche (2 jours ouvrables)");
       return { status: 200, jsonBody: { brouillon, manques, mode: enTest ? "test" : "production", statut: f.DpaeStatut || "", idflux: f.DpaeIdFlux || "" } };
     }
 
@@ -518,4 +525,35 @@ async function dpae(request, context, corps) {
   }
 }
 
-module.exports = { donnees, activer, importerSalaries, dpae };
+/* ── Titre de séjour : suivi de l'authentification préfectorale ──────── */
+/* Détour /api/demande, action "adminTitreSejour" :
+   { idContrat, decision: "authentifie" | "refuse" | "aAuthentifier" }.
+   La demande elle-même part par courriel à la préfecture du lieu
+   d'embauche (mail type généré par l'écran) — ici on ne fait que
+   CONSIGNER la réponse : statut + horodatage sur l'embauche. */
+async function titreSejour(request, context, corps) {
+  try {
+    await exigerAdmin(request);
+    const d = corps || {};
+    const statut = { authentifie: "Authentifié", refuse: "Refusé", aAuthentifier: "À authentifier" }[d.decision];
+    if (!statut) return { status: 400, jsonBody: { erreur: "Décision inconnue (authentifie, refuse ou aAuthentifier)." } };
+    const tok = await tokenGraph();
+    const ids = await idsListes(tok);
+    if (!ids["Production contrat"]) throw { status: 502, erreur: "Liste « Production contrat » introuvable." };
+    const item = await lireContrat(tok, ids, d.idContrat);
+    if (!item.fields?.TitreSejourType)
+      return { status: 400, jsonBody: { erreur: "Aucun titre de séjour suivi sur cette embauche." } };
+    await majContrat(tok, ids, d.idContrat, {
+      TitreSejourStatut: statut,
+      TitreSejourVerifieLe: statut === "À authentifier" ? null : new Date().toISOString(),
+    }, context);
+    viderCacheItems();
+    return { status: 200, jsonBody: { ok: true, statut } };
+  } catch (e) {
+    if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+    context.error("admin/titreSejour :", e);
+    return { status: 502, jsonBody: { erreur: "Suivi du titre momentanément indisponible — réessayez." } };
+  }
+}
+
+module.exports = { donnees, activer, importerSalaries, dpae, titreSejour };

@@ -91,6 +91,10 @@ LISTES = [
         col("PaysNaissance", T()), col("CodePaysNaissance", T()),
         col("Iban", T()), col("Bic", T()),
         col("BulletinDematerialise", B(False)),
+        # Salariés étrangers (22/08) : nationalité + titre de séjour
+        # (l'expiration alimentera le suivi de renouvellement)
+        col("Nationalite", T()), col("TitreSejourType", T()),
+        col("TitreSejourNumero", T()), col("TitreSejourExpiration", D()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
@@ -259,6 +263,10 @@ def main():
             col("DpaeStatut", T()), col("DpaeIdFlux", T()),
             col("DpaeCertificat", T()), col("DpaeMessage", TL()),
             col("DpaeDeclareLe", DH()),
+            # Salariés étrangers : titre de séjour + authentification
+            col("TitreSejourType", T()), col("TitreSejourNumero", T()),
+            col("TitreSejourExpiration", D()), col("TitreSejourStatut", T()),
+            col("TitreSejourVerifieLe", DH()),
         ])
     else:
         print("   IGNORÉ : liste absente — créez-la d'abord (plan de bascule).")

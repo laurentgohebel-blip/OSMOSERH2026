@@ -1540,6 +1540,18 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
    l'accusé, l'approbation (gestionnaire du client) et la génération.
    L'accusé part sur l'email du compte connecté — pas de champ email.
    ================================================================ */
+// Nationalités dispensées de titre de séjour (UE/EEE/Suisse) — MÊMES
+// radicaux que l'API (demande.js) : une nationalité non reconnue ouvre
+// le volet « salarié étranger » (sur-inclusif = prudent, le gestionnaire
+// tranche). Comparaison sans accents, en minuscules.
+const RADICAUX_UE_EEE_SUISSE = ["franc", "allemand", "autrich", "belg", "bulgar", "chypr", "croat", "danois", "danemark", "espagn", "eston", "finland", "grec", "hongr", "irland", "ital", "letton", "lituan", "luxembourg", "malt", "neerland", "holland", "pays-bas", "pays bas", "polon", "portug", "roumain", "slovaqu", "sloven", "sued", "tchec", "island", "liechtenstein", "norveg", "suisse"];
+const titreSejourRequis = (nationalite) => {
+  const n = String(nationalite || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!n.trim()) return false;
+  return !RADICAUX_UE_EEE_SUISSE.some((r) => n.includes(r));
+};
+const TITRES_SEJOUR = ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"];
+
 function DemandeEmbauche({ user, client, onRetour }) {
   const [f, setF] = useState({
     type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
@@ -1555,9 +1567,13 @@ function DemandeEmbauche({ user, client, onRetour }) {
   });
   // Pièces jointes OBLIGATOIRES (modèle B du 22/08) : pièce d'identité,
   // carte vitale ou attestation de droits, RIB.
-  const [pj, setPj] = useState({ identite: null, vitale: null, rib: null });
+  const [pj, setPj] = useState({ identite: null, vitale: null, rib: null, titre: null });
   const majPj = (k, fichier) => { setPj((p) => ({ ...p, [k]: fichier })); setErr((e) => ({ ...e, ["pj" + k]: false })); };
   const pjValide = (fichier) => !!fichier && /\.(pdf|jpe?g|png)$/i.test(fichier.name) && fichier.size <= 10 * 1024 * 1024;
+  // Salarié étranger : titre de séjour (volet affiché selon la nationalité)
+  const [titre, setTitre] = useState({ type: "", numero: "", expiration: "" });
+  const majTitre = (k, v) => { setTitre((p) => ({ ...p, [k]: v })); setErr((e) => ({ ...e, ["titre" + k]: false })); };
+  const etranger = titreSejourRequis(f.nationalite);
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
   const [envoi, setEnvoi] = useState(false);
@@ -1591,6 +1607,11 @@ function DemandeEmbauche({ user, client, onRetour }) {
       pjidentite: !pjValide(pj.identite),
       pjvitale: !pjValide(pj.vitale),
       pjrib: !pjValide(pj.rib),
+      // Salarié étranger : titre de séjour + sa pièce, obligatoires
+      titretype: etranger && !titre.type,
+      titrenumero: etranger && titre.numero.trim().length < 4,
+      titreexpiration: etranger && (!/^\d{4}-\d{2}-\d{2}$/.test(titre.expiration) || (!!f.debut && titre.expiration < f.debut)),
+      pjtitre: etranger && !pjValide(pj.titre),
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -1624,6 +1645,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
         pjIdentite: await televerser(pj.identite, "piece-identite"),
         pjVitale: await televerser(pj.vitale, "carte-vitale"),
         pjRib: await televerser(pj.rib, "rib"),
+        ...(etranger ? { pjTitreSejour: await televerser(pj.titre, "titre-sejour") } : {}),
       };
     } catch (e) {
       setErrbar(`Pièces jointes : ${e.message}`);
@@ -1661,6 +1683,12 @@ function DemandeEmbauche({ user, client, onRetour }) {
       bic: f.bic.replace(/\s/g, "").toUpperCase(),
       bulletinDematerialise: !!f.bulletinDemat,
       matricule: f.matricule.trim(),
+      // Salarié étranger : titre de séjour (contrôlé côté API aussi)
+      ...(etranger ? {
+        titreSejourType: titre.type,
+        titreSejourNumero: titre.numero.trim().toUpperCase(),
+        titreSejourExpiration: titre.expiration,
+      } : {}),
       xq_note: "", // honeypot : doit rester vide
     };
     try {
@@ -1810,6 +1838,43 @@ function DemandeEmbauche({ user, client, onRetour }) {
                 onChange={(e) => majPj(k, e.target.files && e.target.files[0])} />
             </ChampReq>
           ))}
+
+          {/* ── Salarié étranger : titre de séjour (selon la nationalité) ── */}
+          {etranger && (
+            <>
+              <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Salarié étranger — titre de séjour <span style={{ color: T.err }}>*</span>
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: T.mut }}>
+                  L'embauche d'un ressortissant hors UE/EEE/Suisse exige un titre autorisant le
+                  travail, <strong>authentifié par la préfecture au moins 2 jours ouvrables avant la
+                  prise de poste</strong> — Osmose RH engage cette vérification dès réception.
+                </p>
+              </div>
+
+              <ChampReq label="Type de titre" erreur={err.titretype && "Choisissez le type de titre."}>
+                <select style={err.titretype ? inputInvalid : inputStyle} value={titre.type} onChange={(e) => majTitre("type", e.target.value)}>
+                  <option value="">—</option>
+                  {TITRES_SEJOUR.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </ChampReq>
+
+              <ChampReq label="Numéro du titre (n° étranger / document)" erreur={err.titrenumero && "Numéro du titre requis."}>
+                <input style={err.titrenumero ? inputInvalid : inputStyle} placeholder="Ex. 9902345678" value={titre.numero} onChange={(e) => majTitre("numero", e.target.value)} />
+              </ChampReq>
+
+              <ChampReq label="Date d'expiration du titre" erreur={err.titreexpiration && "Date requise, postérieure à la date d'embauche."}>
+                <input type="date" style={err.titreexpiration ? inputInvalid : inputStyle} value={titre.expiration} onChange={(e) => majTitre("expiration", e.target.value)} />
+              </ChampReq>
+
+              <ChampReq large label="Titre de séjour (recto-verso)" erreur={err.pjtitre && "Fichier requis (PDF/JPG/PNG, 10 Mo max)."}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                  style={err.pjtitre ? inputInvalid : inputStyle}
+                  onChange={(e) => majPj("titre", e.target.files && e.target.files[0])} />
+              </ChampReq>
+            </>
+          )}
 
           {/* ── Volet administratif : alimente le dossier du salarié ─── */}
           <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
@@ -2765,6 +2830,7 @@ const FICHE_VIDE = {
   codeDepartementNaissance: "", paysNaissance: "", codePaysNaissance: "",
   adressePostale: "", email: "", telephone: "", iban: "", bic: "",
   matricule: "", bulletinDematerialise: false,
+  nationalite: "", titreSejourType: "", titreSejourNumero: "", titreSejourExpiration: "",
 };
 // Champs OBLIGATOIRES du dossier (décision du 22/08) — tout sauf le nom
 // marital (n'existe pas pour tous) et le matricule (attribué par la paie).
@@ -2788,6 +2854,16 @@ const SECTIONS_DOSSIER = [
     ["codeDepartementNaissance", "Code département", "texte"],
     ["paysNaissance", "Pays de naissance", "texte"],
     ["codePaysNaissance", "Code pays (ex. FR)", "texte"],
+  ]],
+  // Salariés étrangers uniquement — champs FACULTATIFS (hors de la règle
+  // « dossier complet ») : le titre vient de l'embauche, Osmose le tient
+  // à jour au renouvellement.
+  ["Nationalité & titre de séjour", [
+    ["nationalite", "Nationalité", "texte"],
+    ["titreSejourType", "Type de titre de séjour", "choix",
+      ["", "Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"]],
+    ["titreSejourNumero", "Numéro du titre", "texte"],
+    ["titreSejourExpiration", "Date d'expiration du titre", "date"],
   ]],
   ["Coordonnées", [
     ["adressePostale", "Adresse postale", "texte"],

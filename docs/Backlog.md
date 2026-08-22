@@ -30,6 +30,14 @@ synthèse de session et les docs dédiées.
    dossier complet (collage Excel, colonnes reconnues, normalisations
    tolérantes) ; modèle Excel de reprise 24 colonnes ; export des
    fiches en un clic depuis la gestion du personnel (CSV pour Excel).
+   **+ Volet salarié étranger** (ajout du 22/08) : nationalité hors
+   UE/EEE/Suisse détectée à l'embauche → titre de séjour obligatoire
+   (type, numéro, expiration, copie recto-verso en PJ, refus si expiré
+   avant l'embauche) ; suivi de l'authentification préfectorale dans
+   l'écran gestionnaire (badge À authentifier/Authentifié/Refusé,
+   mail type R.5221-41, avertissement dans le brouillon DPAE) ;
+   champs titre dans l'onglet Dossier. Idée v2 : alerte automatique
+   d'expiration des titres (échéances, comme les fins de CDD).
 2. _(jamais transmis — « On y reviendra »)_
 
 ## Idées / suites déjà actées
