@@ -62,6 +62,11 @@ LISTES = [
         col("Representant", T()), col("FonctionRepresentant", T()),
         col("LieuEdition", T()), col("EmailGestionnaire", T()),
         col("Actif", B(True)),
+        # Identification URSSAF de l'employeur (DPAE, 22/08) —
+        # AdresseEntreprise = rue seule, ville et CP à part (norme DPAE).
+        col("CodeUrssaf", T()), col("CodeApe", T()),
+        col("VilleEntreprise", T()), col("CodePostalEntreprise", T()),
+        col("TelephoneEntreprise", T()), col("SanteTravail", T()),
         # + colonne « Options » (choix multiple) À LA MAIN — voir en-tête
     ]),
     ("Utilisateurs portail", [
@@ -231,6 +236,19 @@ def main():
 
     print("4. Bibliothèque de documents…")
     traiter_liste(site, jeton, listes, BIBLIOTHEQUE, [], gabarit="documentLibrary")
+
+    # « Production contrat » existe déjà (créée à la main, noms internes
+    # accentués) : on ne fait qu'AJOUTER le suivi DPAE — jamais la créer
+    # ici, ses colonnes historiques ne sont pas dans ce script.
+    print("5. Suivi DPAE sur « Production contrat »…")
+    if "Production contrat" in listes:
+        traiter_liste(site, jeton, listes, "Production contrat", [
+            col("DpaeStatut", T()), col("DpaeIdFlux", T()),
+            col("DpaeCertificat", T()), col("DpaeMessage", TL()),
+            col("DpaeDeclareLe", DH()),
+        ])
+    else:
+        print("   IGNORÉ : liste absente — créez-la d'abord (plan de bascule).")
 
     print("""
 Terminé. RESTE À FAIRE À LA MAIN (voir docs/Plan-bascule-osmoserh.md) :

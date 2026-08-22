@@ -43,11 +43,11 @@ app.http("demande", {
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
     // ADMIN_EMAILS — un client ordinaire reçoit un 403.
-    if (d.action === "adminActiver" || d.action === "adminImportSalaries") {
+    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae") {
       try {
         const admin = require("../admin");
-        return d.action === "adminActiver"
-          ? await admin.activer(request, context, d)
+        return d.action === "adminActiver" ? await admin.activer(request, context, d)
+          : d.action === "adminDpae" ? await admin.dpae(request, context, d)
           : await admin.importerSalaries(request, context, d);
       } catch (e) {
         context.error(`demande/${d.action} :`, e);
