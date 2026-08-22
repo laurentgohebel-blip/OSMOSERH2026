@@ -127,6 +127,9 @@ function etatInitial() {
       recentes: [
         { salarie: "LEFEBVRE Marc", poste: "Vendeur", dateFin: dansNJours(-25), joursRestants: -25, alerte: dansNJours(-56) },
       ],
+      titres: [
+        { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), joursRestants: 48, alerte: new Date().toISOString() },
+      ],
     },
 
     /* Fils « Mon gestionnaire » : un en attente, un répondu (la réponse

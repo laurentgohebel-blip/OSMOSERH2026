@@ -36,8 +36,18 @@ synthèse de session et les docs dédiées.
    avant l'embauche) ; suivi de l'authentification préfectorale dans
    l'écran gestionnaire (badge À authentifier/Authentifié/Refusé,
    mail type R.5221-41, avertissement dans le brouillon DPAE) ;
-   champs titre dans l'onglet Dossier. Idée v2 : alerte automatique
-   d'expiration des titres (échéances, comme les fins de CDD).
+   champs titre dans l'onglet Dossier.
+   **+ Alerte d'expiration des titres** (22/08) : e-mail automatique à
+   J-90 (contacts du client + gestionnaire, anti-doublon
+   `AlerteTitreSejour`, rattrapage des titres expirés < 30 j, corps
+   « URGENT » si expiré) via le flux hebdomadaire existant — la réponse
+   de `/api/echeances` porte un tableau séparé `alertesTitres` avec
+   `email`, `objet` et `corps` PRÊTS À ENVOYER. Page Échéances du
+   client : section « Titres de séjour à renouveler » (J-120 + expirés
+   récents). **Geste Laurent** : dans le flux « Alertes échéances »,
+   ajouter une 2e boucle « Pour chaque » sur `alertesTitres` avec un
+   simple Envoyer un e-mail (À = `email`, Objet = `objet`,
+   Corps = `corps`) — rien d'autre à composer.
 2. _(jamais transmis — « On y reviendra »)_
 
 ## Idées / suites déjà actées
