@@ -25,11 +25,11 @@ synthèse de session et les docs dédiées.
 - [ ] Flux messagerie (deux flux à re-pointer — doc messagerie).
 
 ## Liste d'améliorations du portail (dictée par Laurent)
-1. **Gestion du personnel — enrichir les fiches** : livré, mais
-   DÉCLARÉ NON FINI le 22/08 (« on a pas fini le 1/ ») — reste à
-   préciser ce qui manque. Pistes identifiées : la reprise d'effectif
-   n'importe pas les 14 champs du dossier (adresse, NIR, IBAN…) ;
-   modèle Excel de reprise à étendre en conséquence.
+1. **Gestion du personnel — enrichir les fiches** : ✅ TERMINÉ le 22/08.
+   Fiches 14 champs + onglet Dossier ; reprise d'effectif étendue au
+   dossier complet (collage Excel, colonnes reconnues, normalisations
+   tolérantes) ; modèle Excel de reprise 24 colonnes ; export des
+   fiches en un clic depuis la gestion du personnel (CSV pour Excel).
 2. _(jamais transmis — « On y reviendra »)_
 
 ## Idées / suites déjà actées
