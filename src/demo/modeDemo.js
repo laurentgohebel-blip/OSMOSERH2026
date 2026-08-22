@@ -38,7 +38,7 @@ export const UTILISATEUR_DEMO = {
 };
 
 const CODE_CLIENT_DEMO = "DEMO";
-const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie"];
+const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie", "etrangers"];
 
 /* ── Dates relatives (AAAA-MM-JJ) ─────────────────────────────────────── */
 const dansNJours = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -128,7 +128,28 @@ function etatInitial() {
         { salarie: "LEFEBVRE Marc", poste: "Vendeur", dateFin: dansNJours(-25), joursRestants: -25, alerte: dansNJours(-56) },
       ],
       titres: [
-        { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), joursRestants: 48, alerte: new Date().toISOString() },
+        { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), finDroits: dansNJours(48), etat: "a-renouveler", joursRestants: 48, alerte: "J-90 " + new Date().toISOString() },
+      ],
+    },
+
+    /* Brique « Salariés étrangers » : trois états pour la démonstration
+       (à renouveler, en renouvellement, valide). */
+    etrangers: {
+      seuil: 90,
+      titres: ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"],
+      salaries: [
+        { id: "demo-etr-1", cle: "OKAFOR CHIDI", nom: "OKAFOR", prenom: "Chidi", poste: "Menuisier", nationalite: "Nigériane",
+          titre: { type: "Carte de séjour pluriannuelle", numero: "9901234567", expiration: dansNJours(48), pj: "" },
+          recepisse: { numero: "", fin: null, pj: "" }, droitTravail: "Plein", droitSuggere: false, autorisationTravail: "Non requise",
+          etat: "a-renouveler", joursRestants: 48, finDroits: dansNJours(48), alerte: "J-90 " + new Date().toISOString() },
+        { id: "demo-etr-2", cle: "PETROV IVAN", nom: "PETROV", prenom: "Ivan", poste: "Poseur", nationalite: "Serbe",
+          titre: { type: "Carte de séjour temporaire", numero: "8804522190", expiration: dansNJours(-5), pj: "" },
+          recepisse: { numero: "R-2026-1187", fin: dansNJours(80), pj: "" }, droitTravail: "Plein", droitSuggere: false, autorisationTravail: "Accordée",
+          etat: "en-renouvellement", joursRestants: 80, finDroits: dansNJours(80), alerte: null },
+        { id: "demo-etr-3", cle: "TANAKA YUKI", nom: "TANAKA", prenom: "Yuki", poste: "Assistante ADV", nationalite: "Japonaise",
+          titre: { type: "VLS-TS (visa long séjour valant titre)", numero: "7712093344", expiration: dansNJours(210), pj: "" },
+          recepisse: { numero: "", fin: null, pj: "" }, droitTravail: "", droitSuggere: true, autorisationTravail: "",
+          etat: "valide", joursRestants: 210, finDroits: dansNJours(210), alerte: null },
       ],
     },
 
@@ -188,6 +209,9 @@ export async function reponseDemo(chemin, options = {}) {
     case "/api/me":
       if (url.searchParams.get("vue") === "messages") {
         return json(200, { fils: [...e.fils].sort((a, b) => b.derniereMaj.localeCompare(a.derniereMaj)) });
+      }
+      if (url.searchParams.get("vue") === "etrangers") {
+        return json(200, e.etrangers);
       }
       return json(200, {
         email: UTILISATEUR_DEMO.email,
@@ -251,6 +275,28 @@ function traiterDemande(e, options) {
   if (d.action === "majSalarie") {
     const s = (p.salaries || []).find((x) => x.cle === d.cle);
     if (s) s.fiche = { ...(s.fiche || {}), ...(d.fiche || {}) };
+    return json(200, { ok: true });
+  }
+
+  // Brique « Salariés étrangers » : récépissé ou nouveau titre — l'état
+  // est recalculé comme côté serveur (le récépissé prolonge les droits).
+  if (d.action === "titreRenouvellement") {
+    const s = (e.etrangers.salaries || []).find((x) => String(x.id) === String(d.id));
+    if (!s) return json(404, { erreur: "Fiche salarié introuvable." });
+    if (d.mode === "recepisse") {
+      s.recepisse = { numero: d.recepisseNumero || "", fin: d.recepisseFin, pj: d.pj || "" };
+      s.etat = "en-renouvellement";
+      s.finDroits = d.recepisseFin;
+      s.alerte = null;
+    } else {
+      s.titre = { type: d.titreType, numero: d.titreNumero || "", expiration: d.titreExpiration, pj: d.pj || "" };
+      s.recepisse = { numero: "", fin: null, pj: "" };
+      const jours = Math.round((new Date(d.titreExpiration) - Date.now()) / 86400000);
+      s.etat = jours <= 90 ? "a-renouveler" : "valide";
+      s.joursRestants = jours;
+      s.finDroits = d.titreExpiration;
+      s.alerte = null;
+    }
     return json(200, { ok: true });
   }
 

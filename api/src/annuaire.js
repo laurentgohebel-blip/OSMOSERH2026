@@ -68,6 +68,13 @@ async function tokenGraph() {
   return graphTok.valeur;
 }
 
+/* $select UNIQUE de la liste « Salariés » — le cache items() est indexé
+   par liste (pas par champs) : tous les lecteurs (personnel, admin,
+   échéances, étrangers) partagent CE select pour ne jamais s'appauvrir
+   mutuellement pendant les 60 s de cache. Toute nouvelle colonne
+   s'ajoute ICI (et dans creer_site_rh.py). */
+const SELECT_SALARIES = "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour,TitreSejourPj,RecepisseNumero,RecepisseFin,RecepissePj,DroitTravail,AutorisationTravail";
+
 let listeIds; // { "Utilisateurs portail": id, "Paramètres clients": id }
 async function idsListes(tok) {
   if (listeIds) return listeIds;
@@ -513,4 +520,4 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
   return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems, SELECT_SALARIES };

@@ -37,17 +37,18 @@ synthèse de session et les docs dédiées.
    l'écran gestionnaire (badge À authentifier/Authentifié/Refusé,
    mail type R.5221-41, avertissement dans le brouillon DPAE) ;
    champs titre dans l'onglet Dossier.
-   **+ Alerte d'expiration des titres** (22/08) : e-mail automatique à
-   J-90 (contacts du client + gestionnaire, anti-doublon
-   `AlerteTitreSejour`, rattrapage des titres expirés < 30 j, corps
-   « URGENT » si expiré) via le flux hebdomadaire existant — la réponse
-   de `/api/echeances` porte un tableau séparé `alertesTitres` avec
-   `email`, `objet` et `corps` PRÊTS À ENVOYER. Page Échéances du
-   client : section « Titres de séjour à renouveler » (J-120 + expirés
-   récents). **Geste Laurent** : dans le flux « Alertes échéances »,
-   ajouter une 2e boucle « Pour chaque » sur `alertesTitres` avec un
-   simple Envoyer un e-mail (À = `email`, Objet = `objet`,
-   Corps = `corps`) — rien d'autre à composer.
+   **+ Brique autonome « Salariés étrangers »** (22/08, option de
+   contrat `etrangers` — voir docs/Salaries-etrangers.md) : page client
+   dédiée (états Valide / À renouveler / En renouvellement via
+   récépissé / EXPIRÉ-interdiction, déclaration des récépissés et
+   nouveaux titres avec copies en GED), relances e-mail multi-paliers
+   J-90→J-60→J-30→EXPIRÉ suspendues par récépissé, vue gestionnaire
+   tous clients (dossier inspection, droit au travail qualifié,
+   autorisations, taxe OFII), section titres sur la page Échéances.
+   **Gestes Laurent** : relancer creer_site_rh.py (6 colonnes) ;
+   cocher l'option « Salariés étrangers » sur les clients concernés ;
+   flux « Alertes échéances » : 2e boucle « Pour chaque » sur
+   `alertesTitres` (À = `email`, Objet = `objet`, Corps = `corps`).
 2. _(jamais transmis — « On y reviendra »)_
 
 ## Idées / suites déjà actées

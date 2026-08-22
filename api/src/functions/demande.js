@@ -43,8 +43,9 @@ app.http("demande", {
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
     // ADMIN_EMAILS — un client ordinaire reçoit un 403.
-    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae" || d.action === "adminTitreSejour") {
+    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae" || d.action === "adminTitreSejour" || d.action === "adminEtrangers") {
       try {
+        if (d.action === "adminEtrangers") return await require("../etrangers").adminMaj(request, context, d);
         const admin = require("../admin");
         return d.action === "adminActiver" ? await admin.activer(request, context, d)
           : d.action === "adminDpae" ? await admin.dpae(request, context, d)
@@ -104,6 +105,13 @@ app.http("demande", {
         if (!clientInfo.options.includes("embauche"))
           return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
         return await majSalarie(clientInfo, d, context);
+      }
+
+      // Brique « Salariés étrangers » : le client déclare un récépissé de
+      // renouvellement ou un nouveau titre (verrous option + propriété
+      // dans le module).
+      if (d.action === "titreRenouvellement") {
+        return await require("../etrangers").renouveler(clientInfo, d, context);
       }
 
       // Cas particulier « fin-contrat » : déclaration de départ — écrite
@@ -472,6 +480,7 @@ async function creerFicheSalarie(clientInfo, d) {
     ...si("TitreSejourNumero", String(d.titreSejourNumero || "").trim().toUpperCase().slice(0, 40)),
     ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || ""))
       ? { TitreSejourExpiration: d.titreSejourExpiration } : {}),
+    ...si("TitreSejourPj", String(d.pjTitreSejour || "").trim().slice(0, 255)),
   };
 
   const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
@@ -503,17 +512,9 @@ const SITUATIONS = ["", "Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)",
    titre de séjour autorisant le travail, que l'employeur doit faire
    AUTHENTIFIER par la préfecture au moins 2 jours ouvrables avant
    l'embauche (art. L.8251-1 et R.5221-41 s. du code du travail).
-   La nationalité est saisie en texte libre : comparaison par radicaux,
-   sans accents (« Italienne », « italie », « portugais »…). Une
-   nationalité non reconnue déclenche le volet — sur-inclusif = prudent
-   (le gestionnaire tranche). Même liste côté front (AppShell). */
-const RADICAUX_UE_EEE_SUISSE = ["franc", "allemand", "autrich", "belg", "bulgar", "chypr", "croat", "danois", "danemark", "espagn", "eston", "finland", "grec", "hongr", "irland", "ital", "letton", "lituan", "luxembourg", "malt", "neerland", "holland", "pays-bas", "pays bas", "polon", "portug", "roumain", "slovaqu", "sloven", "sued", "tchec", "island", "liechtenstein", "norveg", "suisse"];
-function titreSejourRequis(nationalite) {
-  const n = String(nationalite || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  if (!n.trim()) return false;
-  return !RADICAUX_UE_EEE_SUISSE.some((r) => n.includes(r));
-}
-const TITRES_SEJOUR = ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"];
+   Détection et référentiels : brique autonome ../etrangers (source
+   unique — le front duplique la même liste de radicaux). */
+const { titreSejourRequis, TITRES_SEJOUR } = require("../etrangers");
 async function majSalarie(clientInfo, d, context) {
   const id = String(d.id || "").trim();
   if (!/^\d+$/.test(id)) return { status: 400, jsonBody: { erreur: "Fiche salarié introuvable." } };

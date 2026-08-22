@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, Globe
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 import AdminActivation from "./AdminActivation";
@@ -585,6 +585,9 @@ export default function AppShell({ user, onLogout }) {
         <NavBtn id="dash" icon={ChartBar} label="Tableau de bord" />
         <NavBtn id="prod" icon={FileText} label="Production" />
         <NavBtn id="eche" icon={Clock} label="Échéances" />
+        {(moi?.options || []).includes("etrangers") && (
+          <NavBtn id="etr" icon={Globe} label="Salariés étrangers" />
+        )}
         <NavBtn id="docs" icon={Folder} label="Documents" />
         <div className="osrh-user" style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
           <div className="osrh-user-info" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
@@ -1009,6 +1012,9 @@ export default function AppShell({ user, onLogout }) {
             </>
           );
         })()}
+
+        {/* ===== SALARIÉS ÉTRANGERS (option) ===== */}
+        {vue === "etr" && <VueEtrangers notifier={notifier} />}
 
         {/* ===== DOCUMENTS ===== */}
         {vue === "docs" && (() => {
@@ -2826,6 +2832,183 @@ function Demandemutuelle({ user, client, salaries, salarieInitial, onRetour }) {
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
         <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Transmettre"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   SALARIÉS ÉTRANGERS — brique autonome (option « etrangers »)
+   GET /api/me?vue=etrangers : états des titres calculés côté serveur
+   (Valide / À renouveler / En renouvellement / EXPIRÉ sans droits) ;
+   le client déclare récépissés et nouveaux titres (PJ via /api/depot,
+   POST /api/demande action titreRenouvellement).
+   ================================================================ */
+const BADGE_ETAT_TITRE = (s) => {
+  const rendu = (bg, fg, txt) => (
+    <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>{txt}</span>
+  );
+  switch (s.etat) {
+    case "expire": return rendu("#FCEBEB", "#791F1F", "EXPIRÉ — interdiction d'emploi");
+    case "en-renouvellement": return rendu("#E6F1FB", "#0C447C", `En renouvellement (récépissé → ${String(s.recepisse?.fin || "").split("-").reverse().join("/")})`);
+    case "a-renouveler": return rendu("#FAEEDA", "#854F0B", `À renouveler — ${s.joursRestants} j`);
+    case "valide": return rendu("#E4F3EE", "#0F6E56", "Valide");
+    default: return rendu("#F4F6F9", "#5C6B80", "Titre à renseigner");
+  }
+};
+
+function VueEtrangers({ notifier }) {
+  const [donnees, setDonnees] = useState(null); // null | {salaries…} | {erreur}
+  const [ouvert, setOuvert] = useState(null);   // { id, mode }
+  const [f, setF] = useState({ numero: "", date: "", type: "", fichier: null });
+  const [envoi, setEnvoi] = useState(false);
+
+  const charger = () => {
+    setDonnees(null);
+    apiFetch("/api/me?vue=etrangers")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
+      })
+      .catch(() => setDonnees({ erreur: "Suivi momentanément indisponible — réessayez." }));
+  };
+  useEffect(charger, []);
+
+  const ouvrir = (id, mode, sal) => {
+    setOuvert({ id, mode });
+    setF({ numero: "", date: "", type: sal?.titre?.type || "", fichier: null });
+  };
+
+  const envoyer = async (sal) => {
+    const recepisse = ouvert.mode === "recepisse";
+    if (!f.date) return notifier(recepisse ? "Indiquez la fin de validité du récépissé." : "Indiquez la date d'expiration du nouveau titre.");
+    if (!recepisse && (!f.type || f.numero.trim().length < 4)) return notifier("Type et numéro du nouveau titre requis.");
+    setEnvoi(true);
+    try {
+      let pj = "";
+      if (f.fichier) {
+        const ext = (f.fichier.name.split(".").pop() || "pdf").toLowerCase();
+        const nom = `Titre-sejour_${sal.nom}-${sal.prenom}_${recepisse ? "recepisse" : "nouveau-titre"}_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.${ext}`;
+        const rd = await apiFetch(`/api/depot?nom=${encodeURIComponent(nom)}`, {
+          method: "POST", headers: { "Content-Type": f.fichier.type || "application/octet-stream" }, body: f.fichier,
+        });
+        if (!rd.ok) { notifier("Dépôt de la pièce refusé — réessayez."); setEnvoi(false); return; }
+        pj = (await rd.json().catch(() => ({}))).nom || nom;
+      }
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "titreRenouvellement", id: sal.id, mode: ouvert.mode, pj,
+          ...(recepisse
+            ? { recepisseNumero: f.numero.trim(), recepisseFin: f.date }
+            : { titreType: f.type, titreNumero: f.numero.trim(), titreExpiration: f.date }),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEnvoi(false);
+      if (!r.ok) return notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      notifier(recepisse ? "✓ Récépissé enregistré — les relances sont suspendues." : "✓ Nouveau titre enregistré.");
+      setOuvert(null);
+      charger();
+    } catch { setEnvoi(false); notifier("API injoignable — réessayez."); }
+  };
+
+  if (donnees === null) return <p style={{ fontSize: 13, color: T.mut }}>Chargement du suivi…</p>;
+  if (donnees.erreur) return <p style={{ fontSize: 13, color: T.mut }}>{donnees.erreur}</p>;
+  const salaries = donnees.salaries || [];
+  const expires = salaries.filter((s) => s.etat === "expire");
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  const grille = "1.6fr 1.2fr 1.8fr 110px 1.6fr 1.6fr";
+  const petit = { ...inputStyle, padding: "7px 9px", fontSize: 12.5 };
+
+  return (
+    <>
+      <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Salariés étrangers</h1>
+      <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+        Titres de séjour de vos salariés hors UE/EEE/Suisse : validité, renouvellements,
+        droit au travail. Déclarez ici le récépissé dès le dépôt du renouvellement en
+        préfecture, puis le nouveau titre à sa réception — Osmose RH suit le reste.
+      </p>
+
+      {expires.length > 0 && (
+        <div style={{ background: "#FCEBEB", border: "1px solid #F7C1C1", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#791F1F" }}>
+          <strong>⚠ {expires.length === 1 ? "Un titre de séjour a expiré" : `${expires.length} titres de séjour ont expiré`} sans récépissé de renouvellement.</strong>{" "}
+          L'emploi d'un salarié sans titre valide est interdit (art. L.8251-1 du code du travail) :
+          déclarez le récépissé ci-dessous s'il existe, sinon contactez immédiatement votre gestionnaire Osmose RH.
+        </div>
+      )}
+
+      {salaries.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucun salarié étranger suivi pour l'instant.<br />
+          Les salariés hors UE/EEE/Suisse déclarés via la démarche Embauche apparaissent ici automatiquement.
+        </div>
+      ) : (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Salarié</span><span>Nationalité</span><span>Titre de séjour</span><span>Fin des droits</span><span>État</span><span></span>
+          </div>
+          {salaries.map((s, i) => (
+            <React.Fragment key={s.id || i}>
+              <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: `1px solid ${T.border}`, alignItems: "center" }}>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.nom} {s.prenom}</span>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.nationalite || "—"}</span>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.titre?.numero ? `N° ${s.titre.numero}` : undefined}>
+                  {s.titre?.type || "—"}
+                </span>
+                <span>{fr(s.finDroits)}</span>
+                {BADGE_ETAT_TITRE(s)}
+                <span style={{ display: "flex", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {s.etat !== "en-renouvellement" && (
+                    <button onClick={() => (ouvert?.id === s.id && ouvert.mode === "recepisse" ? setOuvert(null) : ouvrir(s.id, "recepisse", s))}
+                      style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      Déclarer un récépissé
+                    </button>
+                  )}
+                  <button onClick={() => (ouvert?.id === s.id && ouvert.mode === "nouveauTitre" ? setOuvert(null) : ouvrir(s.id, "nouveauTitre", s))}
+                    style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                    Nouveau titre reçu
+                  </button>
+                </span>
+              </div>
+              {ouvert?.id === s.id && (
+                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}`, background: T.bg, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  {ouvert.mode === "nouveauTitre" && (
+                    <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 220 }}>
+                      Type du nouveau titre *
+                      <select style={petit} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+                        <option value="">—</option>
+                        {(donnees.titres || []).map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 160 }}>
+                    {ouvert.mode === "recepisse" ? "N° du récépissé" : "N° du titre *"}
+                    <input style={petit} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} />
+                  </label>
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                    {ouvert.mode === "recepisse" ? "Valide jusqu'au *" : "Expire le *"}
+                    <input type="date" style={petit} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+                  </label>
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 200 }}>
+                    Copie (PDF/JPG/PNG — recommandé)
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={petit}
+                      onChange={(e) => setF({ ...f, fichier: e.target.files && e.target.files[0] })} />
+                  </label>
+                  <Btn primary disabled={envoi} onClick={() => envoyer(s)}>
+                    {envoi ? "Enregistrement…" : ouvert.mode === "recepisse" ? "Enregistrer le récépissé" : "Enregistrer le titre"}
+                  </Btn>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+        <ShieldCheck size={13} />
+        Rappels automatiques par e-mail à J-90, J-60 et J-30 avant l'expiration, puis en cas
+        d'expiration — un récépissé déclaré suspend les relances. Copies conservées dans vos Documents.
       </div>
     </>
   );
