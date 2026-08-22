@@ -189,12 +189,37 @@ const CHAMPS_IMPORT = [
   { k: "poste", l: "Poste / emploi" }, { k: "typeContrat", l: "Type de contrat" },
   { k: "dateEntree", l: "Date d'entrée" }, { k: "dateSortie", l: "Date de sortie" },
   { k: "email", l: "E-mail" }, { k: "telephone", l: "Téléphone" }, { k: "statut", l: "Statut" },
+  // Dossier salarié complet (fin du chantier « fiches » — 22/08)
+  { k: "adressePostale", l: "Adresse postale" }, { k: "numeroSS", l: "N° sécurité sociale" },
+  { k: "dateNaissance", l: "Date de naissance" }, { k: "sexe", l: "Sexe" },
+  { k: "nomNaissance", l: "Nom de naissance" }, { k: "nomMarital", l: "Nom marital" },
+  { k: "situationFamiliale", l: "Situation familiale" },
+  { k: "departementNaissance", l: "Département de naissance" },
+  { k: "codeDepartementNaissance", l: "Code département" },
+  { k: "paysNaissance", l: "Pays de naissance" }, { k: "codePaysNaissance", l: "Code pays" },
+  { k: "iban", l: "IBAN" }, { k: "bic", l: "BIC" },
+  { k: "bulletinDematerialise", l: "Bulletin dématérialisé (Oui/Non)" },
 ];
 // Ordre de détection pensé pour les collisions de sous-chaînes :
-// « prénom » avant « nom », les dates avant « contrat » (« date fin contrat »).
+// « prénom » avant « nom », « nom de naissance » avant « naissance » et
+// « nom », les libellés composés (code/département/pays) avant les courts.
 const DETECTION = [
   ["matricule", ["matricule", "n° sal", "numero sal"]],
   ["prenom", ["prenom"]],
+  ["numeroSS", ["secu", "securite sociale", "nir", "n° ss", "numero ss", "insee"]],
+  ["nomNaissance", ["nom de naissance", "nom naissance", "patronyme"]],
+  ["nomMarital", ["marital", "usage", "epoux"]],
+  ["situationFamiliale", ["situation"]],
+  ["codeDepartementNaissance", ["code dep", "code du dep"]],
+  ["departementNaissance", ["departement"]],
+  ["codePaysNaissance", ["code pays"]],
+  ["paysNaissance", ["pays"]],
+  ["dateNaissance", ["naissance", "ne le", "nee le"]],
+  ["adressePostale", ["adresse", "domicile"]],
+  ["iban", ["iban", "rib"]],
+  ["bic", ["bic", "swift"]],
+  ["sexe", ["sexe", "genre", "civilite"]],
+  ["bulletinDematerialise", ["demat", "bulletin"]],
   ["dateEntree", ["entree", "embauche", "debut", "arrivee"]],
   ["dateSortie", ["sortie", "depart", "fin"]],
   ["email", ["mail", "courriel"]],
@@ -266,6 +291,7 @@ function RepriseEffectif({ clients, notifier }) {
       mapping.forEach((champ, i) => { if (champ) s[champ] = l[i] || ""; });
       if (s.dateEntree) s.dateEntree = normDate(s.dateEntree);
       if (s.dateSortie) s.dateSortie = normDate(s.dateSortie);
+      if (s.dateNaissance) s.dateNaissance = normDate(s.dateNaissance);
       return s;
     }).filter((s) => String(s.nom || "").trim().length >= 2);
     setEnvoi(true);

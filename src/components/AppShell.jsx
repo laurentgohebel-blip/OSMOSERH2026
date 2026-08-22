@@ -3069,12 +3069,47 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
 
   /* ── Liste des salariés ─────────────────────────────────────── */
   const compteur = (liste, cle) => (src[liste] || []).filter((x) => x.cle === cle).length;
+
+  // Export des fiches : CSV « ; » UTF-8 (BOM) — s'ouvre directement dans
+  // Excel en français, sans dépendance. Généré côté navigateur à partir
+  // des données déjà chargées (rien ne transite de plus par le réseau).
+  const exporterFiches = () => {
+    const entetes = ["Matricule", "Nom", "Prénom", "Poste", "Type de contrat", "Date d'entrée", "Date de sortie", "Statut",
+      "E-mail", "Téléphone", "Adresse postale", "N° sécurité sociale", "Date de naissance", "Sexe",
+      "Nom de naissance", "Nom marital", "Situation familiale", "Département de naissance", "Code département",
+      "Pays de naissance", "Code pays", "IBAN", "BIC", "Bulletin dématérialisé"];
+    const cel = (v) => {
+      const t = String(v ?? "");
+      return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const lignes = salaries.map((s) => {
+      const f = s.fiche || {};
+      return [s.matricule, s.nom, s.prenom, s.poste, s.type, fr(s.debut), s.fin ? fr(s.fin) : "", s.statut,
+        f.email, f.telephone, f.adressePostale, f.numeroSS, f.dateNaissance ? fr(f.dateNaissance) : "", f.sexe,
+        f.nomNaissance, f.nomMarital, f.situationFamiliale, f.departementNaissance, f.codeDepartementNaissance,
+        f.paysNaissance, f.codePaysNaissance, f.iban, f.bic,
+        "bulletinDematerialise" in f ? (f.bulletinDematerialise ? "Oui" : "Non") : ""].map(cel).join(";");
+    });
+    const csv = "\uFEFF" + [entetes.map(cel).join(";"), ...lignes].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Effectif_${client || "osmose"}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <EnteteFiche titre="Gestion du personnel" onRetour={onRetour} />
-      <p style={{ margin: "-12px 0 16px", fontSize: 13, color: T.mut }}>
-        Les salariés déclarés via la démarche Embauche — cliquez pour ouvrir le dossier.
-      </p>
+      <div style={{ margin: "-12px 0 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 220 }}>
+          Les salariés déclarés via la démarche Embauche — cliquez pour ouvrir le dossier.
+        </p>
+        {salaries.length > 0 && (
+          <Btn onClick={exporterFiches}><Download size={14} /> Exporter les fiches (Excel)</Btn>
+        )}
+      </div>
 
       {salaries.length === 0 ? (
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>

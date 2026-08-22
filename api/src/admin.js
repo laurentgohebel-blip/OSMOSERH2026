@@ -220,6 +220,33 @@ const cleSalarie = (nom, prenom) =>
   `${String(nom || "").trim().toUpperCase()} ${String(prenom || "").trim().toUpperCase()}`.trim();
 const dateValide = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || "")) ? String(v) : "";
 
+/* Dossier salarié dans la reprise (22/08 — fin du chantier « fiches ») :
+   les 14 champs sont ACCEPTÉS mais jamais exigés, et normalisés avec
+   tolérance — une reprise ne doit pas échouer pour un « F » au lieu de
+   « Féminin ». Un champ absent ou vide n'est pas écrit. */
+const SEXES_REPRISE = { m: "Masculin", h: "Masculin", masculin: "Masculin", homme: "Masculin", monsieur: "Masculin", "1": "Masculin", f: "Féminin", feminin: "Féminin", femme: "Féminin", madame: "Féminin", "2": "Féminin" };
+const norm = (v) => String(v || "").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+function ficheDepuisReprise(s) {
+  const si = (col, val) => (String(val ?? "").trim() ? { [col]: val } : {});
+  const oui = norm(s.bulletinDematerialise);
+  return {
+    ...si("AdressePostale", String(s.adressePostale || "").trim().slice(0, 250)),
+    ...si("NumeroSS", String(s.numeroSS || "").replace(/\s/g, "").slice(0, 15)),
+    ...si("DateNaissance", dateValide(s.dateNaissance)),
+    ...si("Sexe", SEXES_REPRISE[norm(s.sexe)] || ""),
+    ...si("NomNaissance", String(s.nomNaissance || "").trim().toUpperCase().slice(0, 120)),
+    ...si("NomMarital", String(s.nomMarital || "").trim().slice(0, 120)),
+    ...si("SituationFamiliale", String(s.situationFamiliale || "").trim().slice(0, 60)),
+    ...si("DepartementNaissance", String(s.departementNaissance || "").trim().slice(0, 80)),
+    ...si("CodeDepartementNaissance", String(s.codeDepartementNaissance || "").trim().toUpperCase().slice(0, 3)),
+    ...si("PaysNaissance", String(s.paysNaissance || "").trim().slice(0, 80)),
+    ...si("CodePaysNaissance", String(s.codePaysNaissance || "").trim().toUpperCase().slice(0, 2)),
+    ...si("Iban", String(s.iban || "").replace(/\s/g, "").toUpperCase().slice(0, 34)),
+    ...si("Bic", String(s.bic || "").replace(/\s/g, "").toUpperCase().slice(0, 11)),
+    ...(oui ? { BulletinDematerialise: ["oui", "o", "yes", "true", "1", "x", "vrai"].includes(oui) } : {}),
+  };
+}
+
 async function importerSalaries(request, context, corps) {
   try {
     await exigerAdmin(request);
@@ -271,6 +298,7 @@ async function importerSalaries(request, context, corps) {
             || (dateSortie && dateSortie < aujourdhui ? "Sorti" : "Actif"),
           Email: String(s.email || "").trim().toLowerCase().slice(0, 200),
           Telephone: String(s.telephone || "").trim().slice(0, 40),
+          ...ficheDepuisReprise(s),
         } }),
       });
       if (!r.ok) {
