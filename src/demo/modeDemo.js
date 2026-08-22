@@ -42,6 +42,7 @@ const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie"];
 
 /* ── Dates relatives (AAAA-MM-JJ) ─────────────────────────────────────── */
 const dansNJours = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const enISO = (n) => new Date(Date.now() + n * 86400000).toISOString();
 const MOIS_COURTS = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"];
 
 const cleSalarie = (texte) => String(texte || "").trim().toUpperCase().replace(/\s+/g, " ");
@@ -128,6 +129,35 @@ function etatInitial() {
       ],
     },
 
+    /* Fils « Mon gestionnaire » : un en attente, un répondu (la réponse
+       vit dans le fil), un clos — le nuancier complet de la messagerie. */
+    fils: [
+      {
+        id: "fil-demo-3", objet: "Transmission d'informations", reference: "MSG-DEMO03",
+        statut: "Nouveau", clos: false, nonLu: false,
+        message: "Bonjour,\nEmma Blanchard prolonge son renfort jusqu'à fin septembre — je vous envoie l'avenant signé dès que je l'ai. Pouvez-vous le prévoir côté paie ?",
+        creeLe: enISO(-1), derniereMaj: enISO(-1), dernierAuteur: "client", echanges: [],
+      },
+      {
+        id: "fil-demo-2", objet: "Question sur la paie", reference: "MSG-DEMO02",
+        statut: "Répondu", clos: false, nonLu: true,
+        message: "Bonjour,\nPouvez-vous vérifier le calcul des heures supplémentaires de Julien Moreau sur le bulletin de juin ? Il me semble qu'il manque 4 heures à 25 %.\nMerci !",
+        creeLe: enISO(-6), derniereMaj: enISO(-5), dernierAuteur: "gestionnaire",
+        echanges: [
+          { qui: "gestionnaire", quand: enISO(-5), texte: "Bonjour Camille,\nBien vu : les 4 heures du 14 juin n'avaient pas été remontées. Elles sont régularisées sur le bulletin de juillet, avec la majoration à 25 %.\nBonne journée !" },
+        ],
+      },
+      {
+        id: "fil-demo-1", objet: "Attestation pour la banque", reference: "MSG-DEMO01",
+        statut: "Répondu", clos: true, nonLu: false,
+        message: "Bonjour,\nSophie Bertrand a besoin d'une attestation employeur pour son dossier de prêt immobilier. C'est possible cette semaine ?",
+        creeLe: enISO(-34), derniereMaj: enISO(-33), dernierAuteur: "gestionnaire",
+        echanges: [
+          { qui: "gestionnaire", quand: enISO(-33), texte: "Bonjour,\nC'est fait : l'attestation est déposée dans vos documents (dossier Attestations) et envoyée à Sophie. Bonne fin de semaine !" },
+        ],
+      },
+    ],
+
     documents: [
       { id: "demo-doc-1", nom: "Contrat_ROUX_Thomas_CDD.pdf", categorie: "Contrats", taille: 182_400, modifie: new Date(Date.now() - 140 * 86400000).toISOString() },
       { id: "demo-doc-2", nom: "Contrat_FONTAINE_Hugo_Alternance.pdf", categorie: "Contrats", taille: 214_812, modifie: "2025-08-28T09:15:00Z" },
@@ -153,11 +183,15 @@ export async function reponseDemo(chemin, options = {}) {
 
   switch (url.pathname) {
     case "/api/me":
+      if (url.searchParams.get("vue") === "messages") {
+        return json(200, { fils: [...e.fils].sort((a, b) => b.derniereMaj.localeCompare(a.derniereMaj)) });
+      }
       return json(200, {
         email: UTILISATEUR_DEMO.email,
         client: CODE_CLIENT_DEMO,
         raisonSociale: ENTREPRISE_DEMO,
         options: OPTIONS_DEMO,
+        messagesNonLus: e.fils.filter((f) => f.nonLu).length,
       });
 
     case "/api/dashboard":
@@ -214,6 +248,25 @@ function traiterDemande(e, options) {
   if (d.action === "majSalarie") {
     const s = (p.salaries || []).find((x) => x.cle === d.cle);
     if (s) s.fiche = { ...(s.fiche || {}), ...(d.fiche || {}) };
+    return json(200, { ok: true });
+  }
+
+  // Fil de discussion : réponse et statut mutés en mémoire, mêmes règles
+  // que l'API réelle (fil clos refusé, relance → statut « Nouveau »).
+  if (d.action === "messageRepondre") {
+    const f = e.fils.find((x) => String(x.id) === String(d.id));
+    if (!f) return json(404, { erreur: "Fil introuvable." });
+    if (f.clos) return json(400, { erreur: "Fil clos — écrivez un nouveau message." });
+    const quand = new Date().toISOString();
+    f.echanges.push({ qui: "client", quand, texte: String(d.texte || "").trim() });
+    f.derniereMaj = quand; f.dernierAuteur = "client"; f.statut = "Nouveau";
+    return json(200, { ok: true, quand });
+  }
+  if (d.action === "messageStatut") {
+    const f = e.fils.find((x) => String(x.id) === String(d.id));
+    if (!f) return json(404, { erreur: "Fil introuvable." });
+    if (typeof d.clos === "boolean") f.clos = d.clos;
+    if (d.lu === true) f.nonLu = false;
     return json(200, { ok: true });
   }
 
@@ -312,8 +365,17 @@ function traiterDemande(e, options) {
     case "variables-paie":
       return json(202, { reference: referenceDemo("VAR"), lignes: (d.lignes || []).length });
 
-    case "contact":
-      return json(202, { reference: referenceDemo("MSG") });
+    case "contact": {
+      const reference = referenceDemo("MSG");
+      const quand = new Date().toISOString();
+      e.fils.unshift({
+        id: `fil-${reference}`, objet: d.objet || "(sans objet)", reference,
+        statut: "Nouveau", clos: false, nonLu: false,
+        message: String(d.message || ""), creeLe: quand, derniereMaj: quand,
+        dernierAuteur: "client", echanges: [],
+      });
+      return json(202, { reference });
+    }
 
     default: {
       const prefixe = String(d.demarche || "DEM").split("-")[0].toUpperCase() || "DEM";

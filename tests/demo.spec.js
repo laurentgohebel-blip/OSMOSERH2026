@@ -96,6 +96,51 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("la messagerie gestionnaire : fils, conversation, nouveau message", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    // Pastille non-lu sur la tuile (une réponse du gestionnaire attend).
+    await expect(page.getByTitle("1 message non lu")).toBeVisible();
+    await page.getByText("Mon gestionnaire").first().click();
+
+    // La liste des fils, avec leurs statuts.
+    await expect(page.getByRole("button", { name: /Question sur la paie/ })).toBeVisible();
+    await expect(page.getByTitle("Réponse non lue")).toBeVisible();
+    await expect(page.getByRole("button", { name: /Attestation pour la banque/ })).toBeVisible();
+    await expect(page.getByText("Clos")).toBeVisible();
+
+    // Le fil répondu : la réponse du gestionnaire est dans la conversation,
+    // et l'ouvrir marque le fil lu (la pastille disparaît de la liste).
+    await page.getByRole("button", { name: /Question sur la paie/ }).click();
+    await expect(page.getByText(/régularisées sur le bulletin de juillet/)).toBeVisible();
+    await expect(page.getByText("Votre gestionnaire — ", { exact: false })).toBeVisible();
+    await page.getByRole("button", { name: "Retour aux messages" }).click();
+    await expect(page.getByTitle("Réponse non lue")).toHaveCount(0);
+
+    // Répondre dans un fil ouvert : la réponse s'ajoute à la conversation.
+    await page.getByRole("button", { name: /Transmission d'informations/ }).click();
+    await page.getByPlaceholder("Répondre dans ce fil…").fill("L'avenant signé est déposé dans les documents.");
+    await page.getByRole("button", { name: /^Répondre$/ }).click();
+    await expect(page.getByText("L'avenant signé est déposé dans les documents.")).toBeVisible();
+    await page.getByRole("button", { name: "Retour aux messages" }).click();
+
+    // Un fil clos ne propose pas de réponse.
+    await page.getByRole("button", { name: /Attestation pour la banque/ }).click();
+    await expect(page.getByText(/Fil clos — pour une nouvelle demande/)).toBeVisible();
+    await expect(page.getByPlaceholder("Répondre dans ce fil…")).toHaveCount(0);
+    await page.getByRole("button", { name: "Retour aux messages" }).click();
+
+    // Un nouveau message crée un fil, aussitôt en tête de liste.
+    await page.getByRole("button", { name: "Nouveau message" }).click();
+    await page.locator("select").selectOption({ label: "Demande de document" });
+    await page.locator("textarea").fill("Pourriez-vous nous transmettre une copie du contrat de Léa Garcia ?");
+    await page.getByRole("button", { name: /Envoyer le message/ }).click();
+    await expect(page.getByText(/réf\. MSG-/)).toBeVisible();
+    await page.getByRole("button", { name: "Voir mes messages" }).click();
+    await expect(page.getByText(/Pourriez-vous nous transmettre une copie/)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("quitter la démo revient à la connexion, sans démo rémanente", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Quitter la démonstration" }).click();

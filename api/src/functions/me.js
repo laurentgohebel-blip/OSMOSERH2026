@@ -21,6 +21,17 @@ app.http("me", {
         // route car la table de routage de la SWA n'accepte plus de
         // nouveau nom (voir le commentaire de contournement en fin de fichier).
         if ((request.query && request.query.get && request.query.get("vue")) === "admin") {
+          // &onglet=messages : boîte de réception des fils clients —
+          // même contournement, logique dans le module messages.
+          if (request.query.get("onglet") === "messages") {
+            try {
+              return await require("../messages").boite(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/messages :", e);
+              return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
+            }
+          }
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {
@@ -30,8 +41,24 @@ app.http("me", {
         }
         return { status: 200, jsonBody: { email, admin: true } };
       }
+      // ?vue=messages : fils de discussion du client — servi par CETTE
+      // route (doctrine ci-dessous : pas de nouveau /api/<nom>), logique
+      // dans le module paresseux src/messages.js, comme admin et lead.
+      if ((request.query && request.query.get && request.query.get("vue")) === "messages") {
+        try {
+          return await require("../messages").fils(request, context);
+        } catch (e) {
+          if (e && e.status) throw e; // 401/403 métier → catch global ci-dessous
+          context.error("me/vue=messages :", e);
+          return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
+        }
+      }
       const c = await resoudreClient(email);
-      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options } };
+      // Pastille « messages non lus » de la tuile Mon gestionnaire —
+      // best effort : une panne de lecture ne bloque jamais l'entrée.
+      let messagesNonLus = 0;
+      try { messagesNonLus = await require("../messages").nonLus(c.codeClient); } catch { /* pastille absente, portail intact */ }
+      return { status: 200, jsonBody: { email, client: c.codeClient, raisonSociale: c.raisonSociale, options: c.options, messagesNonLus } };
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("me :", e);
