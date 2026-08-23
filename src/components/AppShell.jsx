@@ -1735,8 +1735,63 @@ function DemandeEmbauche({ user, client, onRetour }) {
   const [errbar, setErrbar] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [fini, setFini] = useState(null);
+  // Deux parcours (23/08 soir) : "direct" = le client a tout (formulaire
+  // complet + PJ) ; "invite" = pré-embauche, le client ne saisit que le
+  // contrat — le salarié remplit son dossier via le lien d'onboarding et
+  // la demande de contrat part TOUTE SEULE à sa soumission.
+  const [mode, setMode] = useState(null);
 
   const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  const validerInvitation = () => {
+    const e = {
+      nom: f.nom.trim().length < 2,
+      prenom: f.prenom.trim().length < 2,
+      debut: !f.debut,
+      fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
+      poste: f.poste.trim().length < 2,
+      duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
+      finEssai: !!f.finEssai && !!f.debut && f.finEssai <= f.debut,
+      emailSalarie: !!f.emailSalarie.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.emailSalarie.trim()),
+    };
+    setErr(e);
+    return !Object.values(e).some(Boolean);
+  };
+
+  const envoyerInvitation = async () => {
+    if (!validerInvitation()) return;
+    setEnvoi(true); setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "onboardingEmbauche",
+          typeContrat: f.type, nom: f.nom.trim(), prenom: f.prenom.trim(),
+          dateDebut: f.debut, ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
+          poste: f.poste.trim(), dureeMensuelle: f.duree.trim().replace(",", "."),
+          ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
+          ...(f.emailSalarie.trim() ? { emailSalarie: f.emailSalarie.trim() } : {}),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErrbar(j.erreur || `Envoi refusé (HTTP ${r.status}).`); setEnvoi(false); return; }
+      setFini({ invitation: j });
+    } catch { setErrbar("API injoignable — réessayez."); setEnvoi(false); }
+  };
+
+  // Après une embauche DIRECTE : proposer quand même l'onboarding pour
+  // que le salarié complète son dossier (état civil, banque…).
+  const inviterApres = async () => {
+    setFini((x) => ({ ...x, invEnvoi: true }));
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "onboardingInviter", id: fini.idFiche }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setFini((x) => ({ ...x, invEnvoi: false, ...(r.ok ? { lien: j.lien, expireLe: j.expireLe } : { invErreur: j.erreur || `Refusé (HTTP ${r.status}).` }) }));
+    } catch { setFini((x) => ({ ...x, invEnvoi: false, invErreur: "API injoignable." })); }
+  };
 
   const valider = () => {
     const ss = f.numeroSS.replace(/\s/g, "");
@@ -1863,13 +1918,16 @@ function DemandeEmbauche({ user, client, onRetour }) {
         return;
       }
       const j = await r.json().catch(() => ({}));
-      setFini({ ref: j.reference || null });
+      setFini({ ref: j.reference || null, idFiche: j.idFiche || null });
     } catch (_) {
       setFini({ demo: true });
     }
   };
 
+  const copierLien = (lien) => { navigator.clipboard?.writeText(lien); setFini((x) => ({ ...x, copie: true })); };
+
   if (fini) {
+    const invitation = fini.invitation; // parcours « invite » : lien créé
     return (
       <>
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
@@ -1879,14 +1937,48 @@ function DemandeEmbauche({ user, client, onRetour }) {
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <Check size={24} />
           </div>
-          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Embauche déclarée</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>
+            {invitation ? "Salarié invité — contrat en attente" : "Embauche déclarée"}
+          </h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
             {f.type} pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong>, début le <strong>{f.debut.split("-").reverse().join("/")}</strong>.
           </p>
-          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
-            Votre gestionnaire prépare le contrat et la DPAE. Un accusé vous est adressé à <strong>{user?.email}</strong>.
-          </p>
-          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          {invitation ? (
+            <>
+              <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+                Envoyez ce lien au salarié : il saisit son état civil, ses coordonnées, sa banque et dépose
+                ses pièces — <strong>dès qu'il a terminé, la demande de contrat part automatiquement</strong> chez
+                votre gestionnaire (contrat + DPAE), sans autre action de votre part.
+              </p>
+              <BlocLien lien={invitation.lien} expireLe={invitation.expireLe} copie={fini.copie}
+                onCopie={() => copierLien(invitation.lien)}
+                texte={invitation.deja ? "Un lien d'invitation était déjà actif pour ce salarié" : "Lien d'invitation"} />
+              {invitation.reference && <p style={{ fontSize: 12, color: T.mut, fontFamily: "monospace", marginTop: 12 }}>Référence : {invitation.reference}</p>}
+            </>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+                Votre gestionnaire prépare le contrat et la DPAE. Un accusé vous est adressé à <strong>{user?.email}</strong>.
+              </p>
+              {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+              {fini.idFiche && !fini.lien && (
+                <div style={{ marginTop: 14 }}>
+                  <Btn onClick={inviterApres} disabled={fini.invEnvoi}>
+                    <Send size={13} /> {fini.invEnvoi ? "Génération du lien…" : "Inviter le salarié à compléter son dossier"}
+                  </Btn>
+                  {fini.invErreur && <p style={{ fontSize: 12, color: T.err, margin: "8px 0 0" }}>✗ {fini.invErreur}</p>}
+                  <p style={{ margin: "8px 0 0", fontSize: 11.5, color: T.mut }}>
+                    Facultatif — le salarié saisit lui-même état civil, coordonnées et banque via un lien sécurisé.
+                  </p>
+                </div>
+              )}
+              {fini.lien && (
+                <BlocLien lien={fini.lien} expireLe={fini.expireLe} copie={fini.copie}
+                  onCopie={() => copierLien(fini.lien)}
+                  texte="Lien d'invitation — envoyez-le au salarié" />
+              )}
+            </>
+          )}
           {fini.demo && (
             <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
               Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
@@ -1897,10 +1989,108 @@ function DemandeEmbauche({ user, client, onRetour }) {
     );
   }
 
+  /* ── Choix du parcours ─────────────────────────────────────────── */
+  if (mode === null) {
+    const CarteChoix = ({ titre, sous, detail, onClick }) => (
+      <button onClick={onClick} style={{
+        all: "unset", boxSizing: "border-box", cursor: "pointer", display: "block", width: "100%",
+        background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 18px",
+        fontFamily: T.sans, marginBottom: 12,
+      }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = T.accent)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}>
+        <span style={{ display: "block", fontSize: 15.5, fontWeight: 600, color: T.ink, marginBottom: 4 }}>{titre}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: T.accent, fontWeight: 600, marginBottom: 6 }}>{sous}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: T.mut, lineHeight: 1.5 }}>{detail}</span>
+      </button>
+    );
+    return (
+      <>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <h1 style={{ margin: "0 0 4px", fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une embauche</h1>
+        <p style={{ margin: "0 0 16px", fontSize: 12.5, color: T.mut }}>Comment souhaitez-vous procéder ?</p>
+        <CarteChoix titre="J'ai les informations du salarié" sous="Embauche directe"
+          detail="Vous saisissez le dossier et déposez les trois pièces (identité, Vitale, RIB) — le contrat et la DPAE partent immédiatement en préparation."
+          onClick={() => setMode("direct")} />
+        <CarteChoix titre="Je fais saisir le salarié" sous="Invitation + contrat automatique"
+          detail="Vous ne saisissez que le poste et le contrat. Le salarié reçoit un lien sécurisé, remplit lui-même son dossier et dépose ses pièces — dès qu'il a terminé, la demande de contrat part automatiquement chez votre gestionnaire."
+          onClick={() => setMode("invite")} />
+      </>
+    );
+  }
+
+  /* ── Parcours « invitation » : le contrat seul, le salarié fera le reste ── */
+  if (mode === "invite") {
+    return (
+      <>
+        <button onClick={() => { setMode(null); setErr({}); setErrbar(""); }} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Changer de parcours
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <Send size={20} color={T.accent} strokeWidth={1.6} />
+            <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Embauche par invitation</h1>
+          </div>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+            Renseignez le contrat — le salarié saisira lui-même son état civil, ses coordonnées, sa banque
+            et déposera ses pièces. À sa soumission, la demande de contrat part automatiquement.
+          </p>
+
+          {errbar && (
+            <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+              {errbar}
+            </div>
+          )}
+
+          <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <ChampReq label="Type de contrat">
+              <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+                <option>CDI</option><option>CDD</option>
+              </select>
+            </ChampReq>
+            <ChampReq label="Poste" erreur={err.poste && "Poste requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.poste ? T.err : T.border }} value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Nom" erreur={err.nom && "Nom requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.nom ? T.err : T.border }} value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Prénom" erreur={err.prenom && "Prénom requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.prenom ? T.err : T.border }} value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Date de début" erreur={err.debut && "Date requise"}>
+              <input type="date" style={{ ...inputStyle, borderColor: err.debut ? T.err : T.border }} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
+            </ChampReq>
+            {f.type === "CDD" ? (
+              <ChampReq label="Date de fin (CDD)" erreur={err.fin && "Fin postérieure au début requise"}>
+                <input type="date" style={{ ...inputStyle, borderColor: err.fin ? T.err : T.border }} value={f.fin} onChange={(e) => maj("fin", e.target.value)} />
+              </ChampReq>
+            ) : <div />}
+            <ChampReq label="Durée mensuelle du travail (heures)" erreur={err.duree && "Ex. 151,67"}>
+              <input type="text" inputMode="decimal" placeholder="151,67" style={{ ...inputStyle, borderColor: err.duree ? T.err : T.border }} value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
+            </ChampReq>
+            <ChampOpt label="Fin de la période d'essai (facultatif)" erreur={err.finEssai && "Postérieure au début du contrat"}>
+              <input type="date" style={{ ...inputStyle, borderColor: err.finEssai ? T.err : T.border }} value={f.finEssai} onChange={(e) => maj("finEssai", e.target.value)} />
+            </ChampOpt>
+            <ChampOpt label="E-mail du salarié (facultatif)" erreur={err.emailSalarie && "E-mail invalide"} large>
+              <input type="email" style={{ ...inputStyle, borderColor: err.emailSalarie ? T.err : T.border }} value={f.emailSalarie} onChange={(e) => maj("emailSalarie", e.target.value)} />
+            </ChampOpt>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+            <Btn onClick={() => setMode(null)}>Annuler</Btn>
+            <Btn primary disabled={envoi} onClick={envoyerInvitation}>{envoi ? "Création…" : "Créer le lien d'invitation"}</Btn>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
-        <ArrowLeft size={15} /> Retour aux tuiles
+      <button onClick={() => { setMode(null); setErr({}); setErrbar(""); }} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Changer de parcours
       </button>
 
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>

@@ -146,6 +146,12 @@ LISTES = [
         col("EmailSalarie", T()), col("Jeton", T()), col("ExpireLe", DH()),
         col("Statut", CH(["Envoyée", "Complétée"], "Envoyée")),
         col("Reference", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
+        # Pré-embauche (23/08 soir) : le client embauche SANS les infos du
+        # salarié — le contrat attend l'onboarding. Ces colonnes portent la
+        # commande de contrat ; à la soumission du salarié, la demande part
+        # automatiquement dans « Production contrat ».
+        col("TypeContrat", T()), col("DateDebut", D()), col("DateFin", D()),
+        col("Poste", T()), col("DureeMensuelle", T()), col("FinPeriodeEssai", D()),
     ]),
     ("Fins de contrat", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
