@@ -76,6 +76,9 @@ const DEMO_ECHEANCES = {
   visitesMedicales: [
     { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(40), joursRestants: 40, alerte: null },
   ],
+  habilitations: [
+    { salarie: "MARTIN Paul", type: "CACES R489 (chariots élévateurs)", numero: "489-2021-118", dateExpiration: dansNJours(55), joursRestants: 55, alerte: null },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -118,7 +121,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "embauche" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -132,10 +135,12 @@ const BLOCS_TUILES = [
 const TUILES = [
   { id: "personnel", bloc: "salaries", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
   { id: "embauche", bloc: "salaries", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
+  { id: "avenant", bloc: "salaries", titre: "Avenant au contrat", sous: "Modifier un contrat en cours", icone: FileText, cablee: true },
   { id: "fin", bloc: "salaries", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
   { id: "absences", bloc: "salaries", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
   { id: "visite", bloc: "salaries", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
   { id: "mutuelle", bloc: "salaries", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
+  { id: "habilitation", bloc: "salaries", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
@@ -881,6 +886,12 @@ export default function AppShell({ user, onLogout }) {
             {tuile.id === "mutuelle" && (
               <Demandemutuelle user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
+            {tuile.id === "avenant" && (
+              <DemandeAvenant user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "habilitation" && (
+              <DemandeHabilitation user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+            )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
             )}
@@ -1044,6 +1055,32 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.habilitations || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Habilitations à recycler
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Habilitation</span><span>Expire le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.habilitations || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.habilitations.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.numero ? `N° ${x.numero}` : undefined}>{x.type || "Habilitation"}</span>
+                      <span>{fr(x.dateExpiration)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉE</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-90</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {recentes.length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Terminés récemment</div>
@@ -1063,7 +1100,7 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7) et visites médicales (J-60/J-30, puis retard)."}
+                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales (J-60/J-30, puis retard) et habilitations (J-90/J-60/J-30, puis expiration)."}
               </div>
             </>
           );
@@ -2900,6 +2937,168 @@ function Demandemutuelle({ user, client, salaries, salarieInitial, onRetour }) {
 }
 
 /* ================================================================
+   HABILITATIONS & CACES — déclaration (obtention ou recyclage).
+   Une déclaration = une ligne dans « Habilitations » ; l'historique se
+   conserve, les alertes de recyclage (J-90/J-60/J-30, puis EXPIRÉE) ne
+   regardent que la plus récente par salarié + type.
+   ================================================================ */
+const TYPES_HABILITATION = ["CACES R489 (chariots élévateurs)", "CACES R486 (nacelles / PEMP)", "CACES R482 (engins de chantier)", "CACES R490 (grues auxiliaires)", "Habilitation électrique B0/H0", "Habilitation électrique B1/B2/BR/BC", "SST (sauveteur secouriste du travail)", "Travail en hauteur / port du harnais", "AIPR (travaux à proximité des réseaux)", "Autre"];
+
+function DemandeHabilitation({ user, client, salaries, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", type: "", typeAutre: "", numero: "", organisme: "", dateObtention: "", dateExpiration: "" };
+  const [f, setF] = useState(VIDE);
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const typeFinal = f.type === "Autre" ? f.typeAutre.trim() : f.type;
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !typeFinal || !f.dateExpiration) { setErr(true); return; }
+    if (f.dateObtention && f.dateExpiration <= f.dateObtention) { setMsg({ erreur: "La fin de validité doit être postérieure à l'obtention." }); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande?demarche=habilitation", { method: "POST", body: JSON.stringify({
+        demarche: "habilitation", salarie: f.salarie, typeHabilitation: typeFinal,
+        numero: f.numero, organisme: f.organisme,
+        ...(f.dateObtention ? { dateObtention: f.dateObtention } : {}), dateExpiration: f.dateExpiration,
+      }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Habilitation enregistrée — réf. ${j.reference}. Le recyclage sera rappelé automatiquement avant l'expiration.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Habilitation / CACES</h2>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Type d'habilitation *</label>
+          <select style={{ ...inputStyle, borderColor: err && !typeFinal ? T.err : T.border }} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+            <option value="">— Choisir —</option>
+            {TYPES_HABILITATION.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        {f.type === "Autre" && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Précisez l'habilitation *</label>
+            <input type="text" style={{ ...inputStyle, borderColor: err && !typeFinal ? T.err : T.border }} placeholder="Ex. FIMO, habilitation gaz, ADR…" value={f.typeAutre} onChange={(e) => setF({ ...f, typeAutre: e.target.value })} />
+          </div>
+        )}
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Numéro / référence</label>
+          <input type="text" style={inputStyle} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Organisme formateur</label>
+          <input type="text" style={inputStyle} placeholder="Ex. AFTRAL, APAVE…" value={f.organisme} onChange={(e) => setF({ ...f, organisme: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'obtention</label>
+          <input type="date" style={inputStyle} value={f.dateObtention} onChange={(e) => setF({ ...f, dateObtention: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Fin de validité *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateExpiration ? T.err : T.border }} value={f.dateExpiration} onChange={(e) => setF({ ...f, dateExpiration: e.target.value })} />
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Déclarez chaque obtention ET chaque recyclage : la fiche du salarié garde l'historique, et les rappels de recyclage partent automatiquement (J-90, J-60, J-30 avant la fin de validité).
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Enregistrer l'habilitation"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   AVENANT AU CONTRAT — demande de modification d'un contrat en cours ;
+   le gestionnaire produit et fait signer l'avenant (même circuit humain
+   que les fins de contrat). Liste TYPES_AVENANT = miroir du serveur.
+   ================================================================ */
+const TYPES_AVENANT = ["Changement de poste / qualification", "Durée du travail", "Rémunération", "Lieu de travail", "Passage temps partiel / temps plein", "Télétravail", "Prolongation de CDD", "Renouvellement de période d'essai", "Autre modification"];
+
+function DemandeAvenant({ user, client, salaries, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", typeAvenant: "", dateEffet: "", details: "" };
+  const [f, setF] = useState(VIDE);
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !f.typeAvenant || !f.dateEffet || f.details.trim().length < 10) { setErr(true); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande?demarche=avenant", { method: "POST", body: JSON.stringify({ demarche: "avenant", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire prépare l'avenant et revient vers vous pour la signature.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Avenant au contrat</h2>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Objet de l'avenant *</label>
+          <select style={{ ...inputStyle, borderColor: err && !f.typeAvenant ? T.err : T.border }} value={f.typeAvenant} onChange={(e) => setF({ ...f, typeAvenant: e.target.value })}>
+            <option value="">— Choisir —</option>
+            {TYPES_AVENANT.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'effet souhaitée *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateEffet ? T.err : T.border }} value={f.dateEffet} onChange={(e) => setF({ ...f, dateEffet: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Modification souhaitée *</label>
+          <textarea rows={4} style={{ ...inputStyle, resize: "vertical", borderColor: err && f.details.trim().length < 10 ? T.err : T.border }}
+            placeholder="Décrivez précisément le changement : nouveau poste, nouvel horaire hebdomadaire, nouveau salaire brut, nouvelle adresse du lieu de travail…"
+            value={f.details} onChange={(e) => setF({ ...f, details: e.target.value })} />
+          {err && f.details.trim().length < 10 && <span style={{ fontSize: 11, color: T.err }}>Décrivez la modification (10 caractères minimum).</span>}
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Votre gestionnaire vérifie la faisabilité (convention collective, délais légaux), rédige l'avenant et vous le transmet pour signature avant la date d'effet.
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Demander l'avenant"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
    SALARIÉS ÉTRANGERS — brique autonome (option « etrangers »)
    GET /api/me?vue=etrangers : états des titres calculés côté serveur
    (Valide / À renouveler / En renouvellement / EXPIRÉ sans droits) ;
@@ -3091,6 +3290,10 @@ const DEMO_PERSONNEL = {
     { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO1" },
   ],
   mutuelles: [],
+  habilitations: [
+    { cle: "MARTIN PAUL", salarie: "Martin Paul", type: "CACES R489 (chariots élévateurs)", numero: "489-2021-118", organisme: "AFTRAL", obtention: dansNJours(-1650), expiration: dansNJours(55), alerte: null, reference: "HAB-DEMO1" },
+  ],
+  avenants: [],
   fins: [],
 };
 
@@ -3312,10 +3515,14 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
     const visites = (src.visites || []).filter((x) => x.cle === sal.cle);
     const mutuelles = (src.mutuelles || []).filter((x) => x.cle === sal.cle);
     const fins = (src.fins || []).filter((x) => x.cle === sal.cle);
+    const habilitations = (src.habilitations || []).filter((x) => x.cle === sal.cle);
+    const avenants = (src.avenants || []).filter((x) => x.cle === sal.cle);
     const onglets = [
       { id: "Contrat", n: null }, { id: "Dossier", n: null },
       { id: "Absences", n: absences.length },
       { id: "Visites", n: visites.length }, { id: "Mutuelle", n: mutuelles.length },
+      { id: "Habilitations", n: habilitations.length },
+      { id: "Avenants", n: avenants.length },
       { id: "Fin", n: fins.length },
     ];
 
@@ -3406,6 +3613,48 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
           </>
         )}
 
+        {ong === "Habilitations" && (
+          <>
+            <Carte>
+              {habilitations.length === 0 && <Vide texte="Aucune habilitation déclarée pour ce salarié." />}
+              {habilitations.map((h, i) => {
+                const expiree = h.expiration && h.expiration < new Date().toISOString().slice(0, 10);
+                return (
+                  <Rangee key={i} dernier={i === habilitations.length - 1}
+                    gauche={<><strong>{h.type || "Habilitation"}</strong><span style={{ color: T.mut }}>{h.numero ? ` — n° ${h.numero}` : ""}{h.organisme ? ` · ${h.organisme}` : ""}</span></>}
+                    milieu={h.reference}
+                    droite={expiree
+                      ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Expirée le {fr(h.expiration)}</span>
+                      : <span style={{ background: "#E1F5EE", color: "#085041", fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Valide → {fr(h.expiration)}</span>} />
+                );
+              })}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("habilitation", nomComplet)}><Plus size={14} /> Déclarer une habilitation</Btn>
+            </div>
+            <p style={{ marginTop: 10, fontSize: 11.5, color: T.mut }}>
+              L'historique se conserve : un recyclage se déclare comme une nouvelle habilitation du même type — les rappels suivent automatiquement la plus récente.
+            </p>
+          </>
+        )}
+
+        {ong === "Avenants" && (
+          <>
+            <Carte>
+              {avenants.length === 0 && <Vide texte="Aucun avenant demandé pour ce salarié." />}
+              {avenants.map((a, i) => (
+                <Rangee key={i} dernier={i === avenants.length - 1}
+                  gauche={<><strong>{a.type || "Avenant"}</strong><span style={{ color: T.mut }}> — effet au {fr(a.dateEffet)}</span></>}
+                  milieu={a.reference}
+                  droite={<Badge s={a.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("avenant", nomComplet)}><Plus size={14} /> Demander un avenant</Btn>
+            </div>
+          </>
+        )}
+
         {ong === "Fin" && (
           <>
             <Carte>
@@ -3481,7 +3730,7 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
             <span>Salarié</span><span>Poste</span><span>Contrat</span><span>Entrée</span><span>Suivi</span>
           </div>
           {salaries.map((s, i) => {
-            const n = compteur("absences", s.cle) + compteur("visites", s.cle) + compteur("mutuelles", s.cle) + compteur("fins", s.cle);
+            const n = compteur("absences", s.cle) + compteur("visites", s.cle) + compteur("mutuelles", s.cle) + compteur("habilitations", s.cle) + compteur("avenants", s.cle) + compteur("fins", s.cle);
             return (
               <button key={s.cle + i} onClick={() => { setSalCle(s.cle); setOng("Contrat"); }} style={{
                 all: "unset", boxSizing: "border-box", width: "100%", display: "grid",

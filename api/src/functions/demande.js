@@ -92,7 +92,7 @@ app.http("demande", {
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
       // fin-contrat relève de l'option 'embauche' : elle couvre le cycle
       // contrat complet (entrées ET sorties).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche" };
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche", "habilitation": "embauche", "avenant": "embauche" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
@@ -352,6 +352,56 @@ app.http("demande", {
         await creerElementPersonnel("Visites médicales", email, clientInfo, d, reference, {
           DateVisite: d.dateVisite,
           Statut: "À planifier",
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
+      // Habilitations & CACES (23/08) : le client déclare une habilitation
+      // (obtention ou recyclage) — une LIGNE PAR HABILITATION, l'historique
+      // se conserve. La date d'expiration alimente les alertes de recyclage
+      // (echeances.js : J-90/J-60/J-30 puis EXPIRÉE, sur la plus récente
+      // par salarié + type).
+      if (d.demarche === "habilitation") {
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!d.typeHabilitation || String(d.typeHabilitation).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Type d'habilitation requis." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateExpiration || "")))
+          return { status: 400, jsonBody: { erreur: "Date de fin de validité requise (elle pilote les alertes de recyclage)." } };
+        if (d.dateObtention && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateObtention)))
+          return { status: 400, jsonBody: { erreur: "Date d'obtention invalide." } };
+        if (d.dateObtention && String(d.dateExpiration) <= String(d.dateObtention))
+          return { status: 400, jsonBody: { erreur: "La fin de validité doit être postérieure à l'obtention." } };
+        const reference = `HAB-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Habilitations", email, clientInfo, d, reference, {
+          TypeHabilitation: String(d.typeHabilitation).trim().slice(0, 120),
+          Numero: String(d.numero || "").trim().slice(0, 60),
+          Organisme: String(d.organisme || "").trim().slice(0, 120),
+          ...(d.dateObtention ? { DateObtention: d.dateObtention } : {}),
+          DateExpiration: d.dateExpiration,
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
+      // Avenants au contrat (23/08) : demande de modification d'un contrat
+      // en cours — le gestionnaire produit et fait signer l'avenant (même
+      // circuit humain que les fins de contrat).
+      if (d.demarche === "avenant") {
+        const TYPES_AVENANT = ["Changement de poste / qualification", "Durée du travail", "Rémunération", "Lieu de travail", "Passage temps partiel / temps plein", "Télétravail", "Prolongation de CDD", "Renouvellement de période d'essai", "Autre modification"];
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!TYPES_AVENANT.includes(d.typeAvenant))
+          return { status: 400, jsonBody: { erreur: "Type d'avenant invalide — choisissez dans la liste." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateEffet || "")))
+          return { status: 400, jsonBody: { erreur: "Date d'effet souhaitée requise." } };
+        if (!d.details || String(d.details).trim().length < 10)
+          return { status: 400, jsonBody: { erreur: "Décrivez la modification souhaitée (nouveau poste, nouvel horaire, nouveau salaire…)." } };
+        const reference = `AVE-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Avenants", email, clientInfo, d, reference, {
+          TypeAvenant: d.typeAvenant,
+          DateEffet: d.dateEffet,
+          Details: String(d.details).trim().slice(0, 4000),
+          Statut: "Nouvelle",
         });
         return { status: 202, jsonBody: { reference } };
       }
