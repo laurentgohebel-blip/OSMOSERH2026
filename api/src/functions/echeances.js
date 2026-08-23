@@ -236,7 +236,7 @@ async function modePortail(request) {
   const visitesRealisees = {};
   const visitesDemandees = {}; // tous statuts, clé « CODE|NOM PRÉNOM » — voir reprises
   // Même $select que personnel.js (cache items() par liste — cohérence).
-  for (const v of (await items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"))
+  for (const v of (await items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,TypeVisite,Statut,Reference"))
     .filter((v) => v.CodeClient === c.codeClient)) {
     if (!v.DateVisite) continue;
     const nom = `${String(v.SalarieNom || "").trim().toUpperCase()} ${String(v.SalariePrenom || "").trim().toUpperCase()}`.trim();
@@ -358,7 +358,7 @@ async function modeAlertes(context) {
   // (retard > 180 j jamais alerté : dossier gestionnaire, pas de réveil).
   const visitesRealiseesTous = {};
   const visitesDemandeesTous = {}; // tous statuts — éteint les reprises
-  const rv = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Visites médicales"]}/items?$select=id&$expand=fields($select=CodeClient,SalarieNom,SalariePrenom,DateVisite,Statut)&$top=999`,
+  const rv = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Visites médicales"]}/items?$select=id&$expand=fields($select=CodeClient,SalarieNom,SalariePrenom,DateVisite,TypeVisite,Statut)&$top=999`,
     { headers: { Authorization: `Bearer ${tok}` } });
   for (const v of (rv.ok ? (await rv.json()).value : [])) {
     const f = v.fields;

@@ -25,9 +25,18 @@ synthèse de session et les docs dédiées.
   s'arrêtent. Section en tête de la page Échéances (encadré ambre),
   ligne « Visite de reprise » dans l'échéancier gestionnaire. Arrêts
   anciens jamais alertés (> 90 j de retard) : silence.
+  **+ Nature de la visite** : les demandes de visite portent désormais
+  un type (information/prévention à l'embauche, périodique, reprise,
+  pré-reprise, à la demande) — affiché dans l'onglet Visites de la
+  fiche. L'alerte de reprise ouvre le formulaire déjà réglé sur
+  « Visite de reprise » via un bouton « Demander la visite » sur chaque
+  ligne : un clic, et la relance s'éteint.
   **Geste** : relancer creer_site_rh.py (colonne AlerteReprise sur
-  « Absences »). Limite connue : un arrêt sans date de fin (arrêt en
-  cours) ne déclenche rien — l'obligation naît du retour.
+  « Absences », TypeVisite sur « Visites médicales »). Limite connue :
+  un arrêt sans date de fin (arrêt en cours) ne déclenche rien —
+  l'obligation naît du retour. Toute visite datée du retour ou après
+  éteint l'alerte, quel que soit son type (choix assumé : ne pas
+  harceler un client qui a déjà fait le geste).
 - **Relances d'onboarding + échéancier gestionnaire** (23/08 nuit) :
   invitations dormantes relancées automatiquement via `notifications`
   (type `onboarding`) — rappel au salarié à J+3 (lien inclus, contrat

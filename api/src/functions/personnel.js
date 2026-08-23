@@ -29,7 +29,7 @@ app.http("personnel", {
         items(tok, ids["Salariés"], SELECT_SALARIES),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
-        items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),
+        items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,TypeVisite,Statut,Reference"),
         items(tok, ids["Adhésions mutuelles"], "CodeClient,Title,SalarieNom,SalariePrenom,Mutuelle,DateAdhesion,Statut,Reference"),
         items(tok, ids["Fins de contrat"], "CodeClient,Title,Nom,Prenom,TypeContrat,Motif,DateFin,Statut"),
         ids["Habilitations"] ? items(tok, ids["Habilitations"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeHabilitation,Numero,Organisme,DateObtention,DateExpiration,AlerteHabilitation,Reference") : [],
@@ -107,7 +107,8 @@ app.http("personnel", {
         })).sort((a, b) => String(b.du).localeCompare(String(a.du))),
         visites: du(visites).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
-          date: dateParis(x.DateVisite), statut: x.Statut || "À planifier", reference: x.Reference || "",
+          date: dateParis(x.DateVisite), type: x.TypeVisite || "",
+          statut: x.Statut || "À planifier", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
         mutuelles: du(mutuelles).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",

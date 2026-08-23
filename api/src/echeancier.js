@@ -45,7 +45,7 @@ async function donneesAdmin(request, context) {
   const visitesRealisees = {};
   const visitesDemandees = {}; // tous statuts — éteint les visites de reprise
   for (const v of await items(tok, ids["Visites médicales"],
-    "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference")) {
+    "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,TypeVisite,Statut,Reference")) {
     if (!v.DateVisite) continue;
     const k = `${v.CodeClient}|${String(v.SalarieNom || "").trim().toUpperCase()} ${String(v.SalariePrenom || "").trim().toUpperCase()}`.trim();
     const date = dateParis(v.DateVisite);
