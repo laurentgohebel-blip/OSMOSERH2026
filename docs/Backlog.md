@@ -37,6 +37,20 @@ synthèse de session et les docs dédiées.
   Échéances (client et démo). Les visites « Réalisées » déclarées dans
   le portail repoussent automatiquement l'échéance.
 
+## Geste Cloud Shell mémorisé (Laurent le redemande régulièrement)
+Récupérer la DERNIÈRE version du script puis le lancer — les IDs sont
+non secrets, seul GRAPH_CLIENT_SECRET est saisi à l'invite (masqué) :
+```bash
+gh api repos/laurentgohebel-blip/OSMOSERH2026/contents/src/scripts/creer_site_rh.py \
+  -H "Accept: application/vnd.github.raw" > creer_site_rh.py
+export GRAPH_TENANT_ID='5dc184d2-699a-4051-9f46-d040bc141669'
+export GRAPH_CLIENT_ID='be0f7e69-1192-4582-a3f7-984fae4ff145'
+export RH_SITE_ID='osmoserh83.sharepoint.com,ac8bcc33-521f-4d94-bb53-fac93010637b,e2c157a4-925f-4f6b-abf5-e07d69a07ab0'
+python3 creer_site_rh.py
+```
+(Si `gh` n'est plus connecté — Cloud Shell éphémère :
+`gh auth login -h github.com -p https -w` d'abord.)
+
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
 - [ ] RE-relancer `creer_site_rh.py` (Cloud Shell) : 2 nouvelles listes
       « Habilitations » et « Avenants » (lot du 23/08 après-midi).
