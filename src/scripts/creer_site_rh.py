@@ -120,6 +120,20 @@ LISTES = [
         col("Mutuelle", T()), col("DateAdhesion", D()),
         col("Statut", CH(["Demande", "Transmise", "Active"], "Demande")),
     ]),
+    # Habilitations & CACES (23/08) : une ligne = une habilitation d'un
+    # salarié (l'historique se conserve — le recyclage ajoute une ligne,
+    # les alertes ne regardent que la plus récente par salarié + type).
+    ("Habilitations", SOCLE_PERSONNEL + [
+        col("TypeHabilitation", T()), col("Numero", T()), col("Organisme", T()),
+        col("DateObtention", D()), col("DateExpiration", D()),
+        col("AlerteHabilitation", T()),  # dernier palier d'alerte e-mail
+    ]),
+    # Avenants au contrat (23/08) : demande du client → production du
+    # document par le gestionnaire (même circuit que les fins de contrat).
+    ("Avenants", SOCLE_PERSONNEL + [
+        col("TypeAvenant", T()), col("DateEffet", D()), col("Details", TL()),
+        col("Statut", CH(["Nouvelle", "En cours", "Traitée"], "Nouvelle")),
+    ]),
     ("Fins de contrat", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
         col("Matricule", T()), col("Nom", T()), col("Prenom", T()),

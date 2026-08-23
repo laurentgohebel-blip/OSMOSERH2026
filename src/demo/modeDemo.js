@@ -114,6 +114,13 @@ function etatInitial() {
         { cle: "BLANCHARD EMMA", salarie: "BLANCHARD Emma", mutuelle: "Harmonie Mutuelle", date: dansNJours(-28), statut: "Demande", reference: "MUT-DEMO02" },
         { cle: "ROUX THOMAS", salarie: "ROUX Thomas", mutuelle: "Harmonie Mutuelle", date: dansNJours(-135), statut: "Traitée", reference: "MUT-DEMO01" },
       ],
+      habilitations: [
+        { cle: "ROUX THOMAS", salarie: "ROUX Thomas", type: "CACES R489 (chariots élévateurs)", numero: "489-2022-0871", organisme: "AFTRAL", obtention: dansNJours(-1750), expiration: dansNJours(75), alerte: "J-90 " + new Date().toISOString(), reference: "HAB-DEMO02" },
+        { cle: "GARCIA LÉA", salarie: "GARCIA Léa", type: "SST (sauveteur secouriste du travail)", numero: "", organisme: "Croix-Rouge", obtention: dansNJours(-740), expiration: dansNJours(-10), alerte: "EXPIRE " + new Date().toISOString(), reference: "HAB-DEMO01" },
+      ],
+      avenants: [
+        { cle: "NGUYEN LINH", salarie: "NGUYEN Linh", type: "Durée du travail", dateEffet: dansNJours(20), statut: "En cours", reference: "AVE-DEMO01" },
+      ],
       fins: [
         { cle: "LEFEBVRE MARC", salarie: "LEFEBVRE MARC", type: "CDD", motif: "Fin de CDD (terme prévu)", date: dansNJours(-25), statut: "Traitée", reference: "FIN-DEMO01" },
       ],
@@ -136,6 +143,10 @@ function etatInitial() {
       visitesMedicales: [
         { salarie: "ROUX Thomas", poste: "Vendeur", echeance: dansNJours(35), joursRestants: 35, alerte: null },
         { salarie: "LEROY Anne", poste: "Chargée de com", echeance: dansNJours(-12), joursRestants: -12, alerte: "RETARD " + new Date().toISOString() },
+      ],
+      habilitations: [
+        { salarie: "ROUX Thomas", type: "CACES R489 (chariots élévateurs)", numero: "489-2022-0871", dateExpiration: dansNJours(75), joursRestants: 75, alerte: "J-90 " + new Date().toISOString() },
+        { salarie: "GARCIA Léa", type: "SST (sauveteur secouriste du travail)", numero: "", dateExpiration: dansNJours(-10), joursRestants: -10, alerte: "EXPIRE " + new Date().toISOString() },
       ],
     },
 
@@ -352,6 +363,36 @@ function traiterDemande(e, options) {
         cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
         mutuelle: d.mutuelle, date: d.dateAdhesion || dansNJours(0),
         statut: "Demande", reference,
+      });
+      return json(202, { reference });
+    }
+
+    case "habilitation": {
+      const reference = referenceDemo("HAB");
+      const expiration = d.dateExpiration;
+      p.habilitations.unshift({
+        cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
+        type: d.typeHabilitation || "", numero: d.numero || "", organisme: d.organisme || "",
+        obtention: d.dateObtention || null, expiration, alerte: null, reference,
+      });
+      // La plus récente par salarié + type pilote l'échéance : on remplace
+      // l'éventuelle ligne du même couple dans la page Échéances.
+      const salarie = String(d.salarie || "").trim();
+      e.echeances.habilitations = [
+        ...e.echeances.habilitations.filter((h) => !(h.salarie.toUpperCase() === salarie.toUpperCase() && h.type === d.typeHabilitation)),
+        ...(expiration ? [{ salarie, type: d.typeHabilitation || "", numero: d.numero || "",
+          dateExpiration: expiration,
+          joursRestants: Math.round((new Date(expiration) - new Date(dansNJours(0))) / 86400000),
+          alerte: null }] : []),
+      ].filter((h) => h.joursRestants <= 120).sort((a, b) => a.dateExpiration.localeCompare(b.dateExpiration));
+      return json(202, { reference });
+    }
+
+    case "avenant": {
+      const reference = referenceDemo("AVE");
+      p.avenants.unshift({
+        cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
+        type: d.typeAvenant || "", dateEffet: d.dateEffet, statut: "Nouvelle", reference,
       });
       return json(202, { reference });
     }

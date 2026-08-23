@@ -23,13 +23,17 @@ app.http("personnel", {
 
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
-      const [registre, contrats, absences, visites, mutuelles, fins] = await Promise.all([
+      // Habilitations et Avenants : listes du lot 23/08 — lecture
+      // conditionnelle tant que creer_site_rh.py n'a pas été relancé.
+      const [registre, contrats, absences, visites, mutuelles, fins, habilitations, avenants] = await Promise.all([
         items(tok, ids["Salariés"], SELECT_SALARIES),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
         items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),
         items(tok, ids["Adhésions mutuelles"], "CodeClient,Title,SalarieNom,SalariePrenom,Mutuelle,DateAdhesion,Statut,Reference"),
         items(tok, ids["Fins de contrat"], "CodeClient,Title,Nom,Prenom,TypeContrat,Motif,DateFin,Statut"),
+        ids["Habilitations"] ? items(tok, ids["Habilitations"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeHabilitation,Numero,Organisme,DateObtention,DateExpiration,AlerteHabilitation,Reference") : [],
+        ids["Avenants"] ? items(tok, ids["Avenants"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeAvenant,DateEffet,Statut,Reference") : [],
       ]);
       const du = (liste) => liste.filter((x) => x.CodeClient === c.codeClient);
 
@@ -109,6 +113,17 @@ app.http("personnel", {
           mutuelle: x.Mutuelle || "", date: dateParis(x.DateAdhesion),
           statut: x.Statut || "Demande", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
+        habilitations: du(habilitations).map((x) => ({
+          cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
+          type: x.TypeHabilitation || "", numero: x.Numero || "", organisme: x.Organisme || "",
+          obtention: dateParis(x.DateObtention), expiration: dateParis(x.DateExpiration),
+          alerte: x.AlerteHabilitation || null, reference: x.Reference || "",
+        })).sort((a, b) => String(a.expiration).localeCompare(String(b.expiration))),
+        avenants: du(avenants).map((x) => ({
+          cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
+          type: x.TypeAvenant || "", dateEffet: dateParis(x.DateEffet),
+          statut: x.Statut || "Nouvelle", reference: x.Reference || "",
+        })).sort((a, b) => String(b.dateEffet).localeCompare(String(a.dateEffet))),
         fins: du(fins).map((x) => ({
           cle: cle(x.Nom, x.Prenom), salarie: cle(x.Nom, x.Prenom),
           type: x.TypeContrat || "", motif: x.Motif || "",

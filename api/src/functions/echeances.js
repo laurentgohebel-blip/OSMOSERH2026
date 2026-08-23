@@ -40,6 +40,24 @@ const palierEssai = (jours) => (jours < 0 ? null : jours <= 7 ? "J-7" : jours <=
 // nouvel entrant sans visite : dans les 3 mois de l'embauche (VIP).
 // Relances J-60 puis J-30, puis RETARD une fois l'échéance dépassée.
 const PALIERS_VISITE = ["J-60", "J-30", "RETARD"];
+
+// Habilitations & CACES (23/08) : le recyclage ajoute une LIGNE dans la
+// liste « Habilitations » — seule la plus récente par salarié + type
+// compte (une habilitation recyclée cesse d'alerter d'elle-même).
+// Relances J-90 → J-60 → J-30 → EXPIRÉE (mêmes paliers que les titres :
+// une session de recyclage se réserve des semaines à l'avance).
+const PALIERS_HABILITATION = PALIERS_TITRE;
+/* Réduit une liste d'habilitations à la plus récente par clé
+   (CodeClient|SALARIÉ|type, expiration max) — partagée portail/alertes. */
+function dernieresHabilitations(lignes, champExpiration) {
+  const parCle = {};
+  for (const h of lignes) {
+    if (!h[champExpiration]) continue;
+    const k = `${h.CodeClient}|${String(h.SalarieNom || "").trim().toUpperCase()} ${String(h.SalariePrenom || "").trim().toUpperCase()}|${String(h.TypeHabilitation || "").trim().toUpperCase()}`;
+    if (!parCle[k] || String(parCle[k][champExpiration]) < String(h[champExpiration])) parCle[k] = h;
+  }
+  return Object.values(parCle);
+}
 const palierVisite = (jours) => (jours < 0 ? "RETARD" : jours <= 30 ? "J-30" : jours <= 60 ? "J-60" : null);
 const PERIODICITE_DEFAUT_MOIS = 60;
 const ajouterMois = (aaaammjj, mois) => {
@@ -167,7 +185,24 @@ async function modePortail(request) {
     .filter((v) => v && v.joursRestants <= 120)
     .sort((a, b) => a.echeance.localeCompare(b.echeance));
 
-  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales } };
+  // Habilitations & CACES : la plus récente par salarié + type — à
+  // recycler (≤ 120 j) et expirées récentes. Même $select que
+  // personnel.js (cache items() par liste — cohérence).
+  const habilitations = !ids["Habilitations"] ? [] :
+    dernieresHabilitations(
+      (await items(tok, ids["Habilitations"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeHabilitation,Numero,Organisme,DateObtention,DateExpiration,AlerteHabilitation,Reference"))
+        .filter((h) => h.CodeClient === c.codeClient), "DateExpiration")
+      .map((h) => ({
+        salarie: `${String(h.SalarieNom || "").toUpperCase()} ${h.SalariePrenom || ""}`.trim() || h.Title || "",
+        type: h.TypeHabilitation || "", numero: h.Numero || "",
+        dateExpiration: dateParis(h.DateExpiration),
+        joursRestants: joursDepuis(dateParis(h.DateExpiration)),
+        alerte: h.AlerteHabilitation || null,
+      }))
+      .filter((h) => h.joursRestants <= 120 && h.joursRestants >= -TITRE_EXPIRE_RECENT)
+      .sort((a, b) => a.dateExpiration.localeCompare(b.dateExpiration));
+
+  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales, habilitations } };
 }
 
 /* ── Mode alertes : appelé par le flux hebdomadaire ──────────────────── */
@@ -255,7 +290,28 @@ async function modeAlertes(context) {
     return { x, palier, jours, echeance };
   }).filter(Boolean);
 
-  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0)
+  // Habilitations & CACES : paliers J-90/J-60/J-30/EXPIRÉE sur la plus
+  // récente par salarié + type (le recyclage déclaré éteint l'ancienne
+  // ligne). Expirée > 180 j jamais alertée : silence (stock historique).
+  let habilitationsAAlerter = [];
+  if (ids["Habilitations"]) {
+    const rh = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Habilitations"]}/items?$select=id&$expand=fields($select=CodeClient,Title,SalarieNom,SalariePrenom,TypeHabilitation,Numero,DateExpiration,AlerteHabilitation)&$top=999`,
+      { headers: { Authorization: `Bearer ${tok}` } });
+    const lignes = rh.ok ? (await rh.json()).value : [];
+    habilitationsAAlerter = dernieresHabilitations(
+      lignes.map((x) => ({ ...x.fields, _id: x.id })), "DateExpiration"
+    ).map((f) => {
+      const jours = Math.round((new Date(f.DateExpiration) - maintenant) / 86400000);
+      const palier = palierCourant(jours);
+      if (!palier) return null;
+      const fait = palierDejaFait(f.AlerteHabilitation);
+      if (fait && PALIERS_HABILITATION.indexOf(palier) <= PALIERS_HABILITATION.indexOf(fait)) return null;
+      if (palier === "EXPIRE" && !fait && jours < -180) return null;
+      return { f, palier, jours };
+    }).filter(Boolean);
+  }
+
+  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0)
     return { status: 200, jsonBody: { alertes: [], notifications: [] } };
 
   const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,EmailGestionnaire,Actif");
@@ -384,11 +440,37 @@ async function modeAlertes(context) {
     }).catch(() => {});
   }
 
+  // Habilitations & CACES — un salarié sans habilitation valide ne peut
+  // plus être affecté aux tâches concernées (conduite, électricité…).
+  const alertesHabilitations = [];
+  for (const { f, palier, jours } of habilitationsAAlerter) {
+    const salarie = `${String(f.SalarieNom || "").toUpperCase()} ${f.SalariePrenom || ""}`.trim() || f.Title || "—";
+    const dateExp = new Date(f.DateExpiration).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });
+    const { dest, client } = destinatairesDe(f.CodeClient);
+    const raisonSociale = client?.RaisonSociale || f.CodeClient || "—";
+    const habilitation = `${f.TypeHabilitation || "habilitation"}${f.Numero ? ` n° ${f.Numero}` : ""}`;
+    const relais = "Une fois le recyclage passé, déclarez la nouvelle habilitation dans votre espace Osmose RH (fiche du salarié → Habilitations) — les relances s'arrêteront.";
+    const objet = palier === "EXPIRE"
+      ? `Habilitation EXPIRÉE : ${salarie} — ${f.TypeHabilitation || "habilitation"}`
+      : `Habilitation de ${salarie} à recycler — ${f.TypeHabilitation || "habilitation"} expire le ${dateExp}`;
+    const corps = palier === "EXPIRE"
+      ? `L'habilitation de ${salarie} (${habilitation}) a expiré le ${dateExp} et aucun recyclage n'a été déclaré.\n\nSans habilitation en cours de validité, le salarié ne doit plus être affecté aux tâches concernées (conduite d'engins, travaux électriques…) — la responsabilité de l'employeur est engagée en cas d'accident. ${relais}`
+      : `L'habilitation de ${salarie} (${habilitation}) expire le ${dateExp}, dans ${jours} jours.\n\nPlanifiez la session de recyclage dès maintenant — les organismes demandent souvent plusieurs semaines de délai. ${relais}`;
+    for (const email of dest)
+      alertesHabilitations.push({ email, salarie, raisonSociale, palier, type: "habilitation", objet, corps });
+
+    await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Habilitations"]}/items/${f._id}/fields`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ AlerteHabilitation: `${palier} ${new Date().toISOString()}` }),
+    }).catch(() => {});
+  }
+
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
-  // titres de séjour, périodes d'essai et visites médicales.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites];
-  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s) — ${notifications.length} notification(s).`);
+  // titres de séjour, périodes d'essai, visites médicales et habilitations.
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesHabilitations];
+  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${habilitationsAAlerter.length} habilitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }
 
