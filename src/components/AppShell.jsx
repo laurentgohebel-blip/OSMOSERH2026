@@ -143,16 +143,18 @@ const TUILES = [
   { id: "absences", bloc: "salaries", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
   { id: "visite", bloc: "salaries", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
   { id: "mutuelle", bloc: "salaries", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
-  // Brique Sécurité (23/08) : regroupe les habilitations/CACES ; la tuile
-  // « habilitation » (formulaire de déclaration) reste routable via
-  // onDemarche mais n'apparaît plus dans la grille (bloc "cache").
-  { id: "securite", bloc: "salaries", titre: "Sécurité", sous: "Habilitations, CACES, recyclages", icone: ShieldCheck, cablee: true },
+  // Brique Sécurité (23/08) : développée (VueSecurite, registre des
+  // habilitations) mais VOLONTAIREMENT gardée en « Bientôt disponible »
+  // (décision Laurent 23/08) — pour l'ouvrir : bloc "salaries".
+  // Les habilitations restent accessibles depuis la fiche du salarié
+  // (onglet Habilitations) ; la tuile-formulaire est hors grille (cache).
   { id: "habilitation", bloc: "cache", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
+  { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "Habilitations, DUERP, registres", icone: ShieldCheck, cablee: true },
 ];
 
 /* ================================================================

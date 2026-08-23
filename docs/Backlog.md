@@ -14,14 +14,15 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
-- **Brique Sécurité** (23/08 nuit) : la tuile « Sécurité » (ex-« bientôt
-  disponible ») devient une vraie brique et absorbe les habilitations —
-  registre de l'effectif (la plus récente par salarié + type fait foi),
-  compteurs (suivies / à recycler sous 90 j / expirées), badges d'état,
-  bouton « Déclarer une habilitation ». La tuile Habilitations disparaît
-  de la grille (formulaire toujours accessible depuis Sécurité et la
-  fiche du salarié). DUERP, registres et affichages annoncés « bientôt »
-  dans la brique. Aucun geste SharePoint (front seulement).
+- **Brique Sécurité — développée mais EN RETRAIT** (23/08 nuit,
+  décision Laurent) : la brique est codée (registre des habilitations de
+  l'effectif, compteurs, badges, déclaration en un clic, encart DUERP/
+  registres) mais la tuile reste affichée « Bientôt disponible »
+  (grisée). Pour l'OUVRIR le jour venu : dans AppShell.jsx, passer la
+  tuile `securite` du bloc "bientot" au bloc "salaries" — une ligne.
+  En attendant, les habilitations se déclarent depuis la fiche du
+  salarié (onglet Habilitations) et restent suivies partout (échéances,
+  alertes e-mail).
 - **Pré-embauche : embauche par invitation + contrat automatique**
   (23/08 nuit) : la tuile Embauche propose DEUX parcours — « J'ai les
   informations du salarié » (parcours complet existant) ou « Je fais
