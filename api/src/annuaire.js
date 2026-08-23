@@ -73,7 +73,7 @@ async function tokenGraph() {
    échéances, étrangers) partagent CE select pour ne jamais s'appauvrir
    mutuellement pendant les 60 s de cache. Toute nouvelle colonne
    s'ajoute ICI (et dans creer_site_rh.py). */
-const SELECT_SALARIES = "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour,TitreSejourPj,RecepisseNumero,RecepisseFin,RecepissePj,DroitTravail,AutorisationTravail";
+const SELECT_SALARIES = "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour,TitreSejourPj,RecepisseNumero,RecepisseFin,RecepissePj,DroitTravail,AutorisationTravail,FinPeriodeEssai,AlertePeriodeEssai,PeriodiciteVisiteMois,DerniereVisiteMedicale,AlerteVisiteMedicale";
 
 let listeIds; // { "Utilisateurs portail": id, "Paramètres clients": id }
 async function idsListes(tok) {

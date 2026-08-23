@@ -130,6 +130,13 @@ function etatInitial() {
       titres: [
         { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), finDroits: dansNJours(48), etat: "a-renouveler", joursRestants: 48, alerte: "J-90 " + new Date().toISOString() },
       ],
+      essais: [
+        { salarie: "BLANCHARD Emma", poste: "Vendeuse (renfort été)", dateFin: dansNJours(9), joursRestants: 9, alerte: "J-15 " + new Date().toISOString() },
+      ],
+      visitesMedicales: [
+        { salarie: "ROUX Thomas", poste: "Vendeur", echeance: dansNJours(35), joursRestants: 35, alerte: null },
+        { salarie: "LEROY Anne", poste: "Chargée de com", echeance: dansNJours(-12), joursRestants: -12, alerte: "RETARD " + new Date().toISOString() },
+      ],
     },
 
     /* Brique « Salariés étrangers » : trois états pour la démonstration

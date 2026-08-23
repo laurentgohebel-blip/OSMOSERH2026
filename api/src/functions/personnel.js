@@ -70,6 +70,9 @@ app.http("personnel", {
           titreSejourType: x.TitreSejourType || "",
           titreSejourNumero: x.TitreSejourNumero || "",
           titreSejourExpiration: dateParis(x.TitreSejourExpiration) || "",
+          finPeriodeEssai: dateParis(x.FinPeriodeEssai) || "",
+          periodiciteVisiteMois: x.PeriodiciteVisiteMois ? String(x.PeriodiciteVisiteMois) : "",
+          derniereVisiteMedicale: dateParis(x.DerniereVisiteMedicale) || "",
         },
       }));
       const clesRegistre = new Set(duRegistre.map((x) => x.cle));
