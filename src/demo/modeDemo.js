@@ -107,8 +107,8 @@ function etatInitial() {
         { cle: "GARCIA LÉA", salarie: "GARCIA Léa", du: dansNJours(-20), au: dansNJours(-13), motif: "Congés payés", justificatifUrl: "", statut: "Traitée", reference: "ABS-DEMO01" },
       ],
       visites: [
-        { cle: "FONTAINE HUGO", salarie: "FONTAINE Hugo", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO02" },
-        { cle: "BERTRAND SOPHIE", salarie: "BERTRAND Sophie", date: dansNJours(-90), statut: "Réalisée", reference: "VIS-DEMO01" },
+        { cle: "FONTAINE HUGO", salarie: "FONTAINE Hugo", date: dansNJours(9), type: "Visite d'information et de prévention (embauche)", statut: "À planifier", reference: "VIS-DEMO02" },
+        { cle: "BERTRAND SOPHIE", salarie: "BERTRAND Sophie", date: dansNJours(-90), type: "Visite périodique", statut: "Réalisée", reference: "VIS-DEMO01" },
       ],
       mutuelles: [
         { cle: "BLANCHARD EMMA", salarie: "BLANCHARD Emma", mutuelle: "Harmonie Mutuelle", date: dansNJours(-28), statut: "Demande", reference: "MUT-DEMO02" },
@@ -386,8 +386,12 @@ function traiterDemande(e, options) {
       const reference = referenceDemo("VIS");
       p.visites.unshift({
         cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
-        date: d.dateVisite, statut: "À planifier", reference,
+        date: d.dateVisite, type: d.typeVisite || "Visite périodique", statut: "À planifier", reference,
       });
+      // Comme en réel : une visite demandée depuis le retour éteint
+      // l'obligation de reprise du salarié concerné.
+      const cible = String(d.salarie || "").trim().toUpperCase();
+      e.echeances.reprises = (e.echeances.reprises || []).filter((r) => r.salarie.toUpperCase() !== cible);
       return json(202, { reference });
     }
 

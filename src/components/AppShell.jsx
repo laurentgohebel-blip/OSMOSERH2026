@@ -278,6 +278,9 @@ export default function AppShell({ user, onLogout }) {
   // Salarié pré-rempli quand une démarche est lancée depuis sa fiche
   // (Gestion du personnel) — vidé à toute ouverture depuis la grille.
   const [salariePrerempli, setSalariePrerempli] = useState("");
+  // Nature de visite pré-remplie : l'alerte de reprise (page Échéances)
+  // ouvre le formulaire déjà réglé sur « Visite de reprise ».
+  const [visitePrereglee, setVisitePrereglee] = useState("");
   const [dossierActif, setDossierActif] = useState("Contrats");
   const [db, setDb] = useState(null);
   const [toast, setToast] = useState(null);
@@ -899,7 +902,8 @@ export default function AppShell({ user, onLogout }) {
               <DemandeAbsence user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "visite" && (
-              <DemandeVisite user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <DemandeVisite user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli}
+                typeInitial={visitePrereglee} onRetour={() => { setVisitePrereglee(""); setTuile(null); }} />
             )}
             {tuile.id === "mutuelle" && (
               <Demandemutuelle user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
@@ -1003,7 +1007,7 @@ export default function AppShell({ user, onLogout }) {
                     Visites de reprise à organiser — obligation sous 8 jours
                   </div>
                   <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
-                    <span>Salarié</span><span>Motif de l'arrêt</span><span>Retour le</span><span>Limite</span><span>Alerte e-mail</span>
+                    <span>Salarié</span><span>Motif de l'arrêt</span><span>Retour le</span><span>Limite</span><span>Action</span>
                   </div>
                   {(src.reprises || []).map((x, i) => (
                     <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.reprises.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
@@ -1013,10 +1017,13 @@ export default function AppShell({ user, onLogout }) {
                       {x.joursRestants < 0
                         ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
                         : BadgeJours(x.joursRestants)}
-                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
-                        {x.alerte
-                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
-                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Au retour</>}
+                      <span style={{ justifySelf: "start" }} title={x.alerte ? "Alerte e-mail envoyée" : "Alerte e-mail programmée au retour"}>
+                        <Btn small onClick={() => {
+                          if (!finInclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.");
+                          setSalariePrerempli(x.salarie);
+                          setVisitePrereglee("Visite de reprise");
+                          setVue("prod"); setTuile(TUILES.find((t) => t.id === "visite"));
+                        }}>Demander la visite</Btn>
                       </span>
                     </div>
                   ))}
@@ -3095,8 +3102,13 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
 /* ================================================================
    VISITE MÉDICALE
    ================================================================ */
-function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
-  const VIDE = { salarie: salarieInitial || "", dateVisite: "" };
+/* Nature de la visite — miroir strict de TYPES_VISITE côté serveur
+   (demande.js). La reprise après arrêt est une obligation distincte du
+   suivi périodique : c'est elle que l'alerte de reprise pré-remplit. */
+const TYPES_VISITE = ["Visite d'information et de prévention (embauche)", "Visite périodique", "Visite de reprise", "Visite de pré-reprise", "Visite à la demande"];
+
+function DemandeVisite({ user, client, salaries, salarieInitial, typeInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", dateVisite: "", typeVisite: typeInitial || "Visite périodique" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -3107,6 +3119,7 @@ function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
     setEnvoi(true); setMsg(null);
     try {
       const r = await apiFetch("/api/demande?demarche=visite-medicale", { method: "POST", body: JSON.stringify({ demarche: "visite-medicale", ...f }) });
+      // (le type part avec f — voir TYPES_VISITE, validé côté serveur)
       const j = await r.json().catch(() => ({}));
       if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire organise la visite et vous confirme le rendez-vous.` }); setF(VIDE); setErr(false); }
       else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
@@ -3130,12 +3143,20 @@ function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
           <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Nature de la visite *</label>
+          <select style={inputStyle} value={f.typeVisite} onChange={(e) => setF({ ...f, typeVisite: e.target.value })}>
+            {TYPES_VISITE.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date souhaitée *</label>
           <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateVisite ? T.err : T.border }} value={f.dateVisite} onChange={(e) => setF({ ...f, dateVisite: e.target.value })} />
         </div>
       </div>
       <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
-        Embauche, reprise après arrêt, visite périodique… votre gestionnaire prend contact avec le service de santé au travail.
+        {f.typeVisite === "Visite de reprise"
+          ? "Obligatoire dans les 8 jours du retour (art. R.4624-31) : indiquez une date au plus près de la reprise — votre gestionnaire saisit le service de santé au travail en priorité."
+          : "Votre gestionnaire prend contact avec le service de santé au travail et vous confirme le rendez-vous."}
       </p>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -3666,7 +3687,7 @@ const DEMO_PERSONNEL = {
     { cle: "MARTIN PAUL", salarie: "Martin Paul", du: dansNJours(-6), au: dansNJours(-4), motif: "Maladie", justificatifUrl: "", statut: "Nouvelle", reference: "ABS-DEMO1" },
   ],
   visites: [
-    { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO1" },
+    { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), type: "Visite périodique", statut: "À planifier", reference: "VIS-DEMO1" },
   ],
   mutuelles: [],
   habilitations: [
@@ -4005,7 +4026,7 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
               {visites.length === 0 && <Vide texte="Aucune visite médicale enregistrée pour ce salarié." />}
               {visites.map((v, i) => (
                 <Rangee key={i} dernier={i === visites.length - 1}
-                  gauche={<><strong>Visite médicale</strong><span style={{ color: T.mut }}> — {fr(v.date)}</span></>}
+                  gauche={<><strong>{v.type || "Visite médicale"}</strong><span style={{ color: T.mut }}> — {fr(v.date)}</span></>}
                   milieu={v.reference}
                   droite={<Badge s={v.statut} />} />
               ))}

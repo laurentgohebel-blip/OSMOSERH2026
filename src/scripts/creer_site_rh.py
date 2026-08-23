@@ -121,6 +121,9 @@ LISTES = [
     ("Visites médicales", SOCLE_PERSONNEL + [
         col("DateVisite", D()),
         col("Statut", CH(["À planifier", "Planifiée", "Réalisée"], "À planifier")),
+        # Nature de la visite (23/08) : la reprise après arrêt est une
+        # obligation distincte du suivi périodique (art. R.4624-31).
+        col("TypeVisite", T()),
     ]),
     ("Adhésions mutuelles", SOCLE_PERSONNEL + [
         col("Mutuelle", T()), col("DateAdhesion", D()),

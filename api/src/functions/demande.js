@@ -373,13 +373,20 @@ app.http("demande", {
       }
 
       if (d.demarche === "visite-medicale") {
+        // Nature de la visite : miroir strict de TYPES_VISITE (front).
+        // La reprise après arrêt est une obligation distincte du suivi
+        // périodique — c'est elle qui éteint l'alerte correspondante.
+        const TYPES_VISITE = ["Visite d'information et de prévention (embauche)", "Visite périodique", "Visite de reprise", "Visite de pré-reprise", "Visite à la demande"];
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateVisite || "")))
           return { status: 400, jsonBody: { erreur: "Date souhaitée requise." } };
+        if (d.typeVisite && !TYPES_VISITE.includes(d.typeVisite))
+          return { status: 400, jsonBody: { erreur: "Type de visite invalide — choisissez dans la liste." } };
         const reference = `VIS-${Date.now().toString(36).toUpperCase()}`;
         await creerElementPersonnel("Visites médicales", email, clientInfo, d, reference, {
           DateVisite: d.dateVisite,
+          TypeVisite: d.typeVisite || "Visite périodique",
           Statut: "À planifier",
         });
         return { status: 202, jsonBody: { reference } };
