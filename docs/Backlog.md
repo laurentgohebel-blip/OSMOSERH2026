@@ -14,11 +14,21 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Périodes d'essai + visites médicales** (23/08) : fin de période
+  d'essai saisie à l'embauche (champ facultatif) ou dans l'onglet
+  Dossier ; alertes e-mail J-15 puis J-7 avant le terme (décision à
+  prendre avant, délai de prévenance rappelé à J-7) ; suivi des visites
+  médicales périodiques (périodicité par fiche, 60 mois par défaut,
+  48 en suivi renforcé, nouvel entrant = 3 mois après l'embauche) avec
+  alertes J-60, J-30 puis RETARD ; deux sections dédiées sur la page
+  Échéances (client et démo). Les visites « Réalisées » déclarées dans
+  le portail repoussent automatiquement l'échéance.
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
-- [ ] Relancer `creer_site_rh.py` (Cloud Shell) : colonnes DPAE +
-      messagerie + identification URSSAF des clients. UN passage
-      couvre tout.
+- [ ] Relancer `creer_site_rh.py` (Cloud Shell) : 5 nouvelles colonnes
+      essai/visites sur « Salariés » (FinPeriodeEssai, AlertePeriodeEssai,
+      PeriodiciteVisiteMois, DerniereVisiteMedicale, AlerteVisiteMedicale).
+      UN passage couvre tout (le script complète, ne casse rien).
 - [ ] Variables SWA `DPAE_*` (mode test d'abord) — docs/DPAE-API.md §2.
 - [ ] Compléter l'identification URSSAF des fiches clients (code
       URSSAF, APE, ville, CP, santé travail).
@@ -45,10 +55,13 @@ synthèse de session et les docs dédiées.
    J-90→J-60→J-30→EXPIRÉ suspendues par récépissé, vue gestionnaire
    tous clients (dossier inspection, droit au travail qualifié,
    autorisations, taxe OFII), section titres sur la page Échéances.
-   **Gestes Laurent** : relancer creer_site_rh.py (6 colonnes) ;
+   **Gestes Laurent** : relancer creer_site_rh.py ;
    cocher l'option « Salariés étrangers » sur les clients concernés ;
-   flux « Alertes échéances » : 2e boucle « Pour chaque » sur
-   `alertesTitres` (À = `email`, Objet = `objet`, Corps = `corps`).
+   flux « Alertes échéances » : UNE SEULE 2e boucle « Pour chaque »
+   sur `notifications` (À = `email`, Objet = `objet`, Corps = `corps`)
+   — ce tableau unifié couvre titres de séjour, périodes d'essai et
+   visites médicales (l'ancienne consigne `alertesTitres` est
+   remplacée ; ce champ n'existe plus dans la réponse).
 2. _(jamais transmis — « On y reviendra »)_
 
 ## Idées gardées, volontairement NON développées

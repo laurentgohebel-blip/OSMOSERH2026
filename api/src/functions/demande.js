@@ -187,6 +187,8 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Code pays invalide (2 lettres)." } };
         if (d.emailSalarie && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
           return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
+        if (d.finPeriodeEssai && (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.finPeriodeEssai)) || String(d.finPeriodeEssai) <= String(d.dateDebut)))
+          return { status: 400, jsonBody: { erreur: "Fin de période d'essai invalide (postérieure au début du contrat)." } };
         // Salarié étranger (hors UE/EEE/Suisse) : titre de séjour EXIGÉ —
         // type, numéro, date d'expiration et pièce jointe dédiée. Son
         // authentification préfectorale est ensuite suivie par le
@@ -481,6 +483,8 @@ async function creerFicheSalarie(clientInfo, d) {
     ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || ""))
       ? { TitreSejourExpiration: d.titreSejourExpiration } : {}),
     ...si("TitreSejourPj", String(d.pjTitreSejour || "").trim().slice(0, 255)),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.finPeriodeEssai || ""))
+      ? { FinPeriodeEssai: d.finPeriodeEssai } : {}),
   };
 
   const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
@@ -593,6 +597,11 @@ async function majSalarie(clientInfo, d, context) {
     TitreSejourType: txt(f.titreSejourType, 60),
     TitreSejourNumero: txt(f.titreSejourNumero, 40).toUpperCase(),
     TitreSejourExpiration: dateOuVide(f.titreSejourExpiration) || null,
+    // Suivi du contrat (facultatif) : période d'essai + visite médicale
+    FinPeriodeEssai: dateOuVide(f.finPeriodeEssai) || null,
+    PeriodiciteVisiteMois: /^\d{1,3}$/.test(String(f.periodiciteVisiteMois || "").trim())
+      ? Number(f.periodiciteVisiteMois) : null,
+    DerniereVisiteMedicale: dateOuVide(f.derniereVisiteMedicale) || null,
   };
 
   const r = await fetch(`${base}/fields`, {

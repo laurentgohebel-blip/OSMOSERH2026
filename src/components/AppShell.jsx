@@ -70,6 +70,12 @@ const DEMO_ECHEANCES = {
   titres: [
     { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), joursRestants: 48, alerte: new Date().toISOString() },
   ],
+  essais: [
+    { salarie: "MARTIN Paul", poste: "Assistant RH", dateFin: dansNJours(11), joursRestants: 11, alerte: new Date().toISOString() },
+  ],
+  visitesMedicales: [
+    { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(40), joursRestants: 40, alerte: null },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -988,6 +994,56 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.essais || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Périodes d'essai — décision avant le terme
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Terme le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.essais || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.essais.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.dateFin)}</span>
+                      {BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-15</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(src.visitesMedicales || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Visites médicales à programmer
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Échéance le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.visitesMedicales || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.visitesMedicales.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.echeance)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-60</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {recentes.length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Terminés récemment</div>
@@ -1007,7 +1063,7 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "En complément, un rappel automatique par e-mail est envoyé 30 jours avant chaque fin de CDD et 90 jours avant l'expiration d'un titre de séjour."}
+                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7) et visites médicales (J-60/J-30, puis retard)."}
               </div>
             </>
           );
@@ -1591,7 +1647,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
   const [f, setF] = useState({
     type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
     nationalite: "", numeroSS: "", adresse: "", emailSalarie: "",
-    telephone: "", debut: "", fin: "", poste: "", duree: "",
+    telephone: "", debut: "", fin: "", poste: "", duree: "", finEssai: "",
     // Volet administratif (dossier du salarié — alimenté dans « Salariés »).
     // FACULTATIF depuis le modèle « PJ obligatoires » : Osmose transcrit
     // depuis les pièces jointes, le client peut pré-remplir s'il veut.
@@ -1630,6 +1686,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
       fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
       poste: f.poste.trim().length < 2,
       duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
+      finEssai: !!f.finEssai && !!f.debut && f.finEssai <= f.debut,
       // Volet administratif FACULTATIF : contrôles de format uniquement
       // si le champ est renseigné.
       codeDeptNaissance: !!f.codeDeptNaissance.trim() && !/^(\d{2,3}|2[AB]|9[78]\d)$/i.test(f.codeDeptNaissance.trim()),
@@ -1706,6 +1763,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
       ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
       poste: f.poste.trim(),
       dureeMensuelle: f.duree.trim().replace(",", "."),
+      ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
       // Volet administratif → fiche « Salariés » (dossier complet)
       sexe: f.sexe,
       nomMarital: f.nomMarital.trim(),
@@ -1855,6 +1913,10 @@ function DemandeEmbauche({ user, client, onRetour }) {
           <ChampReq label="Durée du travail (heures/mois)" erreur={err.duree && "Nombre d'heures invalide (ex. 151,67)."}>
             <input inputMode="decimal" style={err.duree ? inputInvalid : inputStyle} placeholder="Ex. 151,67" value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
           </ChampReq>
+
+          <ChampOpt label="Fin de la période d'essai (facultatif)" erreur={err.finEssai && "Date postérieure au début requise."}>
+            <input type="date" style={err.finEssai ? inputInvalid : inputStyle} value={f.finEssai} onChange={(e) => maj("finEssai", e.target.value)} />
+          </ChampOpt>
 
           {/* ── Pièces jointes OBLIGATOIRES (modèle B) : Osmose transcrit ── */}
           <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
@@ -3043,6 +3105,7 @@ const FICHE_VIDE = {
   adressePostale: "", email: "", telephone: "", iban: "", bic: "",
   matricule: "", bulletinDematerialise: false,
   nationalite: "", titreSejourType: "", titreSejourNumero: "", titreSejourExpiration: "",
+  finPeriodeEssai: "", periodiciteVisiteMois: "", derniereVisiteMedicale: "",
 };
 // Champs OBLIGATOIRES du dossier (décision du 22/08) — tout sauf le nom
 // marital (n'existe pas pour tous) et le matricule (attribué par la paie).
@@ -3070,6 +3133,14 @@ const SECTIONS_DOSSIER = [
   // Salariés étrangers uniquement — champs FACULTATIFS (hors de la règle
   // « dossier complet ») : le titre vient de l'embauche, Osmose le tient
   // à jour au renouvellement.
+  // Suivi du contrat — FACULTATIF (hors règle « dossier complet ») :
+  // alimente les échéances (fin d'essai J-15/J-7, visite médicale
+  // périodique — 60 mois par défaut, 48 en suivi renforcé).
+  ["Suivi du contrat", [
+    ["finPeriodeEssai", "Fin de la période d'essai", "date"],
+    ["periodiciteVisiteMois", "Périodicité visite médicale (mois)", "choix", ["", "12", "24", "48", "60"]],
+    ["derniereVisiteMedicale", "Dernière visite médicale", "date"],
+  ]],
   ["Nationalité & titre de séjour", [
     ["nationalite", "Nationalité", "texte"],
     ["titreSejourType", "Type de titre de séjour", "choix",

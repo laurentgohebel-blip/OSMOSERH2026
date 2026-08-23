@@ -101,6 +101,11 @@ LISTES = [
         col("TitreSejourPj", T()), col("RecepisseNumero", T()),
         col("RecepisseFin", D()), col("RecepissePj", T()),
         col("DroitTravail", T()), col("AutorisationTravail", T()),
+        # Suivi du contrat (23/08) : période d'essai + visites médicales
+        # périodiques (périodicité en mois, 60 par défaut ; alertes = palier)
+        col("FinPeriodeEssai", D()), col("AlertePeriodeEssai", T()),
+        col("PeriodiciteVisiteMois", N()), col("DerniereVisiteMedicale", D()),
+        col("AlerteVisiteMedicale", T()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
