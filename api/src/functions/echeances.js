@@ -41,6 +41,18 @@ const palierEssai = (jours) => (jours < 0 ? null : jours <= 7 ? "J-7" : jours <=
 // Relances J-60 puis J-30, puis RETARD une fois l'échéance dépassée.
 const PALIERS_VISITE = ["J-60", "J-30", "RETARD"];
 
+// Entretiens professionnels (23/08) : obligatoires tous les 2 ans
+// (art. L.6315-1 — état des lieux à 6 ans, sanction abondement CPF).
+// Échéance = dernier entretien + 24 mois, sinon date d'entrée + 24 mois.
+// Mêmes paliers que les visites : J-60, J-30, puis RETARD.
+const ENTRETIEN_MOIS = 24;
+const echeanceEntretien = (f) => {
+  const dernier = dateParis(f.DernierEntretienPro);
+  if (dernier) return ajouterMois(dernier, ENTRETIEN_MOIS);
+  const entree = dateParis(f.DateEntree);
+  return entree ? ajouterMois(entree, ENTRETIEN_MOIS) : null;
+};
+
 // Habilitations & CACES (23/08) : le recyclage ajoute une LIGNE dans la
 // liste « Habilitations » — seule la plus récente par salarié + type
 // compte (une habilitation recyclée cesse d'alerter d'elle-même).
@@ -185,6 +197,16 @@ async function modePortail(request) {
     .filter((v) => v && v.joursRestants <= 120)
     .sort((a, b) => a.echeance.localeCompare(b.echeance));
 
+  // Entretiens professionnels : échéance ≤ 120 j ou en retard.
+  const entretiens = fiches
+    .map((s) => {
+      const echeance = echeanceEntretien(s);
+      return echeance ? { salarie: nomDe(s), poste: s.Poste || "", echeance,
+        joursRestants: joursDepuis(echeance), alerte: s.AlerteEntretienPro || null } : null;
+    })
+    .filter((e) => e && e.joursRestants <= 120)
+    .sort((a, b) => a.echeance.localeCompare(b.echeance));
+
   // Habilitations & CACES : la plus récente par salarié + type — à
   // recycler (≤ 120 j) et expirées récentes. Même $select que
   // personnel.js (cache items() par liste — cohérence).
@@ -202,7 +224,7 @@ async function modePortail(request) {
       .filter((h) => h.joursRestants <= 120 && h.joursRestants >= -TITRE_EXPIRE_RECENT)
       .sort((a, b) => a.dateExpiration.localeCompare(b.dateExpiration));
 
-  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales, habilitations } };
+  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales, entretiens, habilitations } };
 }
 
 /* ── Mode alertes : appelé par le flux hebdomadaire ──────────────────── */
@@ -233,7 +255,7 @@ async function modeAlertes(context) {
   // expirés depuis plus de 180 j jamais alertés sont laissés au dossier
   // gestionnaire (éviter de réveiller l'historique).
   const { etatTitre } = require("../etrangers");
-  const rs = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items?$select=id&$expand=fields($select=CodeClient,Nom,Prenom,Statut,DateEntree,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,RecepisseFin,AlerteTitreSejour,FinPeriodeEssai,AlertePeriodeEssai,PeriodiciteVisiteMois,DerniereVisiteMedicale,AlerteVisiteMedicale)&$top=999`,
+  const rs = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items?$select=id&$expand=fields($select=CodeClient,Nom,Prenom,Statut,DateEntree,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,RecepisseFin,AlerteTitreSejour,FinPeriodeEssai,AlertePeriodeEssai,PeriodiciteVisiteMois,DerniereVisiteMedicale,AlerteVisiteMedicale,DernierEntretienPro,AlerteEntretienPro)&$top=999`,
     { headers: { Authorization: `Bearer ${tok}` } });
   const salaries = rs.ok ? (await rs.json()).value : [];
   const aujourdhuiParis = dateParis(maintenant);
@@ -290,6 +312,22 @@ async function modeAlertes(context) {
     return { x, palier, jours, echeance };
   }).filter(Boolean);
 
+  // Entretiens professionnels : paliers J-60/J-30/RETARD sur l'échéance
+  // des 2 ans (retard > 180 j jamais alerté : stock historique, silence).
+  const entretiensAAlerter = salaries.map((x) => {
+    const f = x.fields;
+    if (f.Statut === "Sorti") return null;
+    const echeance = echeanceEntretien(f);
+    if (!echeance) return null;
+    const jours = Math.round((new Date(echeance) - maintenant) / 86400000);
+    const palier = palierVisite(jours);
+    if (!palier) return null;
+    const fait = /^(J-60|J-30|RETARD)/.exec(String(f.AlerteEntretienPro || ""))?.[1] || null;
+    if (fait && PALIERS_VISITE.indexOf(palier) <= PALIERS_VISITE.indexOf(fait)) return null;
+    if (palier === "RETARD" && !fait && jours < -180) return null;
+    return { x, palier, jours, echeance };
+  }).filter(Boolean);
+
   // Habilitations & CACES : paliers J-90/J-60/J-30/EXPIRÉE sur la plus
   // récente par salarié + type (le recyclage déclaré éteint l'ancienne
   // ligne). Expirée > 180 j jamais alertée : silence (stock historique).
@@ -311,7 +349,7 @@ async function modeAlertes(context) {
     }).filter(Boolean);
   }
 
-  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0)
+  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0)
     return { status: 200, jsonBody: { alertes: [], notifications: [] } };
 
   const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,EmailGestionnaire,Actif");
@@ -440,6 +478,30 @@ async function modeAlertes(context) {
     }).catch(() => {});
   }
 
+  // Entretiens professionnels — rendez-vous de parcours (L.6315-1).
+  const alertesEntretiens = [];
+  for (const { x, palier, jours, echeance } of entretiensAAlerter) {
+    const f = x.fields;
+    const salarie = `${(f.Nom || "").toUpperCase()} ${f.Prenom || ""}`.trim();
+    const dateEch = echeance.split("-").reverse().join("/");
+    const { dest, client } = destinatairesDe(f.CodeClient);
+    const raisonSociale = client?.RaisonSociale || f.CodeClient || "—";
+    const objet = palier === "RETARD"
+      ? `Entretien professionnel EN RETARD : ${salarie} (${raisonSociale})`
+      : `Entretien professionnel de ${salarie} à planifier — échéance le ${dateEch}`;
+    const corps = palier === "RETARD"
+      ? `L'entretien professionnel de ${salarie} est en retard (échéance des 2 ans dépassée le ${dateEch}).\n\nCet entretien est obligatoire tous les 2 ans (art. L.6315-1 du code du travail) ; à 6 ans, l'état des lieux récapitulatif est exigé et son absence peut coûter un abondement de 3 000 € au CPF du salarié. Planifiez-le sans attendre, puis reportez sa date dans la fiche du salarié (onglet Dossier).\n\nBesoin d'une trame d'entretien ? Contactez votre gestionnaire Osmose RH.`
+      : `L'entretien professionnel de ${salarie} arrive à échéance le ${dateEch} (dans ${jours} jours) — il est obligatoire tous les 2 ans (art. L.6315-1).\n\nPlanifiez-le (perspectives d'évolution, formation, VAE…), puis reportez sa date dans la fiche du salarié (onglet Dossier) : le prochain rappel se calera automatiquement 2 ans plus tard.\n\nBesoin d'une trame d'entretien ? Contactez votre gestionnaire Osmose RH.`;
+    for (const email of dest)
+      alertesEntretiens.push({ email, salarie, raisonSociale, palier, type: "entretien-pro", objet, corps });
+
+    await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items/${x.id}/fields`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ AlerteEntretienPro: `${palier} ${new Date().toISOString()}` }),
+    }).catch(() => {});
+  }
+
   // Habilitations & CACES — un salarié sans habilitation valide ne peut
   // plus être affecté aux tâches concernées (conduite, électricité…).
   const alertesHabilitations = [];
@@ -469,8 +531,8 @@ async function modeAlertes(context) {
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
   // titres de séjour, périodes d'essai, visites médicales et habilitations.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesHabilitations];
-  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${habilitationsAAlerter.length} habilitation(s) — ${notifications.length} notification(s).`);
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesEntretiens, ...alertesHabilitations];
+  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }
 

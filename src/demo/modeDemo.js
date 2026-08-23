@@ -148,6 +148,10 @@ function etatInitial() {
         { salarie: "ROUX Thomas", type: "CACES R489 (chariots élévateurs)", numero: "489-2022-0871", dateExpiration: dansNJours(75), joursRestants: 75, alerte: "J-90 " + new Date().toISOString() },
         { salarie: "GARCIA Léa", type: "SST (sauveteur secouriste du travail)", numero: "", dateExpiration: dansNJours(-10), joursRestants: -10, alerte: "EXPIRE " + new Date().toISOString() },
       ],
+      entretiens: [
+        { salarie: "BERTRAND Sophie", poste: "Responsable boutique", echeance: dansNJours(50), joursRestants: 50, alerte: null },
+        { salarie: "MOREAU Julien", poste: "Magasinier", echeance: dansNJours(-30), joursRestants: -30, alerte: "RETARD " + new Date().toISOString() },
+      ],
     },
 
     /* Brique « Salariés étrangers » : trois états pour la démonstration
@@ -294,6 +298,16 @@ function traiterDemande(e, options) {
     const s = (p.salaries || []).find((x) => x.cle === d.cle);
     if (s) s.fiche = { ...(s.fiche || {}), ...(d.fiche || {}) };
     return json(200, { ok: true });
+  }
+
+  // Onboarding : lien d'invitation factice (le formulaire public n'est
+  // pas simulé — la démo montre le geste côté employeur).
+  if (d.action === "onboardingInviter") {
+    return json(201, {
+      lien: `${window.location.origin}/?onboarding=demo000000000000000000000000000000000000000000000`,
+      expireLe: new Date(Date.now() + 14 * 86400000).toISOString(),
+      reference: referenceDemo("INV"), deja: false,
+    });
   }
 
   // Brique « Salariés étrangers » : récépissé ou nouveau titre — l'état

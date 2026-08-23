@@ -14,6 +14,20 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Onboarding salarié self-service + entretiens professionnels** (23/08
+  soir) : depuis la fiche d'un salarié au dossier incomplet, bouton
+  « Inviter le salarié à compléter son dossier » → lien à jeton
+  (14 jours, usage unique, idempotent) que le client envoie par le canal
+  de son choix ; le salarié ouvre un formulaire PUBLIC (sans compte,
+  ?onboarding=jeton) : état civil, coordonnées, banque, dépôt des pièces
+  (préfixées Onboarding_NOM dans les Dépôts du client) — la fiche se
+  complète toute seule, l'invitation passe « Complétée ». Entretiens
+  professionnels : échéance = dernier entretien + 24 mois (sinon entrée
+  + 24 mois), champ dans l'onglet Dossier, section Échéances, alertes
+  J-60/J-30/RETARD (type `entretien-pro` dans `notifications` — la
+  boucle du flux les couvre déjà).
+  **Geste** : relancer creer_site_rh.py (liste « Invitations salariés »
+  + 2 colonnes entretien sur « Salariés »).
 - **Habilitations & CACES + Avenants au contrat** (23/08) :
   habilitations déclarées par le client (tuile dédiée ou fiche du
   salarié → Habilitations : type, numéro, organisme, obtention, fin de
@@ -52,6 +66,10 @@ python3 creer_site_rh.py
 `gh auth login -h github.com -p https -w` d'abord.)
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
+- [ ] RE-relancer `creer_site_rh.py` (lot du 23/08 soir) : liste
+      « Invitations salariés » + colonnes DernierEntretienPro /
+      AlerteEntretienPro sur « Salariés ». Sans ce passage, le bouton
+      d'invitation échouera et les alertes entretien resteront muettes.
 - [x] RE-relancer `creer_site_rh.py` — FAIT le 23/08 après-midi :
       listes « Habilitations » et « Avenants » créées.
 - [x] Relancer `creer_site_rh.py` — FAIT le 23/08 matin (Cloud Shell) :

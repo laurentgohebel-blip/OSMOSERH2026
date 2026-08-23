@@ -77,6 +77,7 @@ app.http("personnel", {
           finPeriodeEssai: dateParis(x.FinPeriodeEssai) || "",
           periodiciteVisiteMois: x.PeriodiciteVisiteMois ? String(x.PeriodiciteVisiteMois) : "",
           derniereVisiteMedicale: dateParis(x.DerniereVisiteMedicale) || "",
+          dernierEntretienPro: dateParis(x.DernierEntretienPro) || "",
         },
       }));
       const clesRegistre = new Set(duRegistre.map((x) => x.cle));
