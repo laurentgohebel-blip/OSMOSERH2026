@@ -66,10 +66,12 @@ python3 creer_site_rh.py
 `gh auth login -h github.com -p https -w` d'abord.)
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
-- [ ] RE-relancer `creer_site_rh.py` (lot du 23/08 soir) : liste
-      « Invitations salariés » + colonnes DernierEntretienPro /
-      AlerteEntretienPro sur « Salariés ». Sans ce passage, le bouton
-      d'invitation échouera et les alertes entretien resteront muettes.
+- [x] RE-relancer `creer_site_rh.py` — FAIT le 23/08 soir : liste
+      « Invitations salariés » + colonnes entretien pro créées.
+      ⚠ Au passage, le GRAPH_CLIENT_SECRET a été exposé dans le
+      terminal → ROTATION faite le soir même (nouveau secret créé).
+      À VÉRIFIER : ancien secret supprimé dans Entra ID + variable
+      GRAPH_CLIENT_SECRET de la SWA mise à jour avec le nouveau.
 - [x] RE-relancer `creer_site_rh.py` — FAIT le 23/08 après-midi :
       listes « Habilitations » et « Avenants » créées.
 - [x] Relancer `creer_site_rh.py` — FAIT le 23/08 matin (Cloud Shell) :
