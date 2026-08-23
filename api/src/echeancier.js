@@ -7,7 +7,7 @@
 // de calcul sont IMPORTÉES d'echeances.js (source unique).
 
 const { tokenGraph, idsListes, items, dateParis, SELECT_SALARIES } = require("./annuaire");
-const { echeanceVisite, echeanceEntretien, dernieresHabilitations } = require("./functions/echeances");
+const { echeanceVisite, echeanceEntretien, dernieresHabilitations, reprisesRequises } = require("./functions/echeances");
 const { etatTitre } = require("./etrangers");
 
 const FENETRE_JOURS = 120;
@@ -43,12 +43,22 @@ async function donneesAdmin(request, context) {
   // Fiches salariés : essais, visites, entretiens, titres
   const fiches = (await items(tok, ids["Salariés"], SELECT_SALARIES)).filter((s) => s.Statut !== "Sorti");
   const visitesRealisees = {};
+  const visitesDemandees = {}; // tous statuts — éteint les visites de reprise
   for (const v of await items(tok, ids["Visites médicales"],
     "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference")) {
-    if (v.Statut !== "Réalisée" || !v.DateVisite) continue;
+    if (!v.DateVisite) continue;
     const k = `${v.CodeClient}|${String(v.SalarieNom || "").trim().toUpperCase()} ${String(v.SalariePrenom || "").trim().toUpperCase()}`.trim();
     const date = dateParis(v.DateVisite);
+    if (!visitesDemandees[k] || visitesDemandees[k] < date) visitesDemandees[k] = date;
+    if (v.Statut !== "Réalisée") continue;
     if (!visitesRealisees[k] || visitesRealisees[k] < date) visitesRealisees[k] = date;
+  }
+
+  // Visites de reprise exigibles (absences déclarées, R.4624-31)
+  for (const r of reprisesRequises(await items(tok, ids["Absences"],
+    "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference,AlerteReprise"), visitesDemandees)) {
+    ajouter(r.a.CodeClient, r.salarie, "Visite de reprise",
+      `${r.motif} — retour le ${r.fin.split("-").reverse().join("/")}`, r.echeance);
   }
   for (const s of fiches) {
     const nom = `${String(s.Nom || "").toUpperCase()} ${s.Prenom || ""}`.trim();

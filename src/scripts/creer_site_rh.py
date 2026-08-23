@@ -114,6 +114,9 @@ LISTES = [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
         col("JustificatifUrl", T()),
         col("Statut", CH(["Nouvelle", "Vue", "Traitée"], "Nouvelle")),
+        # Visite de reprise (23/08, R.4624-31) : dernier palier d'alerte
+        # (REPRISE / RETARD) — l'arrêt déclaré déclenche l'obligation.
+        col("AlerteReprise", T()),
     ]),
     ("Visites médicales", SOCLE_PERSONNEL + [
         col("DateVisite", D()),

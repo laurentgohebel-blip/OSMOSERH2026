@@ -82,6 +82,9 @@ const DEMO_ECHEANCES = {
   entretiens: [
     { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(45), joursRestants: 45, alerte: null },
   ],
+  reprises: [
+    { salarie: "BERNARD Luc", motif: "Maladie (arrêt de travail)", dureeJours: 71, retourLe: dansNJours(3), echeance: dansNJours(11), joursRestants: 11, alerte: null },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -994,6 +997,37 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.reprises || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `2px solid #F0C9A8`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}`, background: "#FDF3E4" }}>
+                    Visites de reprise à organiser — obligation sous 8 jours
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Motif de l'arrêt</span><span>Retour le</span><span>Limite</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.reprises || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.reprises.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`Arrêt de ${x.dureeJours} jours`}>{x.motif}</span>
+                      <span>{fr(x.retourLe)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Au retour</>}
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ padding: "9px 16px", fontSize: 11.5, color: T.mut, borderTop: `1px solid ${T.border}`, background: "#FCFBF8" }}>
+                    Obligatoire après un congé maternité, une maladie professionnelle, 30 jours d'arrêt pour
+                    accident du travail ou 60 jours de maladie (art. R.4624-31) — demandez la visite depuis
+                    la fiche du salarié, l'alerte s'arrête aussitôt.
+                  </div>
+                </div>
+              )}
+
               {(src.titres || []).length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
@@ -1141,7 +1175,7 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales et entretiens professionnels (J-60/J-30, puis retard) et habilitations (J-90/J-60/J-30, puis expiration)."}
+                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales et entretiens professionnels (J-60/J-30, puis retard), habilitations (J-90/J-60/J-30, puis expiration) et visites de reprise (au retour du salarié)."}
               </div>
             </>
           );

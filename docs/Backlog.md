@@ -14,6 +14,20 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Visite de reprise après arrêt** (23/08 nuit, art. R.4624-31) : les
+  absences DÉJÀ déclarées dans le portail déclenchent l'obligation —
+  congé maternité et maladie professionnelle (toute durée), accident du
+  travail ou de trajet ≥ 30 j, maladie ou accident non professionnel
+  ≥ 60 j. Échéance = retour + 8 jours ; alerte REPRISE une semaine
+  avant le retour (le flux est hebdomadaire), puis RETARD. L'obligation
+  s'éteint dès qu'une visite datée du retour ou après existe — y compris
+  une simple demande « À planifier » : le client clique, les relances
+  s'arrêtent. Section en tête de la page Échéances (encadré ambre),
+  ligne « Visite de reprise » dans l'échéancier gestionnaire. Arrêts
+  anciens jamais alertés (> 90 j de retard) : silence.
+  **Geste** : relancer creer_site_rh.py (colonne AlerteReprise sur
+  « Absences »). Limite connue : un arrêt sans date de fin (arrêt en
+  cours) ne déclenche rien — l'obligation naît du retour.
 - **Relances d'onboarding + échéancier gestionnaire** (23/08 nuit) :
   invitations dormantes relancées automatiquement via `notifications`
   (type `onboarding`) — rappel au salarié à J+3 (lien inclus, contrat
