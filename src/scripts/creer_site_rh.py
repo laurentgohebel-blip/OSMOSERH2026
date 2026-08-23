@@ -152,6 +152,7 @@ LISTES = [
         # automatiquement dans « Production contrat ».
         col("TypeContrat", T()), col("DateDebut", D()), col("DateFin", D()),
         col("Poste", T()), col("DureeMensuelle", T()), col("FinPeriodeEssai", D()),
+        col("AlerteInvitation", T()),  # dernier palier de relance (J3/J-2/EXPIREE)
     ]),
     ("Fins de contrat", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),

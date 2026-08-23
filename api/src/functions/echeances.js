@@ -349,7 +349,30 @@ async function modeAlertes(context) {
     }).filter(Boolean);
   }
 
-  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0)
+  // Invitations d'onboarding dormantes (23/08 soir) : rappel à J+3
+  // (11 j restants sur 14), dernier rappel à 2 j de l'expiration, puis
+  // notification au client à l'expiration (lien mort, à régénérer).
+  // Expirée > 30 j jamais alertée : silence (stock historique).
+  const PALIERS_INVITATION = ["J3", "J-2", "EXPIREE"];
+  const palierInvitation = (jours) => (jours < 0 ? "EXPIREE" : jours <= 2 ? "J-2" : jours <= 11 ? "J3" : null);
+  let invitationsAAlerter = [];
+  if (ids["Invitations salariés"]) {
+    const ri = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Invitations salariés"]}/items?$select=id&$expand=fields($select=CodeClient,Nom,Prenom,EmailSalarie,EmailDemandeur,Jeton,ExpireLe,Statut,TypeContrat,AlerteInvitation)&$top=999`,
+      { headers: { Authorization: `Bearer ${tok}` } });
+    invitationsAAlerter = (ri.ok ? (await ri.json()).value : []).map((x) => {
+      const f = x.fields;
+      if (f.Statut !== "Envoyée" || !f.ExpireLe) return null;
+      const jours = Math.round((new Date(f.ExpireLe) - maintenant) / 86400000);
+      const palier = palierInvitation(jours);
+      if (!palier) return null;
+      const fait = /^(J3|J-2|EXPIREE)/.exec(String(f.AlerteInvitation || ""))?.[1] || null;
+      if (fait && PALIERS_INVITATION.indexOf(palier) <= PALIERS_INVITATION.indexOf(fait)) return null;
+      if (palier === "EXPIREE" && !fait && jours < -30) return null;
+      return { x, palier, jours };
+    }).filter(Boolean);
+  }
+
+  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0 && invitationsAAlerter.length === 0)
     return { status: 200, jsonBody: { alertes: [], notifications: [] } };
 
   const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,EmailGestionnaire,Actif");
@@ -528,11 +551,52 @@ async function modeAlertes(context) {
     }).catch(() => {});
   }
 
+  // Relances d'onboarding — le salarié d'abord (s'il a un e-mail), le
+  // client en copie au dernier rappel et seul destinataire à l'expiration.
+  const alertesInvitations = [];
+  const lienDe = (jeton) => `${(process.env.PORTAIL_URL || "https://espace.osmoserh.fr").replace(/\/$/, "")}/?onboarding=${jeton}`;
+  for (const { x, palier, jours } of invitationsAAlerter) {
+    const f = x.fields;
+    const salarie = `${(f.Nom || "").toUpperCase()} ${f.Prenom || ""}`.trim();
+    const dateExp = new Date(f.ExpireLe).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" });
+    const raisonSociale = (destinatairesDe(f.CodeClient).client)?.RaisonSociale || f.CodeClient || "—";
+    const contrat = f.TypeContrat ? ` — votre ${f.TypeContrat} attend ce dossier pour être préparé` : "";
+    const dest = [];
+    if (palier === "EXPIREE") {
+      dest.push({ email: f.EmailDemandeur || process.env.ALERTE_DEFAUT,
+        objet: `Invitation expirée sans réponse : ${salarie}`,
+        corps: `Le lien d'invitation envoyé à ${salarie} a expiré le ${dateExp} sans que le dossier soit transmis.\n\nRegénérez un nouveau lien depuis votre espace Osmose RH (fiche du salarié → « Inviter le salarié à compléter son dossier »${f.TypeContrat ? ", ou relancez l'embauche par invitation" : ""}) et renvoyez-le au salarié.` });
+    } else {
+      const cible = f.EmailSalarie || f.EmailDemandeur || process.env.ALERTE_DEFAUT;
+      const objet = palier === "J-2"
+        ? `Dernier rappel — votre dossier salarié expire le ${dateExp}`
+        : `N'oubliez pas votre dossier salarié (${raisonSociale})`;
+      const corps = `Bonjour ${f.Prenom || ""},\n\n${raisonSociale} attend votre dossier salarié${contrat}. Comptez 5 minutes, munissez-vous de votre carte Vitale et d'un RIB :\n\n${lienDe(f.Jeton)}\n\nCe lien est valable jusqu'au ${dateExp}.`;
+      dest.push({ email: cible, objet, corps });
+      if (palier === "J-2" && f.EmailSalarie && f.EmailDemandeur)
+        dest.push({ email: f.EmailDemandeur,
+          objet: `Le dossier de ${salarie} n'est toujours pas transmis (expire le ${dateExp})`,
+          corps: `Le lien d'invitation envoyé à ${salarie} expire le ${dateExp} et le dossier n'a pas été transmis.\n\nUn dernier rappel vient d'être adressé au salarié — vous pouvez aussi le relancer directement ou lui renvoyer le lien :\n${lienDe(f.Jeton)}` });
+    }
+    for (const d of dest)
+      if (d.email) alertesInvitations.push({ email: d.email, salarie, raisonSociale, palier, type: "onboarding", objet: d.objet, corps: d.corps });
+
+    await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Invitations salariés"]}/items/${x.id}/fields`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ AlerteInvitation: `${palier} ${new Date().toISOString()}` }),
+    }).catch(() => {});
+  }
+
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
   // titres de séjour, périodes d'essai, visites médicales et habilitations.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesEntretiens, ...alertesHabilitations];
-  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s) — ${notifications.length} notification(s).`);
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations];
+  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s), ${invitationsAAlerter.length} invitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }
+
+// Calculateurs partagés avec la vue gestionnaire « toutes échéances »
+// (../echeancier.js) — source unique des règles d'échéance.
+module.exports = { ajouterMois, echeanceVisite, echeanceEntretien, dernieresHabilitations };
 

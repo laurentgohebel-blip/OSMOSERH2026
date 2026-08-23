@@ -43,6 +43,17 @@ app.http("me", {
               return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
             }
           }
+          // &onglet=echeances : vue « toutes échéances, tous clients » —
+          // le plan de charge du gestionnaire, trié par urgence.
+          if (request.query.get("onglet") === "echeances") {
+            try {
+              return await require("../echeancier").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/echeances :", e);
+              return { status: 500, jsonBody: { erreur: `Module echeancier inchargeable : ${e.message}` } };
+            }
+          }
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {
@@ -94,7 +105,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-23-option-securite";
+const VERSION_API = "2026-08-23-relances-echeancier";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",

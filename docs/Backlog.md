@@ -14,6 +14,18 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Relances d'onboarding + échéancier gestionnaire** (23/08 nuit) :
+  invitations dormantes relancées automatiquement via `notifications`
+  (type `onboarding`) — rappel au salarié à J+3 (lien inclus, contrat
+  mentionné s'il attend), dernier rappel à 2 j de l'expiration (copie
+  client), notification au client à l'expiration (lien mort, à
+  regénérer) ; anti-doublon AlerteInvitation, expirée > 30 j = silence.
+  Écran gestionnaire : nouvel onglet « Échéances » = TOUTES les
+  échéances de TOUS les clients (CDD, essais, visites, entretiens,
+  titres, habilitations) triées par urgence, fenêtre 120 j + retards
+  60 j, compteurs et filtres par type (module echeancier.js, règles
+  importées d'echeances.js — source unique).
+  **Geste** : relancer creer_site_rh.py (colonne AlerteInvitation).
 - **Option « securite » câblée — future option payante** (23/08 nuit) :
   les habilitations appartiennent à la brique Sécurité. Option de
   contrat `securite` créée (écran gestionnaire). TRANSITION : tant que
