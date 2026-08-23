@@ -52,11 +52,8 @@ python3 creer_site_rh.py
 `gh auth login -h github.com -p https -w` d'abord.)
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
-- [ ] RE-relancer `creer_site_rh.py` (Cloud Shell) : 2 nouvelles listes
-      « Habilitations » et « Avenants » (lot du 23/08 après-midi).
-      Le portail fonctionne sans elles (sections vides) mais les
-      démarches Habilitations/Avenant échoueront tant qu'elles n'existent
-      pas. UN passage couvre tout.
+- [x] RE-relancer `creer_site_rh.py` — FAIT le 23/08 après-midi :
+      listes « Habilitations » et « Avenants » créées.
 - [x] Relancer `creer_site_rh.py` — FAIT le 23/08 matin (Cloud Shell) :
       les 5 colonnes essai/visites ajoutées sur « Salariés ».
 - [ ] Variables SWA `DPAE_*` (mode test d'abord) — docs/DPAE-API.md §2.
