@@ -976,6 +976,97 @@ const BADGE_ETAT_ETR = (s) => {
   }
 };
 
+/* ================================================================
+   ÉCHÉANCES — vue « toutes échéances, tous clients » : le plan de
+   charge du gestionnaire, trié par urgence. Données agrégées côté
+   serveur (GET /api/me?vue=admin&onglet=echeances, module echeancier).
+   ================================================================ */
+const COULEUR_TYPE = {
+  "Fin de CDD": { bg: "#E6F1FB", fg: "#0C447C" },
+  "Période d'essai": { bg: "#EEEDFE", fg: "#3C3489" },
+  "Visite médicale": { bg: "#E1F5EE", fg: "#085041" },
+  "Entretien professionnel": { bg: "#FDF3E4", fg: "#7A5416" },
+  "Titre de séjour": { bg: "#FAEEDA", fg: "#854F0B" },
+  "Habilitation": { bg: "#F1EFE8", fg: "#444441" },
+};
+
+function SectionEcheancier() {
+  const [data, setData] = useState(null);
+  const [filtre, setFiltre] = useState("");
+
+  useEffect(() => {
+    apiFetch("/api/me?vue=admin&onglet=echeances")
+      .then(async (r) => {
+        if (r.ok) return setData(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setData({ erreur: e.erreur || `Échéances indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setData({ erreur: "Échéances momentanément indisponibles — réessayez." }));
+  }, []);
+
+  if (data === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Calcul des échéances de tous les clients…</p>;
+  if (data.erreur) return <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>{data.erreur}</p>;
+
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  const lignes = (data.echeances || []).filter((l) => !filtre || l.type === filtre);
+  const types = [...new Set((data.echeances || []).map((l) => l.type))];
+  const BadgeJ = (j) => {
+    const c = j < 0 ? { bg: "#FCEBEB", fg: "#791F1F" } : j <= 7 ? { bg: "#FCEBEB", fg: "#791F1F" } : j <= 30 ? { bg: "#FAEEDA", fg: "#854F0B" } : { bg: "#E6F1FB", fg: "#0C447C" };
+    return <span style={{ background: c.bg, color: c.fg, fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>
+      {j < 0 ? `RETARD ${-j} j` : j === 0 ? "Aujourd'hui" : `${j} j`}</span>;
+  };
+
+  return (
+    <>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: T.mut }}>
+        Toutes les échéances de tous les clients à 120 jours (retards de moins de 60 jours inclus) —
+        votre plan de charge, trié par urgence.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {[["En retard", data.compteurs?.retard, "#791F1F"], ["Sous 30 jours", data.compteurs?.sous30, "#854F0B"], ["Total à 120 jours", data.compteurs?.total, T.ink]].map(([lib, val, coul]) => (
+          <div key={lib} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
+            <div style={{ fontSize: 11, color: T.mut }}>{lib}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: coul }}>{val ?? 0}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={() => setFiltre("")} style={{ all: "unset", cursor: "pointer", fontSize: 11.5, padding: "4px 10px", borderRadius: 99, border: `1px solid ${filtre === "" ? T.accent : T.border}`, background: filtre === "" ? "#E6F1FB" : T.card, color: filtre === "" ? "#0C447C" : T.mut }}>Tout</button>
+        {types.map((t) => (
+          <button key={t} onClick={() => setFiltre(filtre === t ? "" : t)} style={{ all: "unset", cursor: "pointer", fontSize: 11.5, padding: "4px 10px", borderRadius: 99, border: `1px solid ${filtre === t ? T.accent : T.border}`, background: filtre === t ? "#E6F1FB" : T.card, color: filtre === t ? "#0C447C" : T.mut }}>
+            {t} ({(data.echeances || []).filter((l) => l.type === t).length})
+          </button>
+        ))}
+      </div>
+      {lignes.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "30px 22px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucune échéance dans la fenêtre. ✨
+        </div>
+      ) : (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1.4fr 1.3fr 90px 90px", gap: 8, padding: "9px 14px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Client</span><span>Salarié</span><span>Échéance</span><span>Date</span><span>Reste</span>
+          </div>
+          {lignes.map((l, i) => {
+            const c = COULEUR_TYPE[l.type] || { bg: "#F1EFE8", fg: "#444441" };
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.4fr 1.3fr 90px 90px", gap: 8, padding: "10px 14px", fontSize: 12.5, borderBottom: i < lignes.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.raisonSociale}</span>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.salarie}</span>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.detail || undefined}>
+                  <span style={{ background: c.bg, color: c.fg, fontSize: 10.5, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>{l.type}</span>
+                </span>
+                <span>{fr(l.echeance)}</span>
+                {BadgeJ(l.joursRestants)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
 function SectionEtrangers({ notifier }) {
   const [donnees, setDonnees] = useState(null); // null=fermé | "chargement" | {salaries…} | {erreur}
   const [envoi, setEnvoi] = useState(null);
@@ -1161,6 +1252,7 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         {[
           ["acces", `Demandes d'accès${donnees?.demandes?.length ? ` (${donnees.demandes.length})` : ""}`],
           ["messages", `Messages clients${aRepondre ? ` (${aRepondre})` : ""}`],
+          ["echeances", "Échéances"],
         ].map(([id, lib]) => (
           <button key={id} onClick={() => setOnglet(id)} style={{
             all: "unset", cursor: "pointer", padding: "12px 14px", fontSize: 13.5,
@@ -1175,6 +1267,8 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         {onglet === "messages" && (
           <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} filInitial={msgInitial} />
         )}
+
+        {onglet === "echeances" && <SectionEcheancier />}
 
         {onglet === "acces" && (<>
         {donnees === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des demandes…</p>}
