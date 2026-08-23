@@ -51,6 +51,16 @@ synthèse de session et les docs dédiées.
    `alertesTitres` (À = `email`, Objet = `objet`, Corps = `corps`).
 2. _(jamais transmis — « On y reviendra »)_
 
+## Idées gardées, volontairement NON développées
+- **Registre unique du personnel généré par le portail** (23/08) :
+  idée conservée mais mise de côté — le logiciel de paie (Cegid) tient
+  déjà le registre. Arguments pour y revenir un jour : autonomie du
+  client en cas de contrôle inattendu, mentions titres de séjour tenues
+  à jour par la brique étrangers, argument commercial. À réévaluer si
+  un client ou l'inspection le réclame. (Un prototype front avait été
+  écrit puis retiré — l'essentiel est trivial à refaire : les données
+  sont déjà toutes dans /api/personnel.)
+
 ## Idées / suites déjà actées
 - OCR v2 : pré-remplissage du dossier depuis les PJ (Azure Document
   Intelligence) — après le lancement.
