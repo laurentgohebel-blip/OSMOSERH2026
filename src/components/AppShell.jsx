@@ -124,7 +124,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "embauche", securite: "embauche" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -143,13 +143,16 @@ const TUILES = [
   { id: "absences", bloc: "salaries", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
   { id: "visite", bloc: "salaries", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
   { id: "mutuelle", bloc: "salaries", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
-  { id: "habilitation", bloc: "salaries", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
+  // Brique Sécurité (23/08) : regroupe les habilitations/CACES ; la tuile
+  // « habilitation » (formulaire de déclaration) reste routable via
+  // onDemarche mais n'apparaît plus dans la grille (bloc "cache").
+  { id: "securite", bloc: "salaries", titre: "Sécurité", sous: "Habilitations, CACES, recyclages", icone: ShieldCheck, cablee: true },
+  { id: "habilitation", bloc: "cache", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
-  { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "DUERP, registres, affichages", icone: ShieldCheck },
 ];
 
 /* ================================================================
@@ -855,6 +858,13 @@ export default function AppShell({ user, onLogout }) {
             onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
         )}
 
+        {/* La brique Sécurité aussi : registre des habilitations en pleine
+            largeur (grille par salarié + échéances de recyclage). */}
+        {vue === "prod" && tuile && tuile.id === "securite" && (
+          <VueSecurite onRetour={() => setTuile(null)}
+            onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
+        )}
+
         {/* La messagerie gestionnaire aussi : liste des fils + conversation,
             un peu plus large qu'un formulaire (lecture confortable). */}
         {vue === "prod" && tuile && tuile.id === "contact" && (
@@ -866,7 +876,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -3312,6 +3322,120 @@ function DemandeAvenant({ user, client, salaries, salarieInitial, onRetour }) {
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
         <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Demander l'avenant"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   SÉCURITÉ — registre des habilitations & CACES de l'effectif.
+   Données : /api/personnel (habilitations + salariés, déjà filtrées
+   par client côté serveur). La déclaration passe par la tuile cachée
+   « habilitation » (onDemarche) ; les recyclages sont rappelés par
+   e-mail (J-90/J-60/J-30 puis EXPIRÉE) et listés page Échéances.
+   ================================================================ */
+function VueSecurite({ onRetour, onDemarche }) {
+  const [dossier, setDossier] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/api/personnel")
+      .then(async (r) => {
+        if (r.ok) return setDossier(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setDossier(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Données indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setDossier(import.meta.env.DEV ? { demo: true } : { erreur: "Données momentanément indisponibles — réessayez." }));
+  }, []);
+
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+  if (dossier === null) {
+    return (
+      <>
+        <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut }}>Chargement des habilitations…</p>
+      </>
+    );
+  }
+  if (dossier.erreur) {
+    return (
+      <>
+        <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut, margin: "12px 0" }}>{dossier.erreur}</p>
+        <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+      </>
+    );
+  }
+  const src = dossier.demo ? DEMO_PERSONNEL : dossier;
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const dans90 = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  // La plus récente par salarié + type fait foi (le recyclage éteint
+  // l'ancienne ligne) — même règle que les alertes côté serveur.
+  const parCle = {};
+  for (const h of src.habilitations || []) {
+    if (!h.expiration) continue;
+    const k = `${h.cle}|${String(h.type).toUpperCase()}`;
+    if (!parCle[k] || parCle[k].expiration < h.expiration) parCle[k] = h;
+  }
+  const habs = Object.values(parCle).sort((a, b) => String(a.expiration).localeCompare(String(b.expiration)));
+  const expirees = habs.filter((h) => h.expiration < aujourdhui).length;
+  const aRecycler = habs.filter((h) => h.expiration >= aujourdhui && h.expiration <= dans90).length;
+
+  const BadgeHab = (h) => h.expiration < aujourdhui
+    ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉE</span>
+    : h.expiration <= dans90
+      ? <span style={{ background: "#FAEEDA", color: "#854F0B", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>À recycler</span>
+      : <span style={{ background: "#E1F5EE", color: "#085041", fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>Valide</span>;
+
+  return (
+    <>
+      <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+      <div style={{ margin: "-12px 0 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 220 }}>
+          Habilitations & CACES de votre effectif — la plus récente par salarié et par type fait foi,
+          les recyclages sont rappelés automatiquement par e-mail.
+        </p>
+        <Btn primary onClick={() => onDemarche("habilitation", "")}><Plus size={14} /> Déclarer une habilitation</Btn>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <Kpi label="Habilitations suivies" val={habs.length} icon={ShieldCheck} />
+        <Kpi label="À recycler sous 90 jours" val={aRecycler} warn={aRecycler > 0} icon={Clock} />
+        <Kpi label="Expirées" val={expirees} warn={expirees > 0} icon={AlertCircle} />
+      </div>
+
+      {habs.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucune habilitation déclarée pour l'instant.<br />
+          Déclarez les CACES, habilitations électriques, SST… de vos salariés : le portail suivra les recyclages.
+        </div>
+      ) : (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.6fr 2fr 1.2fr 110px 110px", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Salarié</span><span>Habilitation</span><span>Organisme</span><span>Fin de validité</span><span>État</span>
+          </div>
+          {habs.map((h, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 2fr 1.2fr 110px 110px", gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < habs.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+              <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.salarie || h.cle}</span>
+              <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h.numero ? `N° ${h.numero}` : undefined}>{h.type || "—"}</span>
+              <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.organisme || "—"}</span>
+              <span>{fr(h.expiration)}</span>
+              {BadgeHab(h)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: T.card, border: `1px dashed ${T.border}`, borderRadius: 12, padding: "14px 16px", fontSize: 12.5, color: T.mut, marginBottom: 14 }}>
+        <strong style={{ color: T.ink }}>Bientôt dans cette brique :</strong> DUERP (document unique),
+        registres de sécurité et affichages obligatoires.
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+        <ShieldCheck size={13} />
+        {dossier.demo
+          ? "Données de démonstration — connectez-vous en production pour vos habilitations réelles"
+          : "Rappels de recyclage automatiques par e-mail : J-90, J-60, J-30, puis expiration."}
       </div>
     </>
   );
