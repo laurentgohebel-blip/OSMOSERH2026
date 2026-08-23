@@ -25,10 +25,9 @@ synthèse de session et les docs dédiées.
   le portail repoussent automatiquement l'échéance.
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
-- [ ] Relancer `creer_site_rh.py` (Cloud Shell) : 5 nouvelles colonnes
-      essai/visites sur « Salariés » (FinPeriodeEssai, AlertePeriodeEssai,
-      PeriodiciteVisiteMois, DerniereVisiteMedicale, AlerteVisiteMedicale).
-      UN passage couvre tout (le script complète, ne casse rien).
+- [x] Relancer `creer_site_rh.py` — FAIT le 23/08 (Cloud Shell) : les
+      5 colonnes essai/visites ajoutées sur « Salariés », tout le reste
+      « complète ».
 - [ ] Variables SWA `DPAE_*` (mode test d'abord) — docs/DPAE-API.md §2.
 - [ ] Compléter l'identification URSSAF des fiches clients (code
       URSSAF, APE, ville, CP, santé travail).
