@@ -27,6 +27,7 @@ const LIBELLES_OPTIONS = {
   embauche: "Embauche (contrats, personnel, fins)", acompte: "Acomptes",
   attestation: "Attestations", paie: "Variables de paie",
   etrangers: "Salariés étrangers (titres de séjour)",
+  securite: "Sécurité (habilitations, CACES, recyclages)",
 };
 
 const N_VIDE = {

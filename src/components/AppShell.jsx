@@ -124,7 +124,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "embauche", securite: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -4020,6 +4020,7 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
             </div>
             <p style={{ marginTop: 10, fontSize: 11.5, color: T.mut }}>
               L'historique se conserve : un recyclage se déclare comme une nouvelle habilitation du même type — les rappels suivent automatiquement la plus récente.
+              Ces habilitations alimentent la brique <strong>Sécurité</strong> (bientôt disponible) : registre de l'effectif, DUERP, registres réglementaires.
             </p>
           </>
         )}

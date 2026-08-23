@@ -19,7 +19,7 @@
 
 const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems, dateParis, SELECT_SALARIES } = require("./annuaire");
 
-const OPTIONS_VALIDES = ["embauche", "acompte", "attestation", "paie", "etrangers"];
+const OPTIONS_VALIDES = ["embauche", "acompte", "attestation", "paie", "etrangers", "securite"];
 
 function adminAutorise(email) {
   const liste = (process.env.ADMIN_EMAILS || "")

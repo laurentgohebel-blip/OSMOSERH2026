@@ -14,6 +14,17 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Option « securite » câblée — future option payante** (23/08 nuit) :
+  les habilitations appartiennent à la brique Sécurité. Option de
+  contrat `securite` créée (écran gestionnaire). TRANSITION : tant que
+  la variable SWA `SECURITE_STRICTE` n'est pas posée, l'option embauche
+  continue d'ouvrir les habilitations (clients actuels non impactés).
+  **Bascule commerciale, le jour J, sans redéploiement** :
+  1. ajouter la valeur `securite` au choix « Options » de « Paramètres
+     clients » (interface SharePoint, minuscule exacte) ;
+  2. cocher l'option sur les clients payants (écran gestionnaire) ;
+  3. poser `SECURITE_STRICTE=1` dans les variables de la SWA ;
+  4. ouvrir la tuile (bloc "salaries" dans AppShell.jsx).
 - **Brique Sécurité — développée mais EN RETRAIT** (23/08 nuit,
   décision Laurent) : la brique est codée (registre des habilitations de
   l'effectif, compteurs, badges, déclaration en un clic, encart DUERP/

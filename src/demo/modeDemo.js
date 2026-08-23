@@ -38,7 +38,7 @@ export const UTILISATEUR_DEMO = {
 };
 
 const CODE_CLIENT_DEMO = "DEMO";
-const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie", "etrangers"];
+const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie", "etrangers", "securite"];
 
 /* ── Dates relatives (AAAA-MM-JJ) ─────────────────────────────────────── */
 const dansNJours = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);

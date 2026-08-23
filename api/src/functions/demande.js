@@ -109,7 +109,7 @@ app.http("demande", {
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
       // fin-contrat relève de l'option 'embauche' : elle couvre le cycle
       // contrat complet (entrées ET sorties).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche", "habilitation": "embauche", "avenant": "embauche" };
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche", "avenant": "embauche" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
@@ -391,6 +391,15 @@ app.http("demande", {
       // (echeances.js : J-90/J-60/J-30 puis EXPIRÉE, sur la plus récente
       // par salarié + type).
       if (d.demarche === "habilitation") {
+        // Les habilitations appartiennent à la brique SÉCURITÉ, future
+        // option payante « securite ». Bascule commerciale SANS
+        // redéploiement : poser SECURITE_STRICTE=1 dans la SWA — seule
+        // l'option securite ouvrira alors la démarche. En transition,
+        // l'option embauche suffit (clients actuels non impactés).
+        const accesSecurite = clientInfo.options.includes("securite") ||
+          (!process.env.SECURITE_STRICTE && clientInfo.options.includes("embauche"));
+        if (!accesSecurite)
+          return { status: 403, jsonBody: { erreur: "Option Sécurité (habilitations & CACES) non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
         if (!d.typeHabilitation || String(d.typeHabilitation).trim().length < 2)
