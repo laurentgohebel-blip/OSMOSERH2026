@@ -89,6 +89,60 @@ function echeanceVisite(f, visitesRealiseesParCle, cle) {
   return entree ? ajouterMois(entree, 3) : null;
 }
 
+/* ── Visites de REPRISE après arrêt (23/08, art. R.4624-31) ───────────
+   Obligatoires dans les 8 jours du retour, selon le motif et la durée
+   de l'arrêt DÉJÀ DÉCLARÉ dans le portail (liste « Absences ») :
+     • congé maternité et maladie professionnelle : quelle que soit la durée ;
+     • accident du travail : arrêt d'au moins 30 jours (accident de trajet
+       traité pareil — prudence : mieux vaut une alerte de trop) ;
+     • maladie ou accident non professionnel : au moins 60 jours.
+   L'obligation s'éteint dès qu'une visite médicale datée du retour (ou
+   après) existe — y compris une simple demande « À planifier » : le
+   client a fait le geste attendu, les relances s'arrêtent. */
+const SEUIL_REPRISE_JOURS = {
+  "Congé maternité": 0,
+  "Maladie professionnelle": 0,
+  "Accident du travail": 30,
+  "Accident de trajet": 30,
+  "Maladie (arrêt de travail)": 60,
+};
+const DELAI_REPRISE_JOURS = 8;
+const PALIERS_REPRISE = ["REPRISE", "RETARD"];
+// Le flux d'alertes est HEBDOMADAIRE : on annonce le retour une semaine à
+// l'avance (échéance ≤ 15 j = retour dans 7 j au plus), sinon un retour
+// survenant juste après un envoi ne serait signalé qu'à 3 jours de la
+// date limite — trop court pour obtenir un rendez-vous.
+const ANTICIPATION_REPRISE = 7;
+const palierReprise = (jours) =>
+  (jours < 0 ? "RETARD" : jours <= DELAI_REPRISE_JOURS + ANTICIPATION_REPRISE ? "REPRISE" : null);
+const ajouterJours = (aaaammjj, n) =>
+  new Date(new Date(`${aaaammjj}T00:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
+const cleAbsence = (a) =>
+  `${a.CodeClient}|${String(a.SalarieNom || "").trim().toUpperCase()} ${String(a.SalariePrenom || "").trim().toUpperCase()}`.trim();
+/* Reprises exigibles : { a, salarie, fin, duree, echeance } — la date
+   limite est la fin de l'arrêt + 8 jours. */
+function reprisesRequises(absences, visitesParCle) {
+  const out = [];
+  for (const a of absences) {
+    const seuil = SEUIL_REPRISE_JOURS[a.Motif];
+    if (seuil === undefined) continue;
+    const debut = dateParis(a.DateDebut);
+    const fin = dateParis(a.DateFin);
+    if (!debut || !fin) continue; // arrêt sans terme connu : rien à calculer
+    const duree = Math.round((new Date(fin) - new Date(debut)) / 86400000) + 1;
+    if (duree < seuil) continue;
+    const visite = visitesParCle[cleAbsence(a)];
+    if (visite && visite >= fin) continue; // visite demandée/faite depuis le retour
+    out.push({
+      a, fin, duree,
+      salarie: `${String(a.SalarieNom || "").toUpperCase()} ${a.SalariePrenom || ""}`.trim() || a.Title || "—",
+      motif: a.Motif,
+      echeance: ajouterJours(fin, DELAI_REPRISE_JOURS),
+    });
+  }
+  return out;
+}
+
 app.http("echeances", {
   methods: ["GET"],
   authLevel: "anonymous",
@@ -180,13 +234,17 @@ async function modePortail(request) {
     .sort((a, b) => a.dateFin.localeCompare(b.dateFin));
 
   const visitesRealisees = {};
+  const visitesDemandees = {}; // tous statuts, clé « CODE|NOM PRÉNOM » — voir reprises
   // Même $select que personnel.js (cache items() par liste — cohérence).
   for (const v of (await items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"))
     .filter((v) => v.CodeClient === c.codeClient)) {
-    if (v.Statut !== "Réalisée" || !v.DateVisite) continue;
-    const k = `${String(v.SalarieNom || "").trim().toUpperCase()} ${String(v.SalariePrenom || "").trim().toUpperCase()}`.trim();
+    if (!v.DateVisite) continue;
+    const nom = `${String(v.SalarieNom || "").trim().toUpperCase()} ${String(v.SalariePrenom || "").trim().toUpperCase()}`.trim();
     const date = dateParis(v.DateVisite);
-    if (!visitesRealisees[k] || visitesRealisees[k] < date) visitesRealisees[k] = date;
+    const kd = `${v.CodeClient}|${nom}`;
+    if (!visitesDemandees[kd] || visitesDemandees[kd] < date) visitesDemandees[kd] = date;
+    if (v.Statut !== "Réalisée") continue;
+    if (!visitesRealisees[nom] || visitesRealisees[nom] < date) visitesRealisees[nom] = date;
   }
   const visitesMedicales = fiches
     .map((s) => {
@@ -195,6 +253,17 @@ async function modePortail(request) {
         joursRestants: joursDepuis(echeance), alerte: s.AlerteVisiteMedicale || null } : null;
     })
     .filter((v) => v && v.joursRestants <= 120)
+    .sort((a, b) => a.echeance.localeCompare(b.echeance));
+
+  // Visites de reprise après arrêt : retour imminent (≤ 30 j) ou passé,
+  // tant que la visite n'a pas été demandée (retards ≤ 90 j affichés).
+  const reprises = reprisesRequises(
+    (await items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference,AlerteReprise"))
+      .filter((a) => a.CodeClient === c.codeClient), visitesDemandees)
+    .map((r) => ({ salarie: r.salarie, motif: r.motif, dureeJours: r.duree,
+      retourLe: r.fin, echeance: r.echeance, joursRestants: joursDepuis(r.echeance),
+      alerte: r.a.AlerteReprise || null }))
+    .filter((r) => r.joursRestants <= 30 && r.joursRestants >= -90)
     .sort((a, b) => a.echeance.localeCompare(b.echeance));
 
   // Entretiens professionnels : échéance ≤ 120 j ou en retard.
@@ -224,7 +293,7 @@ async function modePortail(request) {
       .filter((h) => h.joursRestants <= 120 && h.joursRestants >= -TITRE_EXPIRE_RECENT)
       .sort((a, b) => a.dateExpiration.localeCompare(b.dateExpiration));
 
-  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales, entretiens, habilitations } };
+  return { status: 200, jsonBody: { echeances, recentes, titres, essais, visitesMedicales, reprises, entretiens, habilitations } };
 }
 
 /* ── Mode alertes : appelé par le flux hebdomadaire ──────────────────── */
@@ -288,13 +357,16 @@ async function modeAlertes(context) {
   // Visites médicales : palier J-60/J-30/RETARD sur l'échéance calculée
   // (retard > 180 j jamais alerté : dossier gestionnaire, pas de réveil).
   const visitesRealiseesTous = {};
+  const visitesDemandeesTous = {}; // tous statuts — éteint les reprises
   const rv = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Visites médicales"]}/items?$select=id&$expand=fields($select=CodeClient,SalarieNom,SalariePrenom,DateVisite,Statut)&$top=999`,
     { headers: { Authorization: `Bearer ${tok}` } });
   for (const v of (rv.ok ? (await rv.json()).value : [])) {
     const f = v.fields;
-    if (f.Statut !== "Réalisée" || !f.DateVisite) continue;
+    if (!f.DateVisite) continue;
     const k = `${f.CodeClient}|${String(f.SalarieNom || "").trim().toUpperCase()} ${String(f.SalariePrenom || "").trim().toUpperCase()}`.trim();
     const date = dateParis(f.DateVisite);
+    if (!visitesDemandeesTous[k] || visitesDemandeesTous[k] < date) visitesDemandeesTous[k] = date;
+    if (f.Statut !== "Réalisée") continue;
     if (!visitesRealiseesTous[k] || visitesRealiseesTous[k] < date) visitesRealiseesTous[k] = date;
   }
   const visitesAAlerter = salaries.map((x) => {
@@ -310,6 +382,25 @@ async function modeAlertes(context) {
     if (fait && PALIERS_VISITE.indexOf(palier) <= PALIERS_VISITE.indexOf(fait)) return null;
     if (palier === "RETARD" && !fait && jours < -180) return null;
     return { x, palier, jours, echeance };
+  }).filter(Boolean);
+
+  // Visites de REPRISE : déclenchées par les absences déclarées, échéance
+  // = retour + 8 jours. Palier REPRISE (retour imminent ou tout juste
+  // passé) puis RETARD. Silence sur les arrêts anciens jamais alertés
+  // (> 90 j de retard) : reprise du stock, pas de réveil intempestif.
+  const ra = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Absences"]}/items?$select=id&$expand=fields($select=CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,AlerteReprise)&$top=999`,
+    { headers: { Authorization: `Bearer ${tok}` } });
+  const absences = (ra.ok ? (await ra.json()).value : []);
+  const reprisesAAlerter = reprisesRequises(
+    absences.map((x) => ({ ...x.fields, _id: x.id })), visitesDemandeesTous
+  ).map((r) => {
+    const jours = Math.round((new Date(r.echeance) - maintenant) / 86400000);
+    const palier = palierReprise(jours);
+    if (!palier) return null;
+    const fait = /^(REPRISE|RETARD)/.exec(String(r.a.AlerteReprise || ""))?.[1] || null;
+    if (fait && PALIERS_REPRISE.indexOf(palier) <= PALIERS_REPRISE.indexOf(fait)) return null;
+    if (palier === "RETARD" && !fait && jours < -90) return null;
+    return { r, palier, jours };
   }).filter(Boolean);
 
   // Entretiens professionnels : paliers J-60/J-30/RETARD sur l'échéance
@@ -372,7 +463,7 @@ async function modeAlertes(context) {
     }).filter(Boolean);
   }
 
-  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0 && invitationsAAlerter.length === 0)
+  if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0 && invitationsAAlerter.length === 0 && reprisesAAlerter.length === 0)
     return { status: 200, jsonBody: { alertes: [], notifications: [] } };
 
   const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,EmailGestionnaire,Actif");
@@ -551,6 +642,34 @@ async function modeAlertes(context) {
     }).catch(() => {});
   }
 
+  // Visites de reprise — obligation à date fixe (8 jours après le retour),
+  // la plus courte fenêtre du portail : ton direct, geste unique.
+  const alertesReprises = [];
+  for (const { r, palier, jours } of reprisesAAlerter) {
+    const f = r.a;
+    const { dest, client } = destinatairesDe(f.CodeClient);
+    const raisonSociale = client?.RaisonSociale || f.CodeClient || "—";
+    const retour = r.fin.split("-").reverse().join("/");
+    const limite = r.echeance.split("-").reverse().join("/");
+    const cause = f.Motif === "Congé maternité"
+      ? "un congé maternité"
+      : `un arrêt de ${r.duree} jours (${String(f.Motif || "").toLowerCase()})`;
+    const objet = palier === "RETARD"
+      ? `Visite de reprise EN RETARD : ${r.salarie} (${raisonSociale})`
+      : `Visite de reprise à organiser : ${r.salarie} — au plus tard le ${limite}`;
+    const corps = palier === "RETARD"
+      ? `La visite de reprise de ${r.salarie}, de retour le ${retour} après ${cause}, devait avoir lieu au plus tard le ${limite}.\n\nElle est obligatoire (art. R.4624-31 du code du travail) et incombe à l'employeur : tant qu'elle n'a pas eu lieu, l'aptitude du salarié à reprendre son poste n'est pas établie et votre responsabilité est engagée en cas d'accident.\n\nDemandez-la sans attendre depuis votre espace Osmose RH (fiche du salarié → Visites) : votre gestionnaire saisit le service de santé au travail.`
+      : `${r.salarie} reprend le travail le ${retour} après ${cause} : une visite de reprise est obligatoire, à organiser dans les 8 jours — soit au plus tard le ${limite} (art. R.4624-31).\n\nDemandez-la depuis votre espace Osmose RH (fiche du salarié → Visites) : votre gestionnaire prend rendez-vous avec le service de santé au travail. Cette visite conditionne la reprise effective du poste.`;
+    for (const email of dest)
+      alertesReprises.push({ email, salarie: r.salarie, raisonSociale, palier, type: "visite-reprise", objet, corps });
+
+    await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Absences"]}/items/${f._id}/fields`, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ AlerteReprise: `${palier} ${new Date().toISOString()}` }),
+    }).catch(() => {});
+  }
+
   // Relances d'onboarding — le salarié d'abord (s'il a un e-mail), le
   // client en copie au dernier rappel et seul destinataire à l'expiration.
   const alertesInvitations = [];
@@ -591,12 +710,12 @@ async function modeAlertes(context) {
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
   // titres de séjour, périodes d'essai, visites médicales et habilitations.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations];
-  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s), ${invitationsAAlerter.length} invitation(s) — ${notifications.length} notification(s).`);
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesReprises, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations];
+  context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${reprisesAAlerter.length} reprise(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s), ${invitationsAAlerter.length} invitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }
 
 // Calculateurs partagés avec la vue gestionnaire « toutes échéances »
 // (../echeancier.js) — source unique des règles d'échéance.
-module.exports = { ajouterMois, echeanceVisite, echeanceEntretien, dernieresHabilitations };
+module.exports = { ajouterMois, echeanceVisite, echeanceEntretien, dernieresHabilitations, reprisesRequises };
 

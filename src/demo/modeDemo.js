@@ -152,6 +152,9 @@ function etatInitial() {
         { salarie: "BERTRAND Sophie", poste: "Responsable boutique", echeance: dansNJours(50), joursRestants: 50, alerte: null },
         { salarie: "MOREAU Julien", poste: "Magasinier", echeance: dansNJours(-30), joursRestants: -30, alerte: "RETARD " + new Date().toISOString() },
       ],
+      reprises: [
+        { salarie: "MOREAU Julien", motif: "Maladie (arrêt de travail)", dureeJours: 68, retourLe: dansNJours(1), echeance: dansNJours(9), joursRestants: 9, alerte: null },
+      ],
     },
 
     /* Brique « Salariés étrangers » : trois états pour la démonstration
