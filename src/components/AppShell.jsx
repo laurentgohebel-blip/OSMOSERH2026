@@ -79,6 +79,9 @@ const DEMO_ECHEANCES = {
   habilitations: [
     { salarie: "MARTIN Paul", type: "CACES R489 (chariots élévateurs)", numero: "489-2021-118", dateExpiration: dansNJours(55), joursRestants: 55, alerte: null },
   ],
+  entretiens: [
+    { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(45), joursRestants: 45, alerte: null },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -1055,6 +1058,32 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.entretiens || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Entretiens professionnels à planifier
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Échéance le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.entretiens || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.entretiens.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.echeance)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-60</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {(src.habilitations || []).length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
@@ -1100,7 +1129,7 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales (J-60/J-30, puis retard) et habilitations (J-90/J-60/J-30, puis expiration)."}
+                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales et entretiens professionnels (J-60/J-30, puis retard) et habilitations (J-90/J-60/J-30, puis expiration)."}
               </div>
             </>
           );
@@ -3309,6 +3338,7 @@ const FICHE_VIDE = {
   matricule: "", bulletinDematerialise: false,
   nationalite: "", titreSejourType: "", titreSejourNumero: "", titreSejourExpiration: "",
   finPeriodeEssai: "", periodiciteVisiteMois: "", derniereVisiteMedicale: "",
+  dernierEntretienPro: "",
 };
 // Champs OBLIGATOIRES du dossier (décision du 22/08) — tout sauf le nom
 // marital (n'existe pas pour tous) et le matricule (attribué par la paie).
@@ -3343,6 +3373,7 @@ const SECTIONS_DOSSIER = [
     ["finPeriodeEssai", "Fin de la période d'essai", "date"],
     ["periodiciteVisiteMois", "Périodicité visite médicale (mois)", "choix", ["", "12", "24", "48", "60"]],
     ["derniereVisiteMedicale", "Dernière visite médicale", "date"],
+    ["dernierEntretienPro", "Dernier entretien professionnel", "date"],
   ]],
   ["Nationalité & titre de séjour", [
     ["nationalite", "Nationalité", "texte"],
@@ -3369,7 +3400,23 @@ function DossierSalarie({ sal, onMaj }) {
   const [f, setF] = useState({ ...FICHE_VIDE, matricule: sal.matricule || "", ...(sal.fiche || {}) });
   const [envoi, setEnvoi] = useState(false);
   const [msg, setMsg] = useState(null); // { ok } | { erreur }
+  const [invitation, setInvitation] = useState(null); // null | { envoi } | { lien, expireLe, deja } | { erreur }
   const maj = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // Onboarding : le salarié remplit lui-même son dossier via un lien à
+  // jeton (14 jours). Le lien est affiché au client, qui l'envoie par le
+  // canal de son choix (e-mail, SMS, WhatsApp…).
+  const inviterSalarie = async () => {
+    setInvitation({ envoi: true });
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "onboardingInviter", id: sal.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setInvitation(r.ok ? j : { erreur: j.erreur || `Invitation refusée (HTTP ${r.status}).` });
+    } catch { setInvitation({ erreur: "API injoignable — réessayez." }); }
+  };
 
   const libelles = Object.fromEntries(SECTIONS_DOSSIER.flatMap(([, champs]) => champs.map(([c, l]) => [c, l])));
   const manquants = (fiche) => REQUIS_DOSSIER.filter((k) => !String(fiche[k] ?? "").trim());
@@ -3416,6 +3463,29 @@ function DossierSalarie({ sal, onMaj }) {
           <p style={{ fontSize: 12.5, background: "#FDF3E4", color: "#7A5416", border: "1px solid #F0DCB4", borderRadius: 8, padding: "9px 12px", margin: "0 0 12px" }}>
             ⚠ Dossier incomplet — à renseigner : {m.map((k) => libelles[k]).join(", ")}.
           </p>
+        )}
+        {m.length > 0 && sal.id && !invitation?.lien && (
+          <div style={{ margin: "0 0 14px" }}>
+            <Btn onClick={inviterSalarie} disabled={invitation?.envoi}>
+              <Send size={13} /> {invitation?.envoi ? "Génération du lien…" : "Inviter le salarié à compléter son dossier"}
+            </Btn>
+            {invitation?.erreur && <p style={{ fontSize: 12, color: T.err, margin: "8px 0 0" }}>✗ {invitation.erreur}</p>}
+          </div>
+        )}
+        {invitation?.lien && (
+          <div style={{ background: "#E6F1FB", border: "1px solid #BFDCF7", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "#0C447C", margin: "0 0 14px" }}>
+            {invitation.deja ? "Un lien d'invitation est déjà actif" : "Lien d'invitation créé"} — envoyez-le au salarié
+            (valable jusqu'au {String(invitation.expireLe).slice(0, 10).split("-").reverse().join("/")}) :
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+              <code style={{ fontSize: 11, background: "#fff", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 8px", wordBreak: "break-all", flex: 1, minWidth: 200 }}>{invitation.lien}</code>
+              <Btn small onClick={() => { navigator.clipboard?.writeText(invitation.lien); setInvitation((i) => ({ ...i, copie: true })); }}>
+                {invitation.copie ? "✓ Copié" : "Copier"}
+              </Btn>
+            </div>
+            <p style={{ margin: "8px 0 0", fontSize: 11.5 }}>
+              Le salarié y saisit son état civil, ses coordonnées, sa banque et dépose ses pièces — sa fiche se complète toute seule.
+            </p>
+          </div>
         )}
         {SECTIONS_DOSSIER.map(([titre, champs]) => (
           <div key={titre} style={{ marginBottom: 14 }}>

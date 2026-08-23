@@ -106,6 +106,9 @@ LISTES = [
         col("FinPeriodeEssai", D()), col("AlertePeriodeEssai", T()),
         col("PeriodiciteVisiteMois", N()), col("DerniereVisiteMedicale", D()),
         col("AlerteVisiteMedicale", T()),
+        # Entretiens professionnels (23/08) : tous les 2 ans (L.6315-1),
+        # échéance = dernier entretien + 24 mois, sinon entrée + 24 mois.
+        col("DernierEntretienPro", D()), col("AlerteEntretienPro", T()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
@@ -133,6 +136,16 @@ LISTES = [
     ("Avenants", SOCLE_PERSONNEL + [
         col("TypeAvenant", T()), col("DateEffet", D()), col("Details", TL()),
         col("Statut", CH(["Nouvelle", "En cours", "Traitée"], "Nouvelle")),
+    ]),
+    # Onboarding salarié (23/08) : le client invite le salarié à compléter
+    # lui-même son dossier via un lien à jeton (durée 14 jours) — une
+    # ligne = une invitation, le jeton est l'unique clé d'accès public.
+    ("Invitations salariés", [
+        col("CodeClient", T()), col("RaisonSociale", T()),
+        col("Nom", T()), col("Prenom", T()), col("IdFiche", T()),
+        col("EmailSalarie", T()), col("Jeton", T()), col("ExpireLe", DH()),
+        col("Statut", CH(["Envoyée", "Complétée"], "Envoyée")),
+        col("Reference", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
     ]),
     ("Fins de contrat", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),

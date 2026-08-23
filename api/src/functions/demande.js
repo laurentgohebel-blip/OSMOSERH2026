@@ -39,6 +39,23 @@ app.http("demande", {
       }
     }
 
+    // 1 bis-2. Onboarding salarié PUBLIC : le salarié invité n'a pas de
+    // compte — le jeton d'invitation (48 hex, 14 jours, usage unique)
+    // est l'unique clé. AVANT le verrou jeton utilisateur, protégé par
+    // le pot de miel ci-dessus + les contrôles du module onboarding.
+    if (d.action === "onboarding") {
+      try {
+        const onboarding = require("../onboarding");
+        return d.mode === "soumettre"
+          ? await onboarding.soumettre(d, context)
+          : await onboarding.info(d, context);
+      } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+        context.error("demande/onboarding :", e);
+        return { status: 500, jsonBody: { erreur: `Module onboarding inchargeable : ${e.message}` } };
+      }
+    }
+
     // 1 ter. Détour gestionnaire : même contournement — l'activation des
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
@@ -105,6 +122,15 @@ app.http("demande", {
         if (!clientInfo.options.includes("embauche"))
           return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
         return await majSalarie(clientInfo, d, context);
+      }
+
+      // Onboarding : le client génère (ou retrouve) le lien d'invitation
+      // d'une fiche — verrous : option embauche + propriété de la fiche
+      // (vérifiée dans le module).
+      if (d.action === "onboardingInviter") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        return await require("../onboarding").inviter(email, clientInfo, d, context);
       }
 
       // Brique « Salariés étrangers » : le client déclare un récépissé de
@@ -652,6 +678,7 @@ async function majSalarie(clientInfo, d, context) {
     PeriodiciteVisiteMois: /^\d{1,3}$/.test(String(f.periodiciteVisiteMois || "").trim())
       ? Number(f.periodiciteVisiteMois) : null,
     DerniereVisiteMedicale: dateOuVide(f.derniereVisiteMedicale) || null,
+    DernierEntretienPro: dateOuVide(f.dernierEntretienPro) || null,
   };
 
   const r = await fetch(`${base}/fields`, {
