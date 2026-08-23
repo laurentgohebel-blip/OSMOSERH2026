@@ -14,6 +14,21 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Pré-embauche : embauche par invitation + contrat automatique**
+  (23/08 nuit) : la tuile Embauche propose DEUX parcours — « J'ai les
+  informations du salarié » (parcours complet existant) ou « Je fais
+  saisir le salarié » : le client ne renseigne que le contrat (type,
+  dates, poste, durée, essai, e-mail du salarié facultatif), une fiche
+  minimale est créée et le lien d'onboarding porte la commande de
+  contrat. Le salarié remplit son dossier (+ commune de naissance et les
+  TROIS pièces, obligatoires dans ce parcours) et, à sa soumission, la
+  demande part AUTOMATIQUEMENT dans « Production contrat » (réf. EMB,
+  flux AR habituel — contrat + DPAE suivent le circuit normal). En cas
+  d'échec du lancement, le lien reste actif pour re-soumettre. Bonus :
+  après une embauche directe, l'écran de confirmation propose d'inviter
+  le salarié à compléter son dossier.
+  **Geste** : relancer creer_site_rh.py (6 colonnes contrat sur
+  « Invitations salariés »).
 - **Onboarding salarié self-service + entretiens professionnels** (23/08
   soir) : depuis la fiche d'un salarié au dossier incomplet, bouton
   « Inviter le salarié à compléter son dossier » → lien à jeton
@@ -66,6 +81,11 @@ python3 creer_site_rh.py
 `gh auth login -h github.com -p https -w` d'abord.)
 
 ## Mise en service en attente (gestes Laurent — 10 min au calme)
+- [ ] RE-relancer `creer_site_rh.py` (lot pré-embauche, 23/08 nuit) :
+      6 colonnes contrat sur « Invitations salariés » (TypeContrat,
+      DateDebut, DateFin, Poste, DureeMensuelle, FinPeriodeEssai).
+      Sans ce passage, le parcours « Je fais saisir le salarié »
+      échouera à la création du lien.
 - [x] RE-relancer `creer_site_rh.py` — FAIT le 23/08 soir : liste
       « Invitations salariés » + colonnes entretien pro créées.
       ⚠ Au passage, le GRAPH_CLIENT_SECRET a été exposé dans le

@@ -18,7 +18,7 @@
 // validations de champs sont les mêmes que majSalarie (miroir strict).
 
 const crypto = require("crypto");
-const { tokenGraph, idsListes, items, dateParis, viderCacheItems } = require("./annuaire");
+const { tokenGraph, idsListes, items, dateParis, viderCacheItems, creerEmbauche } = require("./annuaire");
 
 const LISTE = "Invitations salariés";
 const VALIDITE_JOURS = 14;
@@ -35,7 +35,7 @@ async function listeInvitations(tok) {
 async function invitationParJeton(tok, jeton) {
   if (!/^[a-f0-9]{48}$/.test(String(jeton || ""))) return null;
   const listeId = await listeInvitations(tok);
-  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items?$select=id&$expand=fields($select=CodeClient,RaisonSociale,Nom,Prenom,IdFiche,EmailSalarie,Jeton,ExpireLe,Statut,Reference)&$top=500`,
+  const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items?$select=id&$expand=fields($select=CodeClient,RaisonSociale,Nom,Prenom,IdFiche,EmailSalarie,Jeton,ExpireLe,Statut,Reference,EmailDemandeur,EmailGestionnaire,TypeContrat,DateDebut,DateFin,Poste,DureeMensuelle,FinPeriodeEssai)&$top=500`,
     { headers: { Authorization: `Bearer ${tok}` } });
   if (!r.ok) throw { status: 502, erreur: "Invitations momentanément indisponibles." };
   const item = (await r.json()).value.find((x) => x.fields?.Jeton === jeton);
@@ -84,29 +84,110 @@ async function inviter(email, clientInfo, d, context) {
   if (existante)
     return { status: 200, jsonBody: { lien: `${PORTAIL_URL()}/?onboarding=${existante.Jeton}`, expireLe: existante.ExpireLe, reference: existante.Reference || "", deja: true } };
 
+  return await creerInvitation(tok, listeId, email, clientInfo,
+    { id, nom: String(fiche.Nom || "").toUpperCase(), prenom: fiche.Prenom || "" }, emailSalarie, null, context);
+}
+
+/* Écrit l'invitation (avec ou sans commande de contrat) et rend le lien. */
+async function creerInvitation(tok, listeId, email, clientInfo, fiche, emailSalarie, contrat, context) {
   const jeton = crypto.randomBytes(24).toString("hex");
   const expireLe = new Date(Date.now() + VALIDITE_JOURS * 86400000).toISOString();
   const reference = `INV-${Date.now().toString(36).toUpperCase()}`;
-  const nom = String(fiche.Nom || "").toUpperCase();
   const rc = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
     method: "POST",
     headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
     body: JSON.stringify({ fields: {
-      Title: `${nom} ${fiche.Prenom || ""}`.trim(),
+      Title: `${fiche.nom} ${fiche.prenom}`.trim(),
       CodeClient: clientInfo.codeClient,
       RaisonSociale: clientInfo.raisonSociale || "",
-      Nom: nom, Prenom: fiche.Prenom || "", IdFiche: id,
-      EmailSalarie: emailSalarie, Jeton: jeton, ExpireLe: expireLe,
+      Nom: fiche.nom, Prenom: fiche.prenom, IdFiche: String(fiche.id),
+      EmailSalarie: emailSalarie || "", Jeton: jeton, ExpireLe: expireLe,
       Statut: "Envoyée", Reference: reference,
       EmailDemandeur: email || "",
       EmailGestionnaire: clientInfo.emailGestionnaire || "",
+      // Pré-embauche : la commande de contrat attend l'onboarding — elle
+      // partira en « Production contrat » à la soumission du salarié.
+      ...(contrat ? {
+        TypeContrat: contrat.typeContrat,
+        DateDebut: contrat.dateDebut,
+        ...(contrat.dateFin ? { DateFin: contrat.dateFin } : {}),
+        Poste: contrat.poste,
+        DureeMensuelle: contrat.dureeMensuelle,
+        ...(contrat.finPeriodeEssai ? { FinPeriodeEssai: contrat.finPeriodeEssai } : {}),
+      } : {}),
     } }),
   });
   if (!rc.ok) {
-    context.error("onboarding/inviter :", rc.status, (await rc.text().catch(() => "")).slice(0, 300));
-    return { status: 502, jsonBody: { erreur: "Création de l'invitation impossible — réessayez. (Liste absente ? Relancer creer_site_rh.py.)" } };
+    context.error("onboarding/invitation :", rc.status, (await rc.text().catch(() => "")).slice(0, 300));
+    return { status: 502, jsonBody: { erreur: "Création de l'invitation impossible — réessayez. (Liste absente ou colonnes manquantes ? Relancer creer_site_rh.py.)" } };
   }
   return { status: 201, jsonBody: { lien: `${PORTAIL_URL()}/?onboarding=${jeton}`, expireLe, reference, deja: false } };
+}
+
+/* ── Client authentifié : PRÉ-EMBAUCHE sans les infos du salarié ───────
+   POST /api/demande { action: "onboardingEmbauche", typeContrat, nom,
+   prenom, dateDebut, [dateFin], poste, dureeMensuelle, [finPeriodeEssai],
+   [emailSalarie] } — crée la fiche minimale + l'invitation porteuse de la
+   commande de contrat. Le contrat part à la soumission de l'onboarding. */
+async function embaucher(email, clientInfo, d, context) {
+  const nom = String(d.nom || "").trim().toUpperCase();
+  const prenom = String(d.prenom || "").trim();
+  if (nom.length < 2 || prenom.length < 2)
+    return { status: 400, jsonBody: { erreur: "Nom et prénom du salarié requis." } };
+  if (!["CDI", "CDD"].includes(d.typeContrat))
+    return { status: 400, jsonBody: { erreur: "Type de contrat non pris en charge." } };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateDebut || "")))
+    return { status: 400, jsonBody: { erreur: "Date de début requise." } };
+  if (d.typeContrat === "CDD" && (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateFin || "")) || String(d.dateFin) <= String(d.dateDebut)))
+    return { status: 400, jsonBody: { erreur: "Date de fin requise pour un CDD (postérieure au début)." } };
+  if (String(d.poste || "").trim().length < 2)
+    return { status: 400, jsonBody: { erreur: "Poste requis." } };
+  if (!/^\d{1,3}([.,]\d{1,2})?$/.test(String(d.dureeMensuelle || "").trim()) || parseFloat(String(d.dureeMensuelle).replace(",", ".")) <= 0)
+    return { status: 400, jsonBody: { erreur: "Durée mensuelle du travail invalide." } };
+  if (d.finPeriodeEssai && (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.finPeriodeEssai)) || String(d.finPeriodeEssai) <= String(d.dateDebut)))
+    return { status: 400, jsonBody: { erreur: "Fin de période d'essai invalide (postérieure au début du contrat)." } };
+  const emailSalarie = String(d.emailSalarie || "").trim().toLowerCase().slice(0, 200);
+  if (emailSalarie && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(emailSalarie))
+    return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
+
+  // Fiche minimale (upsert par nom + prénom, comme l'embauche directe) :
+  // le salarié complétera lui-même l'état civil et la banque.
+  const tok = await tokenGraph();
+  const ids = await idsListes(tok);
+  if (!ids["Salariés"]) return { status: 502, jsonBody: { erreur: "Référentiel « Salariés » introuvable." } };
+  const cle = `${nom} ${prenom.toUpperCase()}`.trim();
+  const existants = await items(tok, ids["Salariés"], "CodeClient,Nom,Prenom");
+  const existant = existants.find((s) => s.CodeClient === clientInfo.codeClient &&
+    `${String(s.Nom || "").trim().toUpperCase()} ${String(s.Prenom || "").trim().toUpperCase()}`.trim() === cle);
+  const fields = {
+    Title: `${nom} ${prenom}`.trim(),
+    CodeClient: clientInfo.codeClient,
+    Nom: nom.slice(0, 120), Prenom: prenom.slice(0, 120),
+    Poste: String(d.poste).trim().slice(0, 160),
+    TypeContrat: d.typeContrat,
+    DateEntree: d.dateDebut,
+    ...(d.dateFin ? { DateSortie: d.dateFin } : {}),
+    Statut: "Actif",
+    ...(emailSalarie ? { Email: emailSalarie } : {}),
+    ...(d.finPeriodeEssai ? { FinPeriodeEssai: d.finPeriodeEssai } : {}),
+  };
+  const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
+  const rf = existant
+    ? await fetch(`${base}/${existant.id}/fields`, { method: "PATCH",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" }, body: JSON.stringify(fields) })
+    : await fetch(base, { method: "POST",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" }, body: JSON.stringify({ fields }) });
+  if (!rf.ok) return { status: 502, jsonBody: { erreur: "Création de la fiche salarié impossible — réessayez." } };
+  const idFiche = existant ? existant.id : (await rf.json().catch(() => ({}))).id;
+  viderCacheItems();
+
+  const listeId = await listeInvitations(tok);
+  return await creerInvitation(tok, listeId, email, clientInfo,
+    { id: idFiche, nom, prenom }, emailSalarie,
+    { typeContrat: d.typeContrat, dateDebut: d.dateDebut, dateFin: d.dateFin || "",
+      poste: String(d.poste).trim().slice(0, 160),
+      dureeMensuelle: String(d.dureeMensuelle).trim().replace(",", "."),
+      finPeriodeEssai: d.finPeriodeEssai || "" }, context);
 }
 
 /* ── Public : identité à afficher sur le formulaire ──────────────────── */
@@ -116,7 +197,12 @@ async function info(d, context) {
   if (!inv) return { status: 404, jsonBody: { erreur: "Lien d'invitation introuvable — demandez un nouveau lien à votre employeur." } };
   if (inv.Statut === "Complétée") return { status: 410, jsonBody: { erreur: "Ce dossier a déjà été transmis — merci ! Pour toute correction, contactez votre employeur." } };
   if (!invitationValide(inv)) return { status: 410, jsonBody: { erreur: "Ce lien a expiré — demandez un nouveau lien à votre employeur." } };
-  return { status: 200, jsonBody: { nom: inv.Nom, prenom: inv.Prenom, raisonSociale: inv.RaisonSociale || "" } };
+  // Pré-embauche : le formulaire salarié doit savoir qu'un contrat attend
+  // (pièces obligatoires + commune de naissance, contexte affiché).
+  const contrat = inv.TypeContrat && inv.DateDebut
+    ? { typeContrat: inv.TypeContrat, poste: inv.Poste || "", dateDebut: dateParis(inv.DateDebut) }
+    : null;
+  return { status: 200, jsonBody: { nom: inv.Nom, prenom: inv.Prenom, raisonSociale: inv.RaisonSociale || "", contrat } };
 }
 
 /* ── Public : soumission du dossier par le salarié ───────────────────── */
@@ -158,6 +244,17 @@ async function soumettre(d, context) {
   if (manquants.length)
     return { status: 400, jsonBody: { erreur: `Champs manquants : ${manquants.map((k) => REQUIS[k]).join(", ")}.` } };
 
+  // Pré-embauche : un contrat attend l'onboarding → exigences du modèle B
+  // (commune de naissance pour le contrat + les TROIS pièces déposées).
+  const contratEnAttente = !!(inv.TypeContrat && inv.DateDebut);
+  const pjOk = (n) => /\.(pdf|jpe?g|png)$/i.test(String(n || "").trim()) && String(n).length <= 255;
+  if (contratEnAttente) {
+    if (String(f.communeNaissance || "").trim().length < 2)
+      return { status: 400, jsonBody: { erreur: "Commune de naissance requise (elle figure sur le contrat de travail)." } };
+    if (!pjOk(d.pjIdentite) || !pjOk(d.pjVitale) || !pjOk(d.pjRib))
+      return { status: 400, jsonBody: { erreur: "Les trois pièces sont requises : pièce d'identité, carte Vitale, RIB." } };
+  }
+
   // Écriture sur la fiche de L'INVITATION (jamais un id du navigateur),
   // propriété re-vérifiée : la fiche doit toujours porter le CodeClient.
   const ids = await idsListes(tok);
@@ -195,6 +292,38 @@ async function soumettre(d, context) {
     return { status: 502, jsonBody: { erreur: "Enregistrement impossible — réessayez dans un instant." } };
   }
 
+  // Pré-embauche : le dossier est complet → la demande de contrat part
+  // MAINTENANT en « Production contrat » (le flux AR notifie employeur et
+  // gestionnaire, la DPAE suit son circuit habituel). Écrite AVANT de
+  // consommer l'invitation : si le contrat échoue, le lien reste actif
+  // et le salarié (ou l'employeur) peut re-soumettre.
+  let referenceContrat = null;
+  if (contratEnAttente) {
+    referenceContrat = `EMB-${Date.now().toString(36).toUpperCase()}`;
+    try {
+      await creerEmbauche(inv.EmailDemandeur || "",
+        { codeClient: inv.CodeClient, emailGestionnaire: inv.EmailGestionnaire || "" },
+        {
+          typeContrat: inv.TypeContrat,
+          nom: inv.Nom, prenom: inv.Prenom,
+          dateNaissance: dateOuVide(f.dateNaissance),
+          lieuNaissance: txt(f.communeNaissance, 120),
+          nationalite: txt(f.nationalite, 80) || "—",
+          numeroSS: nir,
+          adressePostale: txt(f.adressePostale, 250),
+          emailSalarie: email,
+          telephoneSalarie: txt(f.telephone, 40),
+          dateDebut: dateParis(inv.DateDebut),
+          ...(inv.DateFin ? { dateFin: dateParis(inv.DateFin) } : {}),
+          poste: inv.Poste || "",
+          dureeMensuelle: inv.DureeMensuelle || "0",
+        }, referenceContrat);
+    } catch (e) {
+      context.error("onboarding/contrat :", e);
+      return { status: 502, jsonBody: { erreur: "Votre dossier est enregistré mais le lancement du contrat a échoué — réessayez « Transmettre » dans un instant." } };
+    }
+  }
+
   // Invitation consommée (le lien devient inerte) — best-effort APRÈS
   // l'écriture de la fiche : un échec ici ne perd aucune donnée.
   const listeId = await listeInvitations(tok);
@@ -204,7 +333,10 @@ async function soumettre(d, context) {
     body: JSON.stringify({ Statut: "Complétée" }),
   }).catch(() => {});
   viderCacheItems();
-  return { status: 200, jsonBody: { ok: true, message: "Dossier transmis à votre employeur — merci !" } };
+  return { status: 200, jsonBody: { ok: true, contrat: contratEnAttente,
+    message: contratEnAttente
+      ? "Dossier transmis — la préparation de votre contrat de travail est lancée !"
+      : "Dossier transmis à votre employeur — merci !" } };
 }
 
-module.exports = { inviter, info, soumettre, clientDeInvitation };
+module.exports = { inviter, embaucher, info, soumettre, clientDeInvitation };

@@ -127,10 +127,13 @@ app.http("demande", {
       // Onboarding : le client génère (ou retrouve) le lien d'invitation
       // d'une fiche — verrous : option embauche + propriété de la fiche
       // (vérifiée dans le module).
-      if (d.action === "onboardingInviter") {
+      if (d.action === "onboardingInviter" || d.action === "onboardingEmbauche") {
         if (!clientInfo.options.includes("embauche"))
           return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
-        return await require("../onboarding").inviter(email, clientInfo, d, context);
+        const onboarding = require("../onboarding");
+        return d.action === "onboardingEmbauche"
+          ? await onboarding.embaucher(email, clientInfo, d, context)
+          : await onboarding.inviter(email, clientInfo, d, context);
       }
 
       // Brique « Salariés étrangers » : le client déclare un récépissé de
@@ -234,10 +237,10 @@ app.http("demande", {
         }
         // La fiche d'abord (upsert idempotent), le contrat ensuite : en cas
         // d'échec du contrat, une nouvelle tentative re-complète la fiche.
-        await creerFicheSalarie(clientInfo, d);
+        const idFiche = await creerFicheSalarie(clientInfo, d);
         const reference = `EMB-${Date.now().toString(36).toUpperCase()}`;
         await creerEmbauche(email, clientInfo, d, reference);
-        return { status: 202, jsonBody: { reference } };
+        return { status: 202, jsonBody: { reference, ...(idFiche ? { idFiche: String(idFiche) } : {}) } };
       }
 
       // Bascule « connecteurs standard » (chantier fin du Premium,
@@ -577,6 +580,9 @@ async function creerFicheSalarie(clientInfo, d) {
       });
   if (!r.ok) throw { status: 502, erreur: "Création de la fiche salarié impossible — réessayez." };
   viderCacheItems();
+  // L'id de la fiche permet d'enchaîner sur l'invitation d'onboarding
+  // depuis l'écran de confirmation d'embauche.
+  return existant ? existant.id : (await r.json().catch(() => ({}))).id || null;
 }
 
 /* Met à jour le dossier d'un salarié (liste « Salariés ») pour le client

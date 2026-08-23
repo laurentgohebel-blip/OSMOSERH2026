@@ -300,6 +300,23 @@ function traiterDemande(e, options) {
     return json(200, { ok: true });
   }
 
+  // Pré-embauche par invitation : fiche minimale créée + lien factice —
+  // en réel, le contrat part automatiquement à la soumission du salarié.
+  if (d.action === "onboardingEmbauche") {
+    p.salaries.push({
+      cle: cleNomPrenom(d.nom, d.prenom),
+      nom: String(d.nom || "").toUpperCase(), prenom: d.prenom || "",
+      matricule: "", type: d.typeContrat, poste: d.poste || "",
+      debut: d.dateDebut, fin: d.dateFin || null, statut: "Actif",
+    });
+    p.salaries.sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
+    return json(201, {
+      lien: `${window.location.origin}/?onboarding=demo000000000000000000000000000000000000000000000`,
+      expireLe: new Date(Date.now() + 14 * 86400000).toISOString(),
+      reference: referenceDemo("INV"), deja: false,
+    });
+  }
+
   // Onboarding : lien d'invitation factice (le formulaire public n'est
   // pas simulé — la démo montre le geste côté employeur).
   if (d.action === "onboardingInviter") {

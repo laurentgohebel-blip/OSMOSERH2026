@@ -24,7 +24,7 @@ const VIDE = {
   dateNaissance: "", numeroSS: "", departementNaissance: "",
   codeDepartementNaissance: "", paysNaissance: "France", codePaysNaissance: "FR",
   adressePostale: "", email: "", telephone: "", iban: "", bic: "",
-  bulletinDematerialise: true, nationalite: "",
+  bulletinDematerialise: true, nationalite: "", communeNaissance: "",
 };
 const REQUIS = ["sexe", "nomNaissance", "situationFamiliale", "dateNaissance", "numeroSS",
   "departementNaissance", "codeDepartementNaissance", "paysNaissance", "codePaysNaissance",
@@ -69,14 +69,22 @@ export default function OnboardingSalarie({ jeton }) {
     setEnvoiPj(null);
   };
 
+  // Contrat en attente (pré-embauche) : commune de naissance + les trois
+  // pièces deviennent obligatoires — le contrat part à la soumission.
+  const contrat = etat.contrat || null;
   const envoyer = async () => {
-    if (REQUIS.some((k) => !String(f[k] || "").trim())) { setErr(true); setMsg({ erreur: "Complétez tous les champs marqués d'une étoile." }); return; }
+    const requis = [...REQUIS, ...(contrat ? ["communeNaissance"] : [])];
+    if (requis.some((k) => !String(f[k] || "").trim())) { setErr(true); setMsg({ erreur: "Complétez tous les champs marqués d'une étoile." }); return; }
+    if (contrat && (!pj.identite || !pj.vitale || !pj.rib)) {
+      setErr(true); setMsg({ erreur: "Déposez les trois pièces (identité, carte Vitale, RIB) — elles sont nécessaires à votre contrat." }); return;
+    }
     setEnvoi(true); setMsg(null);
     try {
       const r = await fetch("/api/demande", { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "onboarding", mode: "soumettre", jeton, fiche: f }) });
+        body: JSON.stringify({ action: "onboarding", mode: "soumettre", jeton, fiche: f,
+          ...(contrat ? { pjIdentite: pj.identite, pjVitale: pj.vitale, pjRib: pj.rib } : {}) }) });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) setFini(true);
+      if (r.ok) setFini(j);
       else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
     } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
     setEnvoi(false);
@@ -110,8 +118,11 @@ export default function OnboardingSalarie({ jeton }) {
     <Cadre>
       <div style={{ background: "#E1F5EE", border: "1px solid #B7E4D4", borderRadius: 12, padding: 24, fontSize: 14.5, color: "#085041" }}>
         ✓ <strong>Dossier transmis — merci {etat.prenom} !</strong><br /><br />
-        {etat.raisonSociale || "Votre employeur"} et Osmose RH disposent maintenant de vos informations
-        pour préparer votre contrat et votre paie. Vous pouvez fermer cette page.
+        {fini.contrat
+          ? <>La préparation de votre <strong>contrat de travail</strong> est lancée : {etat.raisonSociale || "votre employeur"} et
+            Osmose RH prennent le relais, vous serez contacté(e) pour la signature. Vous pouvez fermer cette page.</>
+          : <>{etat.raisonSociale || "Votre employeur"} et Osmose RH disposent maintenant de vos informations
+            pour préparer votre contrat et votre paie. Vous pouvez fermer cette page.</>}
       </div>
     </Cadre>
   );
@@ -137,6 +148,13 @@ export default function OnboardingSalarie({ jeton }) {
           salarié : ces informations servent à préparer votre contrat de travail et vos bulletins de paie.
           Comptez 5 minutes — munissez-vous de votre carte Vitale et d'un RIB.
         </p>
+        {contrat && (
+          <div style={{ background: "#E6F1FB", border: "1px solid #BFDCF7", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "#0C447C", marginBottom: 18, lineHeight: 1.5 }}>
+            📄 Un <strong>{contrat.typeContrat}</strong>{contrat.poste ? <> de <strong>{contrat.poste}</strong></> : null}
+            {contrat.dateDebut ? <> débutant le <strong>{String(contrat.dateDebut).split("-").reverse().join("/")}</strong></> : null} vous attend :
+            dès votre dossier transmis, sa préparation démarre automatiquement.
+          </div>
+        )}
 
         {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
 
@@ -159,6 +177,7 @@ export default function OnboardingSalarie({ jeton }) {
           <Champ k="nomMarital" label="Nom marital" requis={false} enfant />
           <Champ k="dateNaissance" label="Date de naissance" type="date" enfant />
           <Champ k="numeroSS" label="N° de sécurité sociale (15 chiffres)" enfant />
+          {contrat && <Champ k="communeNaissance" label="Commune de naissance" enfant />}
           <Champ k="departementNaissance" label="Département de naissance" enfant />
           <Champ k="codeDepartementNaissance" label="Code département (ex. 83)" enfant />
           <Champ k="paysNaissance" label="Pays de naissance" enfant />
@@ -183,9 +202,11 @@ export default function OnboardingSalarie({ jeton }) {
           Je souhaite recevoir mes bulletins de paie au format dématérialisé
         </label>
 
-        <h2 style={{ fontSize: 14, fontFamily: T.serif, margin: "0 0 6px" }}>Pièces justificatives</h2>
+        <h2 style={{ fontSize: 14, fontFamily: T.serif, margin: "0 0 6px" }}>Pièces justificatives{contrat ? " *" : ""}</h2>
         <p style={{ margin: "0 0 12px", fontSize: 12, color: T.mut }}>
-          Photos ou PDF acceptés (10 Mo max par fichier) — facultatif si vous les avez déjà remises à votre employeur.
+          {contrat
+            ? "Photos ou PDF acceptés (10 Mo max par fichier) — les trois pièces sont nécessaires à la préparation de votre contrat."
+            : "Photos ou PDF acceptés (10 Mo max par fichier) — facultatif si vous les avez déjà remises à votre employeur."}
         </p>
         <div style={{ display: "grid", gap: 10, marginBottom: 22 }}>
           {PIECES.map(([cle, label]) => (
