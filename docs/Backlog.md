@@ -14,6 +14,14 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Brique Sécurité** (23/08 nuit) : la tuile « Sécurité » (ex-« bientôt
+  disponible ») devient une vraie brique et absorbe les habilitations —
+  registre de l'effectif (la plus récente par salarié + type fait foi),
+  compteurs (suivies / à recycler sous 90 j / expirées), badges d'état,
+  bouton « Déclarer une habilitation ». La tuile Habilitations disparaît
+  de la grille (formulaire toujours accessible depuis Sécurité et la
+  fiche du salarié). DUERP, registres et affichages annoncés « bientôt »
+  dans la brique. Aucun geste SharePoint (front seulement).
 - **Pré-embauche : embauche par invitation + contrat automatique**
   (23/08 nuit) : la tuile Embauche propose DEUX parcours — « J'ai les
   informations du salarié » (parcours complet existant) ou « Je fais
