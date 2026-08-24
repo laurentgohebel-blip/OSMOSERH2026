@@ -16,6 +16,17 @@ on:
       - "src/scripts/**"
   workflow_dispatch:
 
+# Un seul déploiement à la fois vers la SWA. Deux téléversements
+# simultanés se marchent dessus : celui qui arrive pendant la bascule de
+# l'autre est rejeté par « No matching Static Web App environment was
+# found » (constaté le 24/08 — deux runs déclenchés sur le même commit,
+# l'un vert, l'autre rouge alors que le site était bien déployé). Le run
+# le plus récent gagne, les précédents sont annulés : sur une même
+# branche, seul le dernier état du code mérite d'être en ligne.
+concurrency:
+  group: swa-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
