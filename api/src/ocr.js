@@ -275,4 +275,4 @@ async function analyser(type, contenu, contentType, context) {
   }
 }
 
-module.exports = { configuree, analyser, typeValide, datesDuTexte, extraire, TAILLE_MAX };
+module.exports = { configuree, analyser, typeValide, datesDuTexte, extraire, motifArret, TAILLE_MAX };

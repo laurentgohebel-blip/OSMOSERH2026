@@ -6,6 +6,18 @@ Laurent). Une idée dictée = une ligne ici ; développée = déplacée dans
 synthèse de session et les docs dédiées.
 
 ## En ligne récemment (rien à faire)
+- **La boîte mail comme point d'entrée** (24/08, voir
+  docs/Courriel-boite-de-depot.md) : le client transfère l'arrêt à
+  l'adresse de dépôt du cabinet, le portail reconnaît l'expéditeur,
+  classe la pièce dans sa GED, lit le document ET le corps du message,
+  rapproche le salarié de l'effectif, enregistre l'absence et répond ce
+  qu'il a compris. Aucune connexion, aucun mot de passe. Le client vient
+  toujours de l'annuaire, jamais du message ; aucune démarche créée dans
+  le doute (salarié ambigu, motif ou date manquants → le gestionnaire
+  prend le relais) ; référence `MAIL-…` déterministe contre les
+  doublons. **Mise en service** : boîte partagée Microsoft 365, variable
+  `COURRIEL_SECRET` dans la SWA, flux Power Automate à deux actions
+  (recette complète dans la doc). Sans le secret : brique absente.
 - **Dossier salarié enrichi** (14 champs, onglet Dossier, bandeau
   « Dossier incomplet » = liste de travail Osmose).
 - **Embauche modèle B** : 3 PJ obligatoires (identité, Vitale, RIB),
