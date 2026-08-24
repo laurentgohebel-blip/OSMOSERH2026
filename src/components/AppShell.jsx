@@ -3032,7 +3032,12 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   // reconnus sont PROPOSÉS (jamais imposés) — le client corrige ce qu'il
   // veut avant d'envoyer. Sans OCR configuré, le dépôt marche quand même
   // et remplit simplement le justificatif.
-  const [depot, setDepot] = useState(null); // null | {envoi} | {nom, lus[]} | {erreur}
+  // `lecture` distingue l'option ABSENTE (rien à dire au client) d'une
+  // lecture qui a échoué (là, on l'invite à saisir). Sans ce partage, le
+  // portail annonçait « les dates n'ont pas pu être lues » à des clients
+  // chez qui l'OCR n'est tout simplement pas activé — un service jamais
+  // promis ne doit pas passer pour un service en panne.
+  const [depot, setDepot] = useState(null); // null | {envoi} | {nom, lus[], lecture} | {erreur}
 
   const deposerJustificatif = async (fichier) => {
     if (!fichier) return;
@@ -3053,7 +3058,7 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
         return n;
       });
       setErr(false);
-      setDepot({ nom: j.nom, lus });
+      setDepot({ nom: j.nom, lus, lecture: j.extraction?.motif !== "non configuré" });
     } catch { setDepot({ erreur: "Dépôt impossible — vérifiez votre connexion." }); }
   };
 
@@ -3106,12 +3111,12 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
           </label>
           <div style={{ border: `1px dashed ${err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <label style={{ fontSize: 12.5, color: T.accent, cursor: depot?.envoi ? "default" : "pointer", fontWeight: 600 }}>
-              {depot?.envoi ? "Lecture en cours…" : "📷 Photographier ou joindre l'arrêt"}
+              {depot?.envoi ? "Envoi du document…" : "📷 Photographier ou joindre l'arrêt"}
               <input type="file" accept=".pdf,.jpg,.jpeg,.png" capture="environment" style={{ display: "none" }}
                 disabled={depot?.envoi} onChange={(e) => deposerJustificatif(e.target.files?.[0])} />
             </label>
             <span style={{ fontSize: 11.5, color: T.mut, flex: 1, minWidth: 140 }}>
-              {depot?.nom ? `✓ ${depot.nom}` : "Le document est déposé et les dates lues automatiquement."}
+              {depot?.nom ? `✓ ${depot.nom}` : "Le document est joint à votre déclaration."}
             </span>
           </div>
           {depot?.lus?.length > 0 && (
@@ -3119,7 +3124,7 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
               Lu sur le document : {depot.lus.join(", ")} — vérifiez et corrigez si besoin avant d'envoyer.
             </p>
           )}
-          {depot?.nom && depot.lus.length === 0 && (
+          {depot?.nom && depot.lus.length === 0 && depot.lecture && (
             <p style={{ margin: "0 0 8px", fontSize: 11.5, color: T.mut }}>
               Document joint. Les dates n'ont pas pu être lues automatiquement : saisissez-les ci-dessus.
             </p>
