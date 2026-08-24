@@ -65,6 +65,54 @@ volumes d'une TPE restent très faibles (quelques pièces par embauche).
   retenu que s'il figure à côté du mot « BIC » ou « SWIFT » ; les dates
   de plus d'un an sont écartées d'un arrêt de travail (dates de naissance
   imprimées sur le document).
+
+## Le cas de l'avis d'arrêt de travail (Cerfa)
+
+Le formulaire de l'Assurance Maladie a deux pièges, corrigés le 24/08
+après lecture d'un avis de prolongation réel.
+
+**Les libellés des cases sont imprimés, cochées ou non.** La ligne « en
+rapport avec un accident du travail, maladie professionnelle » figure
+sur *tous* les avis, même pour une grippe — l'OCR rend du texte, pas
+l'état des cases. Se fier au vocabulaire donnait donc systématiquement le
+motif « Maladie professionnelle », qui rend la visite de reprise
+obligatoire quelle que soit la durée de l'arrêt.
+
+Sur un Cerfa, le portail ne lit plus que les **signaux forts** — une case
+cochée se devine à la donnée qu'elle accompagne :
+
+| Ce qui est lu | Motif proposé |
+|---|---|
+| rien de renseigné | Maladie (arrêt de travail) |
+| une date en face de « date AT/MP » | *aucun* — le libellé mêle accident du travail et maladie professionnelle, deux motifs aux conséquences différentes : le gestionnaire tranche sur pièce |
+| des dates au volet « temps partiel / travail aménagé » | Temps partiel thérapeutique |
+
+Les documents rédigés librement (certificat, attestation) continuent
+d'être lus au vocabulaire, comme avant.
+
+**Les dates se lisent aux libellés, pas au ramassage.** Un avis porte
+aussi la date de télétransmission, les « à partir du » des sorties
+autorisées, parfois une date d'accident. L'ordre de lecture est :
+le bloc « Récapitulatif de l'arrêt » (Date de début / Date de fin), puis
+un « du … au … », puis « prescris un arrêt jusqu'au … », et seulement en
+dernier recours les deux dates les plus éloignées de la page. Une fin
+antérieure au début, ou un arrêt de plus de trois ans, n'est pas
+proposée.
+
+**Un avis scanné exige l'OCR.** Ces documents arrivent presque toujours
+en photo ou en PDF image : sans `OCR_ENDPOINT` / `OCR_CLE`, aucun champ
+ne peut être lu, et c'est normal.
+
+## Données de santé
+
+Un arrêt de travail est une **donnée de santé** (RGPD art. 9) et porte le
+NIR. L'analyse transmet le document à Azure AI Document Intelligence :
+
+- choisir la région **France Central** à la création de la ressource ;
+- inscrire ce sous-traitant au **registre de traitements (art. 30)**, à
+  côté de Microsoft 365 / SharePoint ;
+- le module n'écrit rien : le fichier reste dans la GED du client,
+  l'extraction vit le temps de la réponse HTTP.
 - **Rien n'est stocké par le module d'analyse** : il lit le contenu déjà
   téléversé et rend des champs. Le fichier vit dans la GED du client,
   l'extraction dure le temps de la réponse HTTP.
@@ -77,5 +125,5 @@ volumes d'une TPE restent très faibles (quelques pièces par embauche).
   `extraction: { champs: null, motif }`. Sans le paramètre, la réponse
   est strictement celle d'avant.
 - Doctrine des routes respectée : aucune route nouvelle.
-- Banc de vérification : `simu-ocr.js` (30 contrôles — extraction,
-  garde-fous, dégradation, branchement du dépôt).
+- Banc de vérification : `simu-ocr.js` (44 contrôles — extraction,
+  Cerfa réel anonymisé, garde-fous, dégradation, branchement du dépôt).

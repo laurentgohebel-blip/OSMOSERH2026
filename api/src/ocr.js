@@ -116,9 +116,68 @@ const bic = (texte) => {
   return m ? m[1] : "";
 };
 
-/* Motif d'arrêt déduit du vocabulaire — miroir des motifs du portail. */
+/* ── Lecture par libellés ─────────────────────────────────────────────
+   Un formulaire se lit en suivant ses intitulés, pas en ramassant toutes
+   les dates de la page : un avis d'arrêt porte aussi la date de
+   télétransmission, les « à partir du » des sorties autorisées, parfois
+   une date d'accident. Le fragment retenu est la fin de la ligne du
+   libellé — et, si elle ne porte aucune date, la ligne suivante, car
+   l'OCR place souvent la valeur sous l'intitulé. Un « : » ouvre le
+   libellé suivant : on s'arrête avant. */
+function fragmentApres(texte, motif) {
+  const m = texte.match(motif);
+  if (!m) return "";
+  const debut = m.index + m[0].length;
+  const lignes = texte.slice(debut, debut + 80).split("\n");
+  let frag = lignes[0] || "";
+  if (!datesDuTexte(frag).length && lignes[1] !== undefined) frag = lignes[1];
+  const stop = frag.indexOf(":");
+  return stop >= 0 ? frag.slice(0, stop) : frag;
+}
+const dateApres = (texte, motif) => datesDuTexte(fragmentApres(texte, motif))[0] || "";
+
+/* « du 3 mars 2027 au 24 mars 2027 » : les deux dates d'un même souffle. */
+const MOTIF_DATE = "(?:\\d{1,2}[\\/.\\-]\\d{1,2}[\\/.\\-]\\d{2,4}|\\d{1,2}\\s+[a-zéûôA-ZÉÛÔ]+\\s+\\d{4}|\\d{4}-\\d{2}-\\d{2})";
+const DU_AU = new RegExp(`\\bdu\\s+(${MOTIF_DATE})\\s+(?:au|jusqu[’']au)\\s+(${MOTIF_DATE})`, "i");
+function periodeDuAu(texte) {
+  const m = texte.match(DU_AU);
+  if (!m) return null;
+  const a = datesDuTexte(m[1])[0], b = datesDuTexte(m[2])[0];
+  return a && b ? [a, b] : null;
+}
+
+/* ── Motif d'arrêt ────────────────────────────────────────────────────
+   Piège du Cerfa : le formulaire IMPRIME tous les libellés de cases,
+   cochées ou non. « en rapport avec un accident du travail, maladie
+   professionnelle » figure donc sur TOUS les avis d'arrêt, même pour une
+   grippe — l'OCR rend du texte, pas l'état des cases. Se fier au
+   vocabulaire y donnait systématiquement « Maladie professionnelle »
+   (constaté le 24/08 sur un avis de prolongation réel), motif qui rend
+   la visite de reprise obligatoire quelle que soit la durée de l'arrêt.
+   Sur un Cerfa on ne lit donc que les SIGNAUX FORTS : une case cochée se
+   devine à la donnée qui l'accompagne (date AT/MP renseignée, dates de
+   temps partiel renseignées). Sans signal, c'est un arrêt maladie. Et si
+   le signal est ambigu — le libellé mêle accident du travail ET maladie
+   professionnelle, deux motifs aux conséquences différentes — on ne
+   propose RIEN : le gestionnaire tranche sur pièce. */
+const MARQUEURS_CERFA = [
+  /en rapport avec un accident du travail\s*,?\s*maladie professionnelle/i,
+  /r[ée]capitulatif de l['’]arr[êe]t/i,
+  /num[ée]ro d['’]immatriculation/i,
+  /donn[ée]es t[ée]l[ée]transmises/i,
+];
+const estCerfa = (texte) => MARQUEURS_CERFA.some((r) => r.test(texte));
+
 function motifArret(texte) {
   const t = texte.toLowerCase();
+  if (estCerfa(texte)) {
+    if (dateApres(texte, /date\s*at\s*\/\s*mp\s*:/i)) return "";
+    if (dateApres(texte, /temps partiel\s*\/?\s*travail am[ée]nag[ée][^:]{0,60}du\s*:/i)) return "Temps partiel thérapeutique";
+    if (/cong[ée]\s+maternit/.test(t)) return "Congé maternité";
+    if (/cong[ée]\s+paternit/.test(t)) return "Congé paternité / accueil de l'enfant";
+    return "Maladie (arrêt de travail)";
+  }
+  // Document libre (certificat, attestation) : le vocabulaire fait foi.
   if (/maladie professionnelle/.test(t)) return "Maladie professionnelle";
   if (/accident de trajet/.test(t)) return "Accident de trajet";
   if (/accident du travail|accident de travail/.test(t)) return "Accident du travail";
@@ -143,14 +202,31 @@ function extraire(type, resultat) {
   }
   if (type === "arret") {
     const champs = {};
-    const dates = datesDuTexte(texte);
-    // Un avis d'arrêt porte au moins la date de début et la date de fin :
-    // on retient les deux plus éloignées dans l'ordre chronologique, en
-    // écartant celles antérieures à un an (dates de naissance, etc.).
-    const borne = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
-    const utiles = [...new Set(dates.filter((d) => d >= borne))].sort();
-    if (utiles.length >= 1) champs.dateDebut = utiles[0];
-    if (utiles.length >= 2) champs.dateFin = utiles[utiles.length - 1];
+    // 1. Les libellés du formulaire, quand il y en a — le « Récapitulatif
+    //    de l'arrêt » du Cerfa est la source la plus sûre.
+    let debut = dateApres(texte, /date de d[ée]but\s*:/i);
+    let fin = dateApres(texte, /date de fin\s*:/i);
+    // 2. « du … au … » d'un certificat rédigé librement.
+    if (!debut || !fin) {
+      const p = periodeDuAu(texte);
+      if (p) { debut = debut || p[0]; fin = fin || p[1]; }
+    }
+    // 3. « prescris un arrêt jusqu'au … » : la fin seule.
+    if (!fin) fin = dateApres(texte, /jusqu[’']\s*au\b/i);
+    // 4. Repli : les deux dates les plus éloignées, en écartant celles
+    //    antérieures à un an (dates de naissance, mentions légales).
+    if (!debut || !fin) {
+      const borne = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
+      const utiles = [...new Set(datesDuTexte(texte).filter((d) => d >= borne))].sort();
+      if (!debut && utiles.length >= 1) debut = utiles[0];
+      if (!fin && utiles.length >= 2) fin = utiles[utiles.length - 1];
+    }
+    // Vraisemblance : une fin avant le début, ou un arrêt de plus de trois
+    // ans, trahit une date attrapée ailleurs sur la page — on n'en propose
+    // aucune plutôt qu'une fausse.
+    if (debut && fin && (fin < debut || (Date.parse(fin) - Date.parse(debut)) > 3 * 365 * 86400000)) fin = "";
+    if (debut) champs.dateDebut = debut;
+    if (fin) champs.dateFin = fin;
     const n = nir(texte); if (n) champs.numeroSS = n;
     const m = motifArret(texte); if (m) champs.motif = m;
     return champs;
