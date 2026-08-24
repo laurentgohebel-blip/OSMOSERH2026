@@ -56,6 +56,21 @@ app.http("demande", {
       }
     }
 
+    // 1 bis-3. Courriels entrants : le flux de la boîte de dépôt poste
+    // ici le message d'un client. Pas de jeton utilisateur — un patron
+    // qui transfère un arrêt depuis son téléphone n'ouvre pas le
+    // portail —, mais un secret d'en-tête et, surtout, un expéditeur
+    // qui doit être un contact portail actif : le CodeClient vient de
+    // l'annuaire, jamais du contenu du message.
+    if (d.action === "courriel") {
+      try {
+        return await require("../courriel").recevoir(request, d, context);
+      } catch (e) {
+        context.error("demande/courriel :", e);
+        return { status: 500, jsonBody: { erreur: `Module courriel inchargeable : ${e.message}` } };
+      }
+    }
+
     // 1 ter. Détour gestionnaire : même contournement — l'activation des
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
