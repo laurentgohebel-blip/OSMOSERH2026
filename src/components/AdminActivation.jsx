@@ -9,7 +9,7 @@
 // les routes historiques : GET /api/me?vue=admin et POST /api/demande
 // { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check, Send, ArrowLeft, Archive } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
@@ -376,10 +376,15 @@ function RepriseEffectif({ clients, notifier }) {
 const frCourt = (iso) => { const d = new Date(iso || ""); return isNaN(d) ? "" : d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }); };
 const frLong = (iso) => { const d = new Date(iso || ""); return isNaN(d) ? "" : `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}, ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`; };
 
+/* La balle est au cabinet tant que le dernier mot est au client — signal
+   plus fiable que Statut, qui peut porter des valeurs historiques posées
+   par d'anciens flux (« Traitée », « En cours »). */
+const aRepondreFil = (f) => !f.clos && f.dernierAuteur !== "gestionnaire";
+
 function PastilleFil({ fil }) {
   const [bg, fg, lib] = fil.clos ? ["#F1EFE8", "#444441", "Clos"]
-    : fil.statut === "Répondu" ? ["#E1F5EE", "#085041", "Répondu"]
-    : ["#FAEEDA", "#854F0B", "À répondre"];
+    : aRepondreFil(fil) ? ["#FAEEDA", "#854F0B", "À répondre"]
+    : ["#E1F5EE", "#085041", "Répondu"];
   return <span style={{ background: bg, color: fg, fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", flexShrink: 0 }}>{lib}</span>;
 }
 
@@ -403,20 +408,28 @@ function BulleAdmin({ fil, qui, quand, texte }) {
   );
 }
 
-function BoiteMessages({ boite, recharger, notifier, filInitial }) {
+function BoiteMessages({ boite, recharger, notifier, filInitial, majLocale }) {
   const [ouvert, setOuvert] = useState(null);
   const [rep, setRep] = useState("");
   const [envoi, setEnvoi] = useState(false);
 
-  // Lien profond ?msg= : le fil s'ouvre dès que la boîte est chargée.
+  // Lien profond ?msg= : le fil s'ouvre à la PREMIÈRE boîte qui le
+  // contient, puis la cible est consommée. Dépendre de l'identité de
+  // `boite` (et non d'un booléen « est-elle nulle ») : sinon un premier
+  // chargement en erreur brûlait le lien pour de bon, et chaque retour
+  // sur l'onglet rouvrait le fil de force.
+  const initRef = useRef(filInitial || null);
   useEffect(() => {
-    if (filInitial && Array.isArray(boite?.fils)) {
-      const f = boite.fils.find((x) => String(x.id) === String(filInitial));
-      if (f) ouvrir(f);
-    }
-  }, [boite === null]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!initRef.current || !Array.isArray(boite?.fils)) return;
+    const f = boite.fils.find((x) => String(x.id) === String(initRef.current));
+    if (f) { initRef.current = null; ouvrir(f); }
+  }, [boite]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const poster = async (corps, okMsg) => {
+  /* `ajout` : réponse à porter LOCALEMENT dans le fil. La lecture est mise
+     en cache 60 s côté API et peut être servie par une autre instance —
+     recharger juste après l'écriture risquait de ne pas montrer la réponse,
+     donnant à croire à un échec (et menant à un doublon). */
+  const poster = async (corps, okMsg, ajout) => {
     setEnvoi(true);
     try {
       const r = await apiFetch("/api/demande", {
@@ -427,7 +440,13 @@ function BoiteMessages({ boite, recharger, notifier, filInitial }) {
       setEnvoi(false);
       if (!r.ok) { notifier(j.erreur || `Refusé (HTTP ${r.status}).`); return false; }
       if (okMsg) notifier(okMsg);
-      recharger();
+      if (ajout) {
+        const quand = j.quand || new Date().toISOString();
+        majLocale(ajout.id, (f) => ({
+          ...f, statut: "Répondu", dernierAuteur: "gestionnaire", nonLuGestionnaire: false,
+          derniereMaj: quand, echanges: [...(f.echanges || []), { qui: "gestionnaire", quand, texte: ajout.texte }],
+        }));
+      } else recharger();
       return true;
     } catch {
       setEnvoi(false);
@@ -448,9 +467,12 @@ function BoiteMessages({ boite, recharger, notifier, filInitial }) {
   };
 
   if (boite === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des messages…</p>;
-  if (boite.erreur) return (
+  // Trois formes d'échec, dont une silencieuse : un 200 dont le corps
+  // n'est pas le JSON attendu (SWA qui sert index.html sur /api/*) donne
+  // {} — sans ce garde, `boite.fils.find` faisait planter tout l'écran.
+  if (boite.erreur || !Array.isArray(boite.fils)) return (
     <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>
-      {boite.erreur}
+      {boite.erreur || "Réponse inattendue de l'API — rechargez la page."}
     </p>
   );
 
@@ -488,7 +510,7 @@ function BoiteMessages({ boite, recharger, notifier, filInitial }) {
               <span style={{ fontSize: 11.5, color: T.mut }}>
                 La réponse s'ajoute au fil du portail client et passe le statut en « Répondu ».
               </span>
-              <button onClick={async () => { if (rep.trim() && await poster({ action: "messageRepondre", id: fil.id, texte: rep.trim() }, "✓ Réponse ajoutée au fil.")) setRep(""); }}
+              <button onClick={async () => { if (rep.trim() && await poster({ action: "messageRepondre", id: fil.id, texte: rep.trim() }, "✓ Réponse ajoutée au fil.", { id: fil.id, texte: rep.trim() })) setRep(""); }}
                 disabled={envoi || !rep.trim()} style={{
                   all: "unset", cursor: envoi || !rep.trim() ? "default" : "pointer", display: "flex", alignItems: "center", gap: 8,
                   background: T.accent, color: "#fff", borderRadius: 8, padding: "9px 18px",
@@ -559,6 +581,12 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
   const [toast, setToast] = useState(null);
   const notifier = (m) => { setToast(m); setTimeout(() => setToast(null), 4200); };
 
+  // Met à jour UN fil de la boîte sans relire (voir `poster`).
+  const majFilBoite = (id, transformer) =>
+    setBoite((b) => (Array.isArray(b?.fils)
+      ? { ...b, fils: b.fils.map((f) => (f.id === id ? transformer(f) : f)) }
+      : b));
+
   const chargerBoite = () => {
     apiFetch("/api/me?vue=admin&onglet=messages")
       .then(async (r) => {
@@ -580,8 +608,7 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
   useEffect(charger, []);
 
   // Fils où la balle est côté cabinet : compteur de l'onglet Messages.
-  const aRepondre = Array.isArray(boite?.fils)
-    ? boite.fils.filter((f) => !f.clos && f.statut !== "Répondu").length : 0;
+  const aRepondre = Array.isArray(boite?.fils) ? boite.fils.filter(aRepondreFil).length : 0;
 
   const retirer = (id) =>
     setDonnees((d) => ({ ...d, demandes: d.demandes.filter((x) => x.id !== id) }));
@@ -620,9 +647,12 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
       </nav>
 
       <main style={{ maxWidth: 760, margin: "0 auto", padding: "26px 18px 60px" }}>
-        {onglet === "messages" && (
-          <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} filInitial={msgInitial} />
-        )}
+        {/* Masqué, pas démonté : changer d'onglet en pleine rédaction ne
+            doit pas effacer la réponse en cours ni refermer le fil. */}
+        <div style={{ display: onglet === "messages" ? "block" : "none" }}>
+          <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier}
+            filInitial={msgInitial} majLocale={majFilBoite} />
+        </div>
 
         {onglet === "acces" && (<>
         {donnees === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des demandes…</p>}

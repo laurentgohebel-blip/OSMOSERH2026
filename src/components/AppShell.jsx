@@ -275,7 +275,7 @@ export default function AppShell({ user, onLogout }) {
   // Lien profond des e-mails de notification : ?msg=<id> ouvre le fil
   // directement. Lecture PURE ici (StrictMode double-invoque les
   // initialisateurs) ; l'URL est nettoyée dans l'effet, une seule fois.
-  const [msgInitial] = useState(() => new URLSearchParams(window.location.search).get("msg"));
+  const [msgInitial, setMsgInitial] = useState(() => new URLSearchParams(window.location.search).get("msg"));
   useEffect(() => {
     if (!msgInitial) return;
     const params = new URLSearchParams(window.location.search);
@@ -839,7 +839,7 @@ export default function AppShell({ user, onLogout }) {
             un peu plus large qu'un formulaire (lecture confortable). */}
         {vue === "prod" && tuile && tuile.id === "contact" && (
           <div style={{ maxWidth: 660, margin: "0 auto" }}>
-            <MessagerieGestionnaire user={user} onRetour={() => setTuile(null)}
+            <MessagerieGestionnaire user={user} onRetour={() => { setTuile(null); setMsgInitial(null); }}
               filInitial={msgInitial} onNonLus={setNonLusMsg} />
           </div>
         )}
@@ -3191,25 +3191,41 @@ function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
   const [rep, setRep] = useState("");          // réponse en cours de saisie
   const [repEnvoi, setRepEnvoi] = useState(false);
   const [repErr, setRepErr] = useState(null);
-  // Fil à ouvrir dès la première liste (lien profond ?msg= des e-mails).
+  // Fil à ouvrir dès la première liste (lien profond ?msg= des e-mails),
+  // consommé UNE fois : sans quoi il se rouvrirait à chaque retour.
   const initRef = useRef(filInitial || null);
+  // Fils marqués lus localement : une liste rechargée pendant que le
+  // marquage voyage encore ne doit pas ressusciter la pastille.
+  const lusRef = useRef(new Set());
+  // Fil réellement affiché, lisible depuis une promesse déjà en vol
+  // (une fermeture capture l'ancien `ouvert`, pas le courant).
+  const ouvertRef = useRef(null);
+  useEffect(() => { ouvertRef.current = ouvert; }, [ouvert]);
 
-  // Toute mise à jour de la liste passe ici : la pastille de la tuile
-  // (AppShell) suit le nombre de fils non lus sans rechargement.
-  const majFils = (liste) => {
-    setFils(liste);
-    if (Array.isArray(liste)) onNonLus?.(liste.filter((f) => f.nonLu).length);
+  // La pastille de la tuile est DÉRIVÉE de la liste. Surtout pas posée
+  // depuis un updater de setFils : ce serait modifier AppShell pendant le
+  // rendu de ce composant (React le refuse, et StrictMode le double).
+  useEffect(() => {
+    if (Array.isArray(fils)) onNonLus?.(fils.filter((f) => f.nonLu).length);
+  }, [fils]);
+
+  // Un rechargement SILENCIEUX (après un envoi réussi) ne doit jamais
+  // remplacer une liste affichée par un écran d'erreur : le message est
+  // parti, le fil doit rester lisible.
+  const echecChargement = (message, silencieux) => {
+    if (silencieux) return setRepErr(message);
+    setOuvert(null); // sinon « Réessayer » replonge dans un fil au hasard
+    setFils({ erreur: message });
   };
 
-  const charger = () => {
+  const charger = (silencieux) => {
     apiFetch("/api/me?vue=messages")
       .then(async (r) => {
-        if (!r.ok) {
-          const e = await r.json().catch(() => ({}));
-          return setFils({ erreur: e.erreur || `Messages indisponibles (HTTP ${r.status}).` });
-        }
-        const liste = (await r.json()).fils || [];
-        majFils(liste);
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) return echecChargement(j.erreur || `Messages indisponibles (HTTP ${r.status}).`, silencieux);
+        const liste = (Array.isArray(j.fils) ? j.fils : [])
+          .map((f) => (lusRef.current.has(f.id) ? { ...f, nonLu: false } : f));
+        setFils(liste);
         if (initRef.current) {
           const f = liste.find((x) => String(x.id) === String(initRef.current));
           initRef.current = null;
@@ -3218,7 +3234,10 @@ function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
       })
       // Échec réseau : API absente en dev local — liste vide, le formulaire
       // reste utilisable ; en production, message et bouton Réessayer.
-      .catch(() => setFils(import.meta.env.DEV ? [] : { erreur: "Messages momentanément indisponibles — vérifiez votre connexion." }));
+      .catch(() => {
+        if (import.meta.env.DEV) return setFils([]);
+        echecChargement("Messages momentanément indisponibles — vérifiez votre connexion.", silencieux);
+      });
   };
   useEffect(charger, []);
 
@@ -3227,12 +3246,8 @@ function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
   const ouvrirFil = (f) => {
     setOuvert(f.id); setRep(""); setRepErr(null);
     if (f.nonLu) {
-      setFils((prev) => {
-        if (!Array.isArray(prev)) return prev;
-        const maj = prev.map((x) => (x.id === f.id ? { ...x, nonLu: false } : x));
-        onNonLus?.(maj.filter((x) => x.nonLu).length);
-        return maj;
-      });
+      lusRef.current.add(f.id);
+      setFils((prev) => (Array.isArray(prev) ? prev.map((x) => (x.id === f.id ? { ...x, nonLu: false } : x)) : prev));
       apiFetch("/api/demande", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "messageStatut", id: f.id, lu: true }),
@@ -3244,22 +3259,37 @@ function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
   // est rechargée sans passer par l'état « chargement » : pas de saut).
   const envoyerReponse = async () => {
     const texte = rep.trim();
+    const cible = ouvert; // le fil peut changer pendant l'envoi
     if (!texte) return;
     setRepEnvoi(true); setRepErr(null);
     try {
       const r = await apiFetch("/api/demande", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "messageRepondre", id: ouvert, texte }),
+        body: JSON.stringify({ action: "messageRepondre", id: cible, texte }),
       });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) { setRep(""); charger(); }
-      else setRepErr(j.erreur || `Envoi refusé (HTTP ${r.status}).`);
-    } catch { setRepErr("Envoi impossible — vérifiez votre connexion."); }
+      // Revenu sur un autre fil entre-temps : ne pas effacer sa saisie ni
+      // lui coller l'erreur d'un envoi qui ne le concerne pas.
+      const memeFil = ouvertRef.current === cible;
+      if (r.ok) {
+        if (memeFil) setRep("");
+        // La réponse est ajoutée LOCALEMENT plutôt que rechargée : la
+        // lecture est mise en cache 60 s côté API et peut être servie par
+        // une autre instance — un rechargement immédiat risquait de ne pas
+        // la montrer, donnant à croire à un échec (et à un doublon).
+        setFils((prev) => (Array.isArray(prev) ? prev.map((f) => (f.id !== cible ? f : {
+          ...f, statut: "Nouveau", dernierAuteur: "client", nonLu: false,
+          derniereMaj: j.quand || new Date().toISOString(),
+          echanges: [...(f.echanges || []), { qui: "client", quand: j.quand || new Date().toISOString(), texte }],
+        })) : prev));
+      } else if (memeFil) setRepErr(j.erreur || `Envoi refusé (HTTP ${r.status}).`);
+    } catch { if (ouvertRef.current === cible) setRepErr("Envoi impossible — vérifiez votre connexion."); }
     setRepEnvoi(false);
   };
 
   // ── Nouveau message : le formulaire historique ; retour = liste rafraîchie
   if (nouveau) return <ContactGestionnaire user={user} onRetour={() => { setNouveau(false); setFils(null); charger(); }} />;
+
 
   // ── Fil déplié : la conversation
   const fil = Array.isArray(fils) ? fils.find((f) => f.id === ouvert) : null;
@@ -3324,7 +3354,12 @@ function MessagerieGestionnaire({ user, onRetour, filInitial, onNonLus }) {
       {fils?.erreur && (
         <>
           <p style={{ fontSize: 13, color: T.mut, margin: "0 0 12px" }}>{fils.erreur}</p>
-          <Btn primary onClick={() => { setFils(null); charger(); }}>Réessayer</Btn>
+          {/* Écrire reste possible : l'envoi passe par une autre route que
+              la liste — une panne de lecture ne doit pas couper le canal. */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn primary onClick={() => { setFils(null); charger(); }}>Réessayer</Btn>
+            <Btn onClick={() => setNouveau(true)}><Plus size={14} /> Nouveau message</Btn>
+          </div>
         </>
       )}
 

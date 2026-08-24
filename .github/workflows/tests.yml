@@ -26,6 +26,9 @@ jobs:
       - name: Installer les dépendances
         run: npm ci
 
+      - name: Éprouver le module de messagerie (API, sans réseau)
+        run: npm run test:api
+
       - name: Construire le portail
         run: npm run build
 

@@ -34,6 +34,7 @@ app.http("demande", {
       try {
         return await require("../lead").lead(request, context, d);
       } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
         context.error("demande/lead :", e);
         return { status: 500, jsonBody: { erreur: `Module lead inchargeable : ${e.message}` } };
       }
@@ -50,6 +51,7 @@ app.http("demande", {
           ? await admin.activer(request, context, d)
           : await admin.importerSalaries(request, context, d);
       } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
         context.error(`demande/${d.action} :`, e);
         return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
       }

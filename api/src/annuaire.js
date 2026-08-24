@@ -99,20 +99,30 @@ const cacheItems = new Map();
     immédiat au rechargement, sans attendre l'expiration des 60 s. */
 function viderCacheItems() { cacheItems.clear(); }
 async function items(tok, listeId, champs) {
-  const enCache = cacheItems.get(listeId);
+  // La clé inclut les COLONNES demandées, pas seulement la liste : deux
+  // appelants lisant la même liste avec des sélections différentes se
+  // servaient mutuellement des lignes amputées pendant 60 s. Exemple vécu
+  // (reproduit) : l'écran d'administration lit « Paramètres clients » avec
+  // le seul CodeClient (admin.js), puis resoudreClient rendait un client
+  // SANS options ni SIRET — démarches refusées à tort, et attestation
+  // émise sans mentions légales.
+  const cle = `${listeId}|${champs}`;
+  const enCache = cacheItems.get(cle);
   if (enCache && Date.now() < enCache.expire) return enCache.valeur;
   let url = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items?$expand=fields($select=${champs})&$top=200`;
   const tout = [];
   while (url) {
     const r = await fetch(url, { headers: { Authorization: `Bearer ${tok}` } });
-    if (!r.ok) throw { status: 502, erreur: "Annuaire clients injoignable (lecture)." };
+    // codeHttp : permet à l'appelant de distinguer une colonne inexistante
+    // (400 — schéma à mettre à jour) d'une panne passagère (429, 5xx).
+    if (!r.ok) throw { status: 502, erreur: "Annuaire clients injoignable (lecture).", codeHttp: r.status };
     const j = await r.json();
     // L'id d'élément accompagne les champs : nécessaire aux mises à jour
     // (fiche salarié). Posé après le spread : il gagne en cas de collision.
     tout.push(...j.value.map((i) => ({ ...i.fields, id: i.id })));
     url = j["@odata.nextLink"] || null;
   }
-  cacheItems.set(listeId, { valeur: tout, expire: Date.now() + 60000 });
+  cacheItems.set(cle, { valeur: tout, expire: Date.now() + 60000 });
   return tout;
 }
 

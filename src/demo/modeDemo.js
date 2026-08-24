@@ -184,7 +184,7 @@ export async function reponseDemo(chemin, options = {}) {
   switch (url.pathname) {
     case "/api/me":
       if (url.searchParams.get("vue") === "messages") {
-        return json(200, { fils: [...e.fils].sort((a, b) => b.derniereMaj.localeCompare(a.derniereMaj)) });
+        return json(200, { fils: [...e.fils].sort((a, b) => String(b.derniereMaj).localeCompare(String(a.derniereMaj))) });
       }
       return json(200, {
         email: UTILISATEUR_DEMO.email,
@@ -257,14 +257,20 @@ function traiterDemande(e, options) {
     const f = e.fils.find((x) => String(x.id) === String(d.id));
     if (!f) return json(404, { erreur: "Fil introuvable." });
     if (f.clos) return json(400, { erreur: "Fil clos — écrivez un nouveau message." });
+    const texte = String(d.texte || "").trim().slice(0, 4000);
+    if (!texte) return json(400, { erreur: "Réponse vide." });
+    if (f.echanges.length >= 200) return json(400, { erreur: "Fil trop long — ouvrez un nouveau message." });
     const quand = new Date().toISOString();
-    f.echanges.push({ qui: "client", quand, texte: String(d.texte || "").trim() });
-    f.derniereMaj = quand; f.dernierAuteur = "client"; f.statut = "Nouveau";
+    // La démo n'a qu'un rôle : le client. Mêmes conséquences que l'API
+    // réelle pour une relance cliente (statut, non-lu remis à zéro).
+    f.echanges.push({ qui: "client", quand, texte });
+    f.derniereMaj = quand; f.dernierAuteur = "client"; f.statut = "Nouveau"; f.nonLu = false;
     return json(200, { ok: true, quand });
   }
   if (d.action === "messageStatut") {
     const f = e.fils.find((x) => String(x.id) === String(d.id));
     if (!f) return json(404, { erreur: "Fil introuvable." });
+    if (typeof d.clos !== "boolean" && d.lu !== true) return json(400, { erreur: "Rien à modifier." });
     if (typeof d.clos === "boolean") f.clos = d.clos;
     if (d.lu === true) f.nonLu = false;
     return json(200, { ok: true });

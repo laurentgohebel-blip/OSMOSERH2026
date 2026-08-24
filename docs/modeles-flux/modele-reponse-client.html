@@ -1,18 +1,20 @@
 <!-- Modèle « Votre gestionnaire vous a répondu » — e-mail au CLIENT.
-     Flux « Réponse gestionnaire → e-mail client » (voir la section
-     Notifications de docs/Fil-messagerie-portail.md) :
+     Branche « si » du flux unique « Nouvelle activité dans un fil »
+     (voir docs/Fil-messagerie-portail.md) :
        Déclencheur : « Quand un élément est modifié » sur la liste
        « Messages gestionnaire », avec la condition de déclenchement
        (Paramètres du déclencheur → Condition) :
-         @and(equals(triggerBody()?['DernierAuteur'], 'gestionnaire'),
-              equals(triggerBody()?['NotifEnvoyee'], false))
-       Action 1 : Envoyer un e-mail (V2) — À : EmailDemandeur,
-         Objet : Réponse de votre gestionnaire — @{triggerBody()?['Title']},
-         Corps : CE modèle, en mode Code (</>).
-       Action 2 : Mettre à jour l'élément — NotifEnvoyee : Oui
+         @equals(triggerBody()?['NotifEnvoyee'], false)
+       Condition : DernierAuteur est égal à « gestionnaire »
+         • SI   → Envoyer un e-mail (V2) — À : EmailDemandeur,
+                  Objet : Réponse de votre gestionnaire — @{triggerBody()?['Title']},
+                  Corps : CE modèle, en mode Code (</>).
+         • SINON→ e-mail au gestionnaire (modele-relance-gestionnaire.html),
+                  À : EmailGestionnaire — le client a relancé.
+       Puis, dans les deux cas : Mettre à jour l'élément → NotifEnvoyee : Oui
          (anti-doublon : les modifications suivantes ne renvoient rien).
-     DerniereReponse est écrite à plat par l'API à chaque réponse du
-     gestionnaire — aucun JSON à analyser dans le flux. -->
+     DerniereReponse est écrite à plat par l'API à chaque réponse, dans les
+     deux sens — aucun JSON à analyser dans le flux. -->
 <div style="display:none;font-size:1px;color:#F4F6FA;max-height:0;overflow:hidden;">Réponse de votre gestionnaire — @{triggerBody()?['Title']}</div>
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F4F6FA;padding:24px 12px;font-family:Segoe UI,Helvetica,Arial,sans-serif;">
   <tr>

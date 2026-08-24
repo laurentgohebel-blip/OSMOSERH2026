@@ -40,9 +40,26 @@ AUCUNE nouvelle colonne : zéro régression sur un tenant non re-provisionné.
 
 L'auteur d'une réponse est déduit du JETON (`ADMIN_EMAILS` → gestionnaire),
 jamais du payload ; propriété vérifiée sur le `CodeClient` avant toute
-écriture (modèle `majSalarie` : un id d'un autre client → 404). Écritures
-sous verrou optimiste (`If-Match` sur l'etag ; une réponse rejoue sa
-lecture une fois en cas de conflit, jamais d'écrasement). `Statut` devient
+écriture (modèle `majSalarie` : un id d'un autre client → 404). Clore ou
+rouvrir est réservé au gestionnaire, côté API comme côté écran.
+
+**Verrou d'écriture — opportuniste, par choix.** `If-Match` n'est pas
+documenté sur `PATCH …/items/{id}/fields` : selon le comportement de
+SharePoint, l'etag du listItem peut être hors périmètre et faire répondre
+412 (ou 400) à *tous* les appels. Une réponse fait donc jusqu'à trois
+essais, chacun **relisant et refusionnant** les échanges — le dernier part
+sans `If-Match`. Conséquences assumées : un fil ne peut jamais être
+condamné par un verrou mal placé, et la fenêtre d'écrasement se réduit à
+l'intervalle entre la relecture et l'écriture du dernier essai (au lieu
+d'être nulle si l'etag était fiable). Le diagnostic rendu suit l'échec
+réel : 409 pour un fil disputé, 502 « relancer creer_site_rh.py » pour un
+schéma incomplet — jamais l'un pour l'autre.
+
+**À trancher sur un vrai tenant** : un `PATCH /fields` avec l'etag du
+listItem, puis avec un etag volontairement périmé, dira si le verrou est
+honoré. Si oui, on peut revenir à un verrou strict ; sinon, il faut
+documenter le dernier-écrit-gagne. Le code fonctionne dans les deux cas —
+c'est précisément ce que vérifient les scénarios [11 ter] et [14] du banc. `Statut` devient
 « à qui est la balle » : réponse gestionnaire → `Répondu`, relance client →
 `Nouveau` (le fil réapparaît dans la boîte). Fil clos : réponse refusée des
 deux côtés — le gestionnaire rouvre. `NotifEnvoyee` est remise à faux à
@@ -90,14 +107,18 @@ modification »).
   - `modele-notification-portail.html` (au gestionnaire, flux existant
     « à la création ») : CTA « Répondre dans le portail » (`?msg=`),
     rappel Statut supprimé (automatique), mailto relégué en secours ;
-  - `modele-reponse-client.html` (au client) : **nouveau flux** « Quand
-    un élément est modifié » sur « Messages gestionnaire », condition de
-    déclenchement
-    `@and(equals(triggerBody()?['DernierAuteur'], 'gestionnaire'), equals(triggerBody()?['NotifEnvoyee'], false))`,
-    action 1 = e-mail à `EmailDemandeur` (corps = le modèle, qui cite
-    `DerniereReponse`), action 2 = Mettre à jour l'élément avec
-    `NotifEnvoyee = Oui` (anti-doublon). Défaut de la colonne : vrai —
-    l'existant ne déclenche rien.
+  - **un flux unique** « Nouvelle activité dans un fil » : déclencheur
+    « Quand un élément est modifié » sur « Messages gestionnaire »,
+    condition de déclenchement `@equals(triggerBody()?['NotifEnvoyee'], false)`,
+    puis une Condition sur `DernierAuteur` :
+    « gestionnaire » → e-mail au client (`modele-reponse-client.html`,
+    à `EmailDemandeur`) ; sinon → e-mail au gestionnaire
+    (`modele-relance-gestionnaire.html`, à `EmailGestionnaire`) ; et dans
+    les deux cas `NotifEnvoyee = Oui` pour finir (anti-doublon). Défaut de
+    la colonne : vrai — l'existant ne déclenche rien. L'API pose
+    `DerniereReponse` + `NotifEnvoyee = faux` **dans les deux sens** :
+    sans quoi une relance du client ne préviendrait personne (le flux
+    historique ne se déclenche qu'à la création).
 
 ## Opérations
 
@@ -106,5 +127,47 @@ modification »).
   Sans cette relance, le portail fonctionne en dégradé lecture seule
   (fils sans réponses) et l'envoi reste intact.
 - Flux Power Automate : mettre à jour le corps du flux de notification
-  existant (modèle refondu) et créer le flux « réponse → e-mail client »
-  (mode d'emploi complet en tête de `modele-reponse-client.html`).
+  existant (modèle refondu) et créer le flux « Nouvelle activité dans un
+  fil » (mode d'emploi complet en tête de `modele-reponse-client.html`).
+
+## Vérification
+
+`npm run test:api` joue deux bancs sans réseau ni tenant (annuaire et
+Graph simulés), également en CI avant les tests de bout en bout :
+
+- `tests/messages.test.cjs` — 52 assertions sur la messagerie :
+  cloisonnement entre clients, fusion des réponses, conflits d'écriture,
+  colonnes absentes, panne passagère, taille de la colonne `Echanges`,
+  clôture réservée, et les deux hypothèses de comportement de `If-Match`.
+- `tests/annuaire-cache.test.cjs` — non-régression du cache de lecture :
+  la clé doit inclure les colonnes demandées (voir ci-dessous).
+
+## Bugs corrigés au passage (revue du 21/08)
+
+- **Cache de `items()` empoisonné** (`annuaire.js`, antérieur à la
+  messagerie, le plus grave) : la clé de cache ne retenait que la liste,
+  pas les colonnes. Ouvrir l'écran d'administration — qui lit
+  « Paramètres clients » avec le seul `CodeClient` — servait pendant 60 s
+  un client **sans options ni SIRET** à tout le portail : démarches
+  refusées à tort et attestations émises sans mentions légales. Reproduit,
+  corrigé, verrouillé par un test.
+- **Écran gestionnaire planté** sur une réponse 200 au corps inattendu
+  (une SWA qui sert `index.html` sur `/api/*`) : `boite.fils` valait
+  `undefined`. Garde ajoutée.
+- **Répondre impossible sur un tenant non re-provisionné** : `chargerFil`
+  traduisait *toute* erreur Graph en « Fil introuvable », y compris le 400
+  des colonnes absentes — le diagnostic soigné était inatteignable.
+- **Repli de lecture trop large** : un simple 429 faisait servir des fils
+  amputés (réponses disparues, fil clos rouvert). Le repli est désormais
+  réservé au 400 de schéma.
+- **Plafond du fil** compté en nombre d'échanges (200 × 4 000 caractères)
+  alors que la colonne SharePoint tient ~64 000 : le fil devenait
+  définitivement inécrivable. Plafond porté sur la taille sérialisée.
+- **Lien profond** rejoué à chaque retour sur l'onglet, et perdu pour de
+  bon si le premier chargement échouait.
+- **Réponse invisible après envoi** : la lecture étant mise en cache 60 s
+  et servie éventuellement par une autre instance, la réponse est
+  maintenant ajoutée localement au fil au lieu d'être rechargée.
+- Brouillon perdu au changement d'onglet, saisie effacée sur le mauvais
+  fil après un envoi lent, compteur « à répondre » basé sur un `Statut`
+  aux valeurs historiques, mode démo divergent de l'API.

@@ -69,6 +69,19 @@ function enFil(x) {
   };
 }
 
+/* Lecture de la liste, avec repli sur les colonnes historiques UNIQUEMENT
+   si le schéma est en cause (400 : tenant pas encore re-provisionné). Une
+   panne passagère (429, 5xx) doit remonter telle quelle : se replier
+   dessus servirait des fils amputés — échanges disparus, fil clos rouvert
+   à l'écran — au lieu d'un honnête « réessayez ». */
+async function lireFils(tok, listeId) {
+  try { return await items(tok, listeId, CHAMPS_FIL); }
+  catch (e) {
+    if (e && e.codeHttp !== 400) throw e;
+    return await items(tok, listeId, CHAMPS_HISTORIQUES);
+  }
+}
+
 /** GET /api/me?vue=messages — fils du client, du plus récent au plus ancien. */
 async function fils(request, context) {
   const { email } = await verifierJeton(request);
@@ -78,9 +91,7 @@ async function fils(request, context) {
   // Liste absente (site pas encore provisionné) : canal vide, pas une panne.
   if (!ids["Messages gestionnaire"]) return { status: 200, jsonBody: { fils: [] } };
 
-  let lignes;
-  try { lignes = await items(tok, ids["Messages gestionnaire"], CHAMPS_FIL); }
-  catch { lignes = await items(tok, ids["Messages gestionnaire"], CHAMPS_HISTORIQUES); }
+  const lignes = await lireFils(tok, ids["Messages gestionnaire"]);
 
   const duClient = lignes
     .filter((x) => x.CodeClient === c.codeClient)
@@ -96,9 +107,7 @@ async function boite(request, context) {
   const tok = await tokenGraph();
   const ids = await idsListes(tok);
   if (!ids[LISTE]) return { status: 200, jsonBody: { fils: [], total: 0 } };
-  let lignes;
-  try { lignes = await items(tok, ids[LISTE], CHAMPS_FIL); }
-  catch { lignes = await items(tok, ids[LISTE], CHAMPS_HISTORIQUES); }
+  const lignes = await lireFils(tok, ids[LISTE]);
   const tous = lignes.map(enFil)
     .sort((a, b) => String(b.derniereMaj).localeCompare(String(a.derniereMaj)));
   // Cap d'affichage : les 200 fils les plus récents (le total dit le reste).
@@ -120,13 +129,28 @@ async function chargerFil(request, id) {
   const r = await fetch(`${base}?$expand=fields($select=CodeClient,Statut,Clos,Echanges,NonLuClient,NonLuGestionnaire)`, {
     headers: { Authorization: `Bearer ${tok}` },
   });
-  if (!r.ok) throw { status: 404, erreur: "Fil introuvable." };
+  // Un 404 est un vrai « fil introuvable ». Tout le reste ne doit PAS être
+  // travesti en 404 : un 400 sur ce $select signale des colonnes absentes
+  // (tenant pas re-provisionné) — l'utilisateur voyait alors « Fil
+  // introuvable » sur le fil qu'il était justement en train de lire.
+  if (!r.ok) {
+    if (r.status === 404) throw { status: 404, erreur: "Fil introuvable." };
+    if (r.status === 400) throw { status: 502, erreur: "Fil illisible — colonnes de la messagerie absentes. Relancer creer_site_rh.py." };
+    throw { status: 502, erreur: "Messagerie momentanément indisponible — réessayez." };
+  }
   const item = await r.json();
   if (!gestionnaire && item.fields?.CodeClient !== clientInfo.codeClient)
     throw { status: 404, erreur: "Fil introuvable." }; // jamais une fuite
   return { gestionnaire, tok, base, fields: item.fields || {}, etag: item["@odata.etag"] || "" };
 }
 
+/* If-Match n'est PAS documenté sur PATCH …/items/{id}/fields : selon le
+   comportement de SharePoint, l'etag du listItem peut être hors périmètre
+   pour ce sous-chemin et faire répondre 412 à TOUS les appels. Un verrou
+   perdu est bénin (on réécrit à partir d'une relecture fraîche, donc rien
+   n'est effacé) ; un fil définitivement bloqué ne l'est pas. L'etag est
+   donc un verrou OPPORTUNISTE : posé tant qu'il aide, abandonné au dernier
+   essai — passer etag = "" écrit sans If-Match. */
 async function patcherFil(tok, base, etag, fields) {
   const r = await fetch(`${base}/fields`, {
     method: "PATCH",
@@ -144,45 +168,69 @@ async function repondre(request, context, d) {
   const texte = String(d.texte || "").trim().slice(0, 4000);
   if (texte.length < 1) return { status: 400, jsonBody: { erreur: "Réponse vide." } };
 
-  // Deux tentatives : si une écriture concurrente a modifié le fil entre
-  // lecture et écriture (412), on relit et on rejoue — jamais d'écrasement.
-  for (let essai = 0; essai < 2; essai++) {
+  // Trois tentatives : sur conflit (412) on RELIT et on rejoue — l'ajout
+  // se refait à partir des échanges frais, donc rien n'est jamais écrasé.
+  // Le dernier essai part sans If-Match (voir patcherFil) : ainsi un
+  // 412 systémique ne peut pas condamner le fil.
+  const ESSAIS = 3;
+  for (let essai = 0; essai < ESSAIS; essai++) {
     const { gestionnaire, tok, base, fields, etag } = await chargerFil(request, d.id);
     if (fields.Clos === true)
       return { status: 400, jsonBody: { erreur: "Fil clos — écrivez un nouveau message." } };
     let echanges = [];
     try { const j = JSON.parse(fields.Echanges || "[]"); if (Array.isArray(j)) echanges = j; } catch { /* reparti de zéro plutôt que bloqué */ }
-    if (echanges.length >= 200)
-      return { status: 400, jsonBody: { erreur: "Fil trop long — ouvrez un nouveau message." } };
     const quand = new Date().toISOString();
     const qui = gestionnaire ? "gestionnaire" : "client";
     echanges.push({ qui, quand, texte });
+    // La colonne Echanges est un « texte long » SharePoint : ~64 000
+    // caractères. Compter les échanges ne protège de rien (200 × 4 000 =
+    // 800 000) — c'est la taille SÉRIALISÉE qui décide, sinon le fil
+    // devient définitivement inécrivable, avec un diagnostic trompeur.
+    const charge = JSON.stringify(echanges);
+    if (charge.length > 55000)
+      return { status: 400, jsonBody: { erreur: "Ce fil a atteint sa taille maximale — ouvrez un nouveau message." } };
 
     // Statut = à qui est la balle : réponse gestionnaire → « Répondu »,
     // relance client → « Nouveau » (le fil réapparaît côté gestionnaire).
-    // NotifEnvoyee false : le flux « réponse → e-mail client » (lot 3)
-    // saura qu'une notification est due, puis la marquera envoyée.
-    const r = await patcherFil(tok, base, etag, {
-      Echanges: JSON.stringify(echanges),
+    //
+    // DerniereReponse + NotifEnvoyee sont posées dans LES DEUX SENS : le
+    // flux « à la modification » se déclenche sur NotifEnvoyee = faux puis
+    // choisit son destinataire d'après DernierAuteur (gestionnaire → mail
+    // au client, client → mail au gestionnaire). Sans cela, une relance du
+    // client n'aurait prévenu personne — le flux de notification existant
+    // ne se déclenche qu'à la CRÉATION du fil.
+    const r = await patcherFil(tok, base, essai < ESSAIS - 1 ? etag : "", {
+      Echanges: charge,
       DerniereMaj: quand,
       DernierAuteur: qui,
       Statut: gestionnaire ? "Répondu" : "Nouveau",
+      // Recopie à plat du dernier message : le flux le cite d'un jeton,
+      // sans avoir à analyser le JSON de Echanges.
+      DerniereReponse: texte,
+      NotifEnvoyee: false,
       ...(gestionnaire
-        // DerniereReponse : recopie à plat pour le flux e-mail (lot 3) —
-        // il cite la réponse d'un jeton, sans parser le JSON Echanges.
-        ? { NonLuClient: true, NonLuGestionnaire: false, NotifEnvoyee: false, DerniereReponse: texte }
+        ? { NonLuClient: true, NonLuGestionnaire: false }
         : { NonLuGestionnaire: true, NonLuClient: false }),
     });
     if (r.ok) {
       viderCacheItems(); // le fil mis à jour doit se relire immédiatement
       return { status: 200, jsonBody: { ok: true, quand } };
     }
-    if (r.status === 412) continue; // conflit d'écriture : on relit et rejoue
+    // Tant qu'il reste un essai : relire et rejouer. Cela couvre le 412
+    // attendu, mais aussi un 400 rendu par un If-Match hors périmètre —
+    // l'essai suivant repart alors sans verrou. Seul le dernier échec est
+    // rapporté, avec son diagnostic.
+    if (essai < ESSAIS - 1) continue;
     const corps = (await r.text().catch(() => "")).slice(0, 300);
     context.error("messages/repondre :", r.status, corps);
-    return { status: 502, jsonBody: { erreur: "Réponse non enregistrée — réessayez. (Colonnes du fil absentes ? Relancer creer_site_rh.py.)" } };
+    // Diagnostic accordé à l'échec réel : un fil disputé n'est pas un
+    // schéma manquant, et envoyer relancer le mauvais script coûte cher.
+    if (r.status === 412)
+      return { status: 409, jsonBody: { erreur: "Fil modifié pendant l'envoi — rechargez et réessayez." } };
+    if (r.status === 400)
+      return { status: 502, jsonBody: { erreur: "Réponse non enregistrée — colonnes de la messagerie absentes. Relancer creer_site_rh.py." } };
+    return { status: 502, jsonBody: { erreur: "Réponse non enregistrée — réessayez." } };
   }
-  return { status: 409, jsonBody: { erreur: "Fil modifié pendant l'envoi — rechargez et réessayez." } };
 }
 
 /** POST /api/demande { action: "messageStatut", id, clos?, lu? } —
@@ -192,14 +240,20 @@ async function statut(request, context, d) {
   if (typeof d.clos !== "boolean" && d.lu !== true)
     return { status: 400, jsonBody: { erreur: "Rien à modifier." } };
   const { gestionnaire, tok, base, etag } = await chargerFil(request, d.id);
+  // Clore ou rouvrir est un geste de gestionnaire : l'interface cliente ne
+  // l'offre pas, l'API ne doit pas être plus permissive (un appel direct
+  // rouvrirait un fil archivé pour y écrire de nouveau).
+  if (typeof d.clos === "boolean" && !gestionnaire)
+    return { status: 403, jsonBody: { erreur: "Seul votre gestionnaire peut clore ou rouvrir un fil." } };
   const fields = {
     ...(typeof d.clos === "boolean" ? { Clos: d.clos } : {}),
     ...(d.lu === true ? (gestionnaire ? { NonLuGestionnaire: false } : { NonLuClient: false }) : {}),
   };
-  const r = await patcherFil(tok, base, etag, fields);
-  if (r.status === 412 && typeof d.clos === "boolean")
-    return { status: 409, jsonBody: { erreur: "Fil modifié entre-temps — rechargez et réessayez." } };
-  if (!r.ok && r.status !== 412) { // un « lu » perdu sur conflit est sans gravité
+  // Ces champs sont des drapeaux indépendants (pas de fusion à préserver) :
+  // sur 412 on réécrit directement sans If-Match, même raison que repondre().
+  let r = await patcherFil(tok, base, etag, fields);
+  if (r.status === 412) r = await patcherFil(tok, base, "", fields);
+  if (!r.ok) {
     const corps = (await r.text().catch(() => "")).slice(0, 300);
     context.error("messages/statut :", r.status, corps);
     return { status: 502, jsonBody: { erreur: "Statut non enregistré — réessayez. (Colonnes du fil absentes ? Relancer creer_site_rh.py.)" } };

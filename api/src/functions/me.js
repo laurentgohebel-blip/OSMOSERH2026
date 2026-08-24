@@ -35,6 +35,7 @@ app.http("me", {
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {
+            if (e && e.status) throw e; // erreur métier → catch global (jamais « : undefined »)
             context.error("me/vue=admin :", e);
             return { status: 500, jsonBody: { erreur: `Module admin inchargeable : ${e.message}` } };
           }
