@@ -13,6 +13,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Même règle que le déploiement : un seul passage par branche. Deux
+# séries de tests sur le même commit ne prouvent rien de plus et
+# consomment le forfait Actions en double.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
     runs-on: ubuntu-latest
