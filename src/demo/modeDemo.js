@@ -65,6 +65,13 @@ function etatInitial() {
     { nom: "ROUX", prenom: "Thomas", matricule: "DP-006", type: "CDD", poste: "Vendeur", debut: dansNJours(-140), fin: dansNJours(18) },
     { nom: "FONTAINE", prenom: "Hugo", matricule: "DP-007", type: "Alternance", poste: "Apprenti boulanger", debut: "2025-09-01", fin: "2027-08-31" },
     { nom: "BLANCHARD", prenom: "Emma", matricule: "DP-008", type: "CDD", poste: "Vendeuse (renfort été)", debut: dansNJours(-30), fin: dansNJours(48) },
+    // Anciens salariés — matière du parcours « réembauche ». PEREZ sort
+    // d'un CDD récent : un nouveau CDD sur le même poste se heurte au
+    // délai de carence. LEFEVRE sortait d'un CDI : rien ne s'y oppose.
+    { nom: "PEREZ", prenom: "Manon", matricule: "DP-009", type: "CDD", poste: "Vendeuse (renfort)",
+      debut: dansNJours(-70), fin: dansNJours(-8), statut: "Sorti" },
+    { nom: "LEFEVRE", prenom: "Antoine", matricule: "DP-010", type: "CDI", poste: "Boulanger",
+      debut: "2021-01-05", fin: dansNJours(-400), statut: "Sorti" },
   ].map((s) => ({ cle: cleNomPrenom(s.nom, s.prenom), statut: "Actif", ...s }));
 
   /* Embauches des 6 derniers mois (barres du tableau de bord) — libellés
@@ -304,10 +311,73 @@ export async function reponseDemo(chemin, options = {}) {
 /* ── POST /api/demande : mêmes références que l'API réelle, et l'état
       local est muté pour que la démarche apparaisse aussitôt dans les
       vues (fiche salarié, échéances, tableau de bord) ─────────────────── */
+/* Le front désigne l'ancien salarié par son identifiant de fiche quand
+   il en a un, sinon par « Nom Prénom » — la clé démo, elle, est tout en
+   majuscules. On compare donc sans tenir compte de la casse. */
+const memeSalarie = (s, reprise) => {
+  const cible = String(reprise || "").trim().toUpperCase();
+  return String(s.id || "") === String(reprise) || String(s.cle || "").toUpperCase() === cible
+    || `${s.nom} ${s.prenom}`.toUpperCase() === cible;
+};
+
+/* Points de vigilance d'une réembauche — VERSION DÉMO. Le calcul qui
+   fait foi vit dans api/src/reembauche.js ; celui-ci n'en montre que le
+   résultat, comme le reste du mode démonstration. */
+function pointsReembaucheDemo(ancien, d) {
+  const points = [];
+  const jours = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+  if (ancien.type === "CDD" && d.typeContrat === "CDD" && ancien.debut && ancien.fin) {
+    const duree = jours(ancien.debut, ancien.fin) + 1;
+    const delai = duree >= 14 ? Math.ceil(duree / 3) : Math.ceil(duree / 2);
+    const auPlusTot = new Date(Date.parse(ancien.fin) + (delai + 1) * 86400000).toISOString().slice(0, 10);
+    const fr = (x) => x.split("-").reverse().join("/");
+    const respecte = d.dateDebut ? d.dateDebut >= auPlusTot : null;
+    points.push({
+      cle: "carence", niveau: respecte === false ? "bloquant" : "info",
+      titre: respecte === false ? "Délai de carence non respecté" : "Délai de carence",
+      detail: `Le contrat précédent a duré ${duree} jours : le délai de carence est de ${delai} jours d'ouverture de l'entreprise (un tiers de la durée). Un nouveau CDD sur le même poste ne peut pas commencer avant le ${fr(auPlusTot)} — et plus tard encore si l'entreprise n'ouvre pas tous les jours. Une exception légale peut s'appliquer.`,
+    });
+  }
+  if (ancien.type === "CDD" && d.typeContrat === "CDI") {
+    points.push({ cle: "essai", niveau: "attention", titre: "Période d'essai à réduire",
+      detail: "Le salarié a déjà occupé un poste dans l'entreprise : selon les fonctions, la durée du contrat précédent peut devoir être déduite de la période d'essai." });
+  }
+  points.push({ cle: "visite", niveau: "info", titre: "Visite médicale peut-être non nécessaire",
+    detail: "Si le salarié reprend un emploi identique aux mêmes risques et qu'aucun avis d'inaptitude n'est intervenu, une nouvelle visite peut ne pas être requise. À confirmer avec le service de santé au travail." });
+  points.push({ cle: "dpae", niveau: "info", titre: "Déclaration préalable à l'embauche",
+    detail: "Une nouvelle DPAE est obligatoire, au plus tôt huit jours avant la prise de poste." });
+  return points;
+}
+
+const EXCEPTIONS_CARENCE_DEMO = [
+  "Nouvelle absence du salarié remplacé", "Travaux urgents de sécurité", "Emploi saisonnier",
+  "CDD d'usage (secteur le permettant)", "Remplacement d'un chef d'entreprise ou d'exploitation",
+  "Rupture anticipée à l'initiative du salarié", "Refus du salarié de renouveler son contrat",
+  "Accord de branche prévoyant d'autres modalités",
+];
+
 function traiterDemande(e, options) {
   let d;
   try { d = JSON.parse(options.body); } catch { return json(400, { erreur: "JSON attendu" }); }
   const p = e.personnel;
+
+  // Réembauche, écran de contrôle : dossier repris + points de vigilance.
+  if (d.action === "reembaucheControles") {
+    const a = (p.salaries || []).find((s) => memeSalarie(s, d.reprise));
+    if (!a) return json(404, { erreur: "Salarié introuvable dans votre effectif." });
+    if (a.statut !== "Sorti") return json(409, { erreur: `${a.prenom} ${a.nom} fait toujours partie de l'effectif — un avenant convient mieux qu'une réembauche.` });
+    return json(200, {
+      ancien: { nom: a.nom, prenom: a.prenom, matricule: a.matricule, poste: a.poste, typeContrat: a.type, dateEntree: a.debut, dateSortie: a.fin },
+      repris: {
+        nom: a.nom, prenom: a.prenom, numeroSS: "2 94 05 12 345 678 46",
+        dateNaissance: "1994-05-12", adressePostale: "12 rue des Lices, 83000 Toulon",
+        iban: "FR76 3000 6000 0112 3456 7890 189", bic: "AGRIFRPP",
+      },
+      points: pointsReembaucheDemo(a, d),
+      bloquants: pointsReembaucheDemo(a, d).filter((x) => x.niveau === "bloquant").map((x) => x.cle),
+      exceptionsCarence: EXCEPTIONS_CARENCE_DEMO,
+    });
+  }
 
   // Mise à jour du dossier salarié (onglet Dossier) — mutée en mémoire
   // pour que la fiche reflète aussitôt la saisie, comme en réel.
@@ -460,6 +530,18 @@ function traiterDemande(e, options) {
 
     case "embauche": {
       const reference = referenceDemo("EMB");
+      // Réembauche : le nom vient du dossier repris, pas du formulaire.
+      if (d.reprise) {
+        const a = (p.salaries || []).find((s) => memeSalarie(s, d.reprise));
+        if (!a) return json(404, { erreur: "Salarié introuvable dans votre effectif." });
+        const bloquant = pointsReembaucheDemo(a, d).some((x) => x.niveau === "bloquant");
+        if (bloquant && !d.motifDerogation)
+          return json(409, { erreur: "Cette réembauche se heurte au délai de carence — indiquez le motif qui permet de passer outre." });
+        a.statut = "Actif"; a.type = d.typeContrat; a.poste = d.poste || a.poste;
+        a.debut = d.dateDebut; a.fin = d.dateFin || null;
+        e.dashboard.aTraiter.unshift({ t: `Réembauche ${d.typeContrat} ${a.nom} ${a.prenom} — en attente d'approbation`, s: "À traiter" });
+        return json(202, { reference, reprise: true });
+      }
       p.salaries.push({
         cle: cleNomPrenom(d.nom, d.prenom),
         nom: String(d.nom || "").toUpperCase(), prenom: d.prenom || "",

@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, Globe
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, UserPlus, Globe
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 import AdminActivation from "./AdminActivation";
@@ -893,7 +893,7 @@ export default function AppShell({ user, onLogout }) {
               <DemandeAcompte user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "embauche" && (
-              <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <DemandeEmbauche user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "fin" && (
               <DemandeFinContrat user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
@@ -1762,7 +1762,7 @@ const titreSejourRequis = (nationalite) => {
 };
 const TITRES_SEJOUR = ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"];
 
-function DemandeEmbauche({ user, client, onRetour }) {
+function DemandeEmbauche({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
     nationalite: "", numeroSS: "", adresse: "", emailSalarie: "",
@@ -1794,7 +1794,36 @@ function DemandeEmbauche({ user, client, onRetour }) {
   // la demande de contrat part TOUTE SEULE à sa soumission.
   const [mode, setMode] = useState(null);
 
+  // Troisième parcours (24/08) : « il a déjà travaillé ici ». Le dossier
+  // administratif est au référentiel — on ne redemande que le contrat, et
+  // le serveur énonce ce que la réembauche impose (carence entre deux
+  // CDD, titre de séjour à revérifier, période d'essai, visite médicale).
+  const anciens = (salaries || []).filter((s) => s.statut === "Sorti");
+  const [repris, setRepris] = useState(null);      // salarié choisi
+  const [controles, setControles] = useState(null); // { points, repris, ancien }
+  const [derogation, setDerogation] = useState("");
+
   const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  // Les points de vigilance dépendent du contrat envisagé : on les
+  // redemande au serveur dès qu'un élément déterminant change. Le calcul
+  // vit d'un seul côté — le dupliquer ici, c'est le voir diverger.
+  useEffect(() => {
+    if (mode !== "reprise" || !repris) return;
+    let annule = false;
+    (async () => {
+      try {
+        const r = await apiFetch("/api/demande", {
+          method: "POST",
+          body: JSON.stringify({ action: "reembaucheControles", reprise: repris.id || `${repris.nom} ${repris.prenom}`,
+            typeContrat: f.type, dateDebut: f.debut, poste: f.poste }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!annule) setControles(r.ok ? j : { erreur: j.erreur || "Dossier illisible." });
+      } catch { if (!annule) setControles({ erreur: "Contrôles indisponibles — vérifiez votre connexion." }); }
+    })();
+    return () => { annule = true; };
+  }, [mode, repris, f.type, f.debut, f.poste]);
 
   const validerInvitation = () => {
     const e = {
@@ -1829,6 +1858,42 @@ function DemandeEmbauche({ user, client, onRetour }) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) { setErrbar(j.erreur || `Envoi refusé (HTTP ${r.status}).`); setEnvoi(false); return; }
       setFini({ invitation: j });
+    } catch { setErrbar("API injoignable — réessayez."); setEnvoi(false); }
+  };
+
+  /* Réembauche : on n'envoie QUE le contrat. L'identité, le NIR,
+     l'adresse et la banque viennent du dossier côté serveur — les
+     réenvoyer depuis le navigateur reviendrait à faire transiter des
+     données sensibles sans raison. */
+  const envoyerReembauche = async () => {
+    const e = {};
+    if (!f.poste.trim()) e.poste = true;
+    if (!f.debut) e.debut = true;
+    if (f.type === "CDD" && (!f.fin || f.fin <= f.debut)) e.fin = true;
+    if (!f.duree.trim()) e.duree = true;
+    setErr(e);
+    if (Object.keys(e).length) { setErrbar("Complétez les champs signalés."); return; }
+    const bloquants = (controles?.points || []).filter((p) => p.niveau === "bloquant");
+    if (bloquants.length && !derogation) {
+      setErrbar("Cette réembauche soulève un point bloquant : indiquez le motif qui permet de passer outre.");
+      return;
+    }
+    setEnvoi(true); setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          demarche: "embauche",
+          reprise: repris.id || `${repris.nom} ${repris.prenom}`,
+          typeContrat: f.type, dateDebut: f.debut, ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
+          poste: f.poste.trim(), dureeMensuelle: f.duree.trim().replace(",", "."),
+          ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
+          ...(derogation ? { motifDerogation: derogation } : {}),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErrbar(j.erreur || `Envoi refusé (HTTP ${r.status}).`); setEnvoi(false); return; }
+      setFini({ reference: j.reference, reprise: true, salarie: `${repris.nom} ${repris.prenom}` });
     } catch { setErrbar("API injoignable — réessayez."); setEnvoi(false); }
   };
 
@@ -1981,6 +2046,33 @@ function DemandeEmbauche({ user, client, onRetour }) {
 
   if (fini) {
     const invitation = fini.invitation; // parcours « invite » : lien créé
+
+    /* Réembauche : le nom vient du dossier repris, pas du formulaire —
+       et on ne propose pas d'onboarding, le dossier est déjà complet. */
+    if (fini.reprise) {
+      return (
+        <>
+          <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+            <ArrowLeft size={15} /> Retour aux tuiles
+          </button>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 560, textAlign: "center" }}>
+            <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Check size={24} />
+            </div>
+            <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Réembauche déclarée</h1>
+            <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+              {f.type} pour <strong>{fini.salarie}</strong>, début le <strong>{f.debut.split("-").reverse().join("/")}</strong>.
+            </p>
+            <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+              Le dossier a été repris de son précédent contrat : aucune pièce à redéposer. Votre gestionnaire
+              prépare le contrat et la nouvelle DPAE.
+            </p>
+            {fini.reference && <p style={{ fontSize: 12, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.reference}</p>}
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
@@ -2070,6 +2162,148 @@ function DemandeEmbauche({ user, client, onRetour }) {
         <CarteChoix titre="Je fais saisir le salarié" sous="Invitation + contrat automatique"
           detail="Vous ne saisissez que le poste et le contrat. Le salarié reçoit un lien sécurisé, remplit lui-même son dossier et dépose ses pièces — dès qu'il a terminé, la demande de contrat part automatiquement chez votre gestionnaire."
           onClick={() => setMode("invite")} />
+        {anciens.length > 0 && (
+          <CarteChoix titre="Il a déjà travaillé chez nous" sous={`Réembauche — ${anciens.length} ancien${anciens.length > 1 ? "s" : ""} salarié${anciens.length > 1 ? "s" : ""}`}
+            detail="Son dossier est déjà là : identité, numéro de sécurité sociale, adresse, banque, pièces justificatives. Vous ne saisissez que le nouveau contrat, et le portail vous signale ce que cette réembauche impose (délai de carence, titre de séjour, période d'essai, visite médicale)."
+            onClick={() => setMode("reprise")} />
+        )}
+      </>
+    );
+  }
+
+  /* ── Parcours « réembauche » ─────────────────────────────────────── */
+  if (mode === "reprise") {
+    const COULEUR = { bloquant: { bg: "#FCEBEB", bd: "#F7C1C1", fg: "#791F1F" },
+      attention: { bg: "#FEF6E7", bd: "#F6DFB0", fg: "#7A4E00" },
+      info: { bg: "#EEF2F8", bd: "#D6DFEC", fg: "#33465E" } };
+    const points = controles?.points || [];
+    const bloquants = points.filter((p) => p.niveau === "bloquant");
+
+    return (
+      <>
+        <button onClick={() => { setMode(null); setRepris(null); setControles(null); setDerogation(""); setErr({}); setErrbar(""); }}
+          style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Changer de parcours
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <UserPlus size={20} color={T.accent} strokeWidth={1.6} />
+            <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Réembaucher</h1>
+          </div>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+            Choisissez la personne : son dossier est repris tel quel. Vous ne saisissez que le nouveau contrat.
+          </p>
+
+          {errbar && (
+            <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+              {errbar}
+            </div>
+          )}
+
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
+            Ancien salarié <span style={{ color: T.err }}>*</span>
+          </label>
+          <select value={repris ? String(repris.id || `${repris.nom} ${repris.prenom}`) : ""}
+            onChange={(e) => {
+              const s = anciens.find((x) => String(x.id || `${x.nom} ${x.prenom}`) === e.target.value) || null;
+              setRepris(s); setControles(null); setDerogation("");
+              if (s) setF((p) => ({ ...p, poste: p.poste || s.poste || "" }));
+            }}
+            style={{ ...inputStyle, marginBottom: 14 }}>
+            <option value="">— choisir —</option>
+            {anciens.map((s) => (
+              <option key={s.id || `${s.nom} ${s.prenom}`} value={String(s.id || `${s.nom} ${s.prenom}`)}>
+                {s.nom} {s.prenom}{s.poste ? ` — ${s.poste}` : ""}{s.fin ? ` (parti le ${String(s.fin).split("-").reverse().join("/")})` : ""}
+              </option>
+            ))}
+          </select>
+
+          {repris && (
+            <>
+              <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <ChampReq label="Type de contrat">
+                  <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+                    <option>CDI</option><option>CDD</option>
+                  </select>
+                </ChampReq>
+                <ChampReq label="Poste" erreur={err.poste && "Poste requis"}>
+                  <input type="text" placeholder="Serveur, vendeuse, aide-soignant…" style={{ ...inputStyle, borderColor: err.poste ? T.err : T.border }} value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
+                </ChampReq>
+                <ChampReq label="Date de début" erreur={err.debut && "Date requise"}>
+                  <input type="date" style={{ ...inputStyle, borderColor: err.debut ? T.err : T.border }} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
+                </ChampReq>
+                {f.type === "CDD" ? (
+                  <ChampReq label="Date de fin (CDD)" erreur={err.fin && "Fin postérieure au début requise"}>
+                    <input type="date" style={{ ...inputStyle, borderColor: err.fin ? T.err : T.border }} value={f.fin} onChange={(e) => maj("fin", e.target.value)} />
+                  </ChampReq>
+                ) : <div />}
+                <ChampReq label="Durée mensuelle du travail (heures)" erreur={err.duree && "Ex. 151,67"}>
+                  <input type="text" inputMode="decimal" placeholder="151,67" style={{ ...inputStyle, borderColor: err.duree ? T.err : T.border }} value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
+                </ChampReq>
+              </div>
+
+              {/* Ce que le dossier reprend — dit explicitement, pour que le
+                  client sache ce qu'il n'a PAS à ressaisir. */}
+              {controles?.repris && (
+                <div style={{ background: "#E1F5EE", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#085041", marginTop: 14 }}>
+                  Repris du dossier, rien à ressaisir : {[
+                    controles.repris.numeroSS && "numéro de sécurité sociale",
+                    controles.repris.dateNaissance && "état civil",
+                    controles.repris.adressePostale && "adresse",
+                    (controles.repris.iban || controles.repris.bic) && "coordonnées bancaires",
+                    controles.repris.titreSejourNumero && "titre de séjour",
+                  ].filter(Boolean).join(", ")}. Les pièces justificatives sont déjà dans votre espace documents.
+                </div>
+              )}
+
+              {controles?.erreur && (
+                <p style={{ margin: "12px 0 0", fontSize: 12, color: T.err }}>{controles.erreur}</p>
+              )}
+
+              {points.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h2 style={{ margin: "0 0 8px", fontSize: 13.5, fontFamily: T.serif, fontWeight: 600 }}>
+                    Ce que cette réembauche implique
+                  </h2>
+                  {points.map((p) => {
+                    const c = COULEUR[p.niveau] || COULEUR.info;
+                    return (
+                      <div key={p.cle} style={{ background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: c.fg, marginBottom: 3 }}>{p.titre}</div>
+                        <div style={{ fontSize: 12, color: c.fg, lineHeight: 1.5 }}>{p.detail}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Un point bloquant n'interdit pas : il exige de dire
+                  pourquoi on passe outre, et ce motif est transmis au
+                  gestionnaire avec la demande. */}
+              {bloquants.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
+                    Motif permettant de passer outre <span style={{ color: T.err }}>*</span>
+                  </label>
+                  <select value={derogation} onChange={(e) => { setDerogation(e.target.value); setErrbar(""); }} style={inputStyle}>
+                    <option value="">— choisir —</option>
+                    {(controles?.exceptionsCarence || []).map((x) => <option key={x} value={x}>{x}</option>)}
+                    <option value="Titre de séjour renouvelé (nouveau titre fourni)">Titre de séjour renouvelé (nouveau titre fourni)</option>
+                    <option value="Autre situation — précisée à mon gestionnaire">Autre situation — précisée à mon gestionnaire</option>
+                  </select>
+                  <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut }}>
+                    Ce motif est transmis à votre gestionnaire avec la demande : il pourra vérifier qu'il s'applique bien à votre situation.
+                  </p>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+                <Btn onClick={() => { setMode(null); setRepris(null); setControles(null); setDerogation(""); }}>Annuler</Btn>
+                <Btn primary disabled={envoi} onClick={envoyerReembauche}>{envoi ? "Envoi…" : "Demander le contrat"}</Btn>
+              </div>
+            </>
+          )}
+        </div>
       </>
     );
   }
