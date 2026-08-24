@@ -10,7 +10,7 @@
 // { action: "adminActiver" }. Fonctionne aussi sur la future SWA.
 
 import React, { useEffect, useState, useRef } from "react";
-import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check, Send, ArrowLeft, Archive } from "lucide-react";
+import { LogOut, RefreshCw, UserCheck, UserPlus, Users, Building2, Check, ShieldCheck, Send, AlertTriangle, ArrowLeft, Archive } from "lucide-react";
 import { apiFetch } from "../apiClient";
 
 const T = {
@@ -26,6 +26,8 @@ const champ = {
 const LIBELLES_OPTIONS = {
   embauche: "Embauche (contrats, personnel, fins)", acompte: "Acomptes",
   attestation: "Attestations", paie: "Variables de paie",
+  etrangers: "Salariés étrangers (titres de séjour)",
+  securite: "Sécurité (habilitations, CACES, recyclages)",
 };
 
 const N_VIDE = {
@@ -189,12 +191,37 @@ const CHAMPS_IMPORT = [
   { k: "poste", l: "Poste / emploi" }, { k: "typeContrat", l: "Type de contrat" },
   { k: "dateEntree", l: "Date d'entrée" }, { k: "dateSortie", l: "Date de sortie" },
   { k: "email", l: "E-mail" }, { k: "telephone", l: "Téléphone" }, { k: "statut", l: "Statut" },
+  // Dossier salarié complet (fin du chantier « fiches » — 22/08)
+  { k: "adressePostale", l: "Adresse postale" }, { k: "numeroSS", l: "N° sécurité sociale" },
+  { k: "dateNaissance", l: "Date de naissance" }, { k: "sexe", l: "Sexe" },
+  { k: "nomNaissance", l: "Nom de naissance" }, { k: "nomMarital", l: "Nom marital" },
+  { k: "situationFamiliale", l: "Situation familiale" },
+  { k: "departementNaissance", l: "Département de naissance" },
+  { k: "codeDepartementNaissance", l: "Code département" },
+  { k: "paysNaissance", l: "Pays de naissance" }, { k: "codePaysNaissance", l: "Code pays" },
+  { k: "iban", l: "IBAN" }, { k: "bic", l: "BIC" },
+  { k: "bulletinDematerialise", l: "Bulletin dématérialisé (Oui/Non)" },
 ];
 // Ordre de détection pensé pour les collisions de sous-chaînes :
-// « prénom » avant « nom », les dates avant « contrat » (« date fin contrat »).
+// « prénom » avant « nom », « nom de naissance » avant « naissance » et
+// « nom », les libellés composés (code/département/pays) avant les courts.
 const DETECTION = [
   ["matricule", ["matricule", "n° sal", "numero sal"]],
   ["prenom", ["prenom"]],
+  ["numeroSS", ["secu", "securite sociale", "nir", "n° ss", "numero ss", "insee"]],
+  ["nomNaissance", ["nom de naissance", "nom naissance", "patronyme"]],
+  ["nomMarital", ["marital", "usage", "epoux"]],
+  ["situationFamiliale", ["situation"]],
+  ["codeDepartementNaissance", ["code dep", "code du dep"]],
+  ["departementNaissance", ["departement"]],
+  ["codePaysNaissance", ["code pays"]],
+  ["paysNaissance", ["pays"]],
+  ["dateNaissance", ["naissance", "ne le", "nee le"]],
+  ["adressePostale", ["adresse", "domicile"]],
+  ["iban", ["iban", "rib"]],
+  ["bic", ["bic", "swift"]],
+  ["sexe", ["sexe", "genre", "civilite"]],
+  ["bulletinDematerialise", ["demat", "bulletin"]],
   ["dateEntree", ["entree", "embauche", "debut", "arrivee"]],
   ["dateSortie", ["sortie", "depart", "fin"]],
   ["email", ["mail", "courriel"]],
@@ -266,6 +293,7 @@ function RepriseEffectif({ clients, notifier }) {
       mapping.forEach((champ, i) => { if (champ) s[champ] = l[i] || ""; });
       if (s.dateEntree) s.dateEntree = normDate(s.dateEntree);
       if (s.dateSortie) s.dateSortie = normDate(s.dateSortie);
+      if (s.dateNaissance) s.dateNaissance = normDate(s.dateNaissance);
       return s;
     }).filter((s) => String(s.nom || "").trim().length >= 2);
     setEnvoi(true);
@@ -369,6 +397,214 @@ function RepriseEffectif({ clients, notifier }) {
   );
 }
 
+/* ── DPAE — déclarations préalables à l'embauche ──────────────────────── */
+/* Chaque embauche de « Production contrat » porte son état DPAE. Le
+   gestionnaire ouvre le panneau (l'API renvoie un brouillon pré-rempli :
+   fiche client + contrat + fiche salarié, sexe/département déduits du NIR),
+   complète ce qui manque, dépose, puis vérifie le retour URSSAF (certificat
+   de conformité ou motif de refus). Trois appels, même route :
+   POST /api/demande { action:"adminDpae", phase:"preparer"|"deposer"|"retour" }. */
+
+const CHAMPS_DPAE = {
+  employeur: [
+    ["siret", "SIRET *"], ["designation", "Dénomination *"], ["codeApe", "Code APE *"],
+    ["codeUrssaf", "Code URSSAF (3 chiffres) *"], ["adresse", "Adresse (rue) *"],
+    ["ville", "Ville *"], ["codePostal", "Code postal *"], ["telephone", "Téléphone"],
+    ["santeTravail", "Service santé au travail"],
+  ],
+  salarie: [
+    ["nom", "Nom *"], ["prenom", "Prénom *"], ["nir", "NIR (13 caractères) *"],
+    ["cleNir", "Clé NIR *"], ["dateNaissance", "Date de naissance *", "date"],
+    ["communeNaissance", "Commune de naissance *"], ["departementNaissance", "Département de naissance *"],
+  ],
+};
+
+const BADGE_DPAE = (statut) => {
+  const s = statut || "";
+  const teinte = s.startsWith("Conforme") ? { bg: "#E4F3EE", fg: T.ok }
+    : s.startsWith("Refusée") ? { bg: "#FCEBEB", fg: T.err }
+    : s.startsWith("Déposée") ? { bg: "#EAF1FB", fg: T.accent }
+    : { bg: T.bg, fg: T.mut };
+  return (
+    <span style={{ background: teinte.bg, color: teinte.fg, borderRadius: 20, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+      {s || "À déclarer"}
+    </span>
+  );
+};
+
+function PanneauDpae({ embauche, onStatut, onFermer, notifier }) {
+  const [brouillon, setBrouillon] = useState(null); // null=chargement | {employeur,salarie,contrat}
+  const [manques, setManques] = useState([]);
+  const [mode, setMode] = useState("");
+  const [etape, setEtape] = useState("saisie"); // saisie | envoi | attente | fini
+  const [resultat, setResultat] = useState(null);
+  const [erreur, setErreur] = useState("");
+
+  const appel = (corps) => apiFetch("/api/demande", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "adminDpae", idContrat: embauche.id, ...corps }),
+  });
+
+  useEffect(() => {
+    appel({ phase: "preparer" })
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { setErreur(j.erreur || `HTTP ${r.status}`); return; }
+        setBrouillon(j.brouillon); setManques(j.manques || []); setMode(j.mode || "");
+      })
+      .catch(() => setErreur("API injoignable — réessayez."));
+  }, [embauche.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const maj = (bloc, k, v) => setBrouillon((b) => ({ ...b, [bloc]: { ...b[bloc], [k]: v } }));
+
+  const verifierRetour = async (restants) => {
+    try {
+      const r = await appel({ phase: "retour" });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.pret) {
+        setEtape("fini"); setResultat(j); onStatut(embauche.id, j.statut);
+        return;
+      }
+    } catch { /* on retentera */ }
+    if (restants > 0) setTimeout(() => verifierRetour(restants - 1), 5000);
+    else setEtape("depose"); // bilan pas encore publié — bouton « Vérifier » du tableau
+  };
+
+  const deposer = async () => {
+    setEtape("envoi"); setErreur("");
+    try {
+      const r = await appel({ phase: "deposer", dpae: brouillon });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErreur(j.erreur || `Dépôt refusé (HTTP ${r.status}).`); setEtape("saisie"); return; }
+      onStatut(embauche.id, j.statut);
+      setEtape("attente");
+      verifierRetour(5);
+    } catch {
+      setErreur("API injoignable — réessayez."); setEtape("saisie");
+    }
+  };
+
+  const grille = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 8 };
+  const bloc = (titre, cles, blocK) => (
+    <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 12px", margin: 0 }}>
+      <legend style={{ fontSize: 12, color: T.mut, padding: "0 6px" }}>{titre}</legend>
+      <div style={grille}>
+        {cles.map(([k, l, type]) => (
+          <label key={k} style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+            {l}
+            <input style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} type={type || "text"}
+              value={brouillon[blocK][k] || ""} onChange={(e) => maj(blocK, k, e.target.value)} />
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+
+  return (
+    <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", marginTop: 8 }}>
+      {erreur && (
+        <p style={{ margin: "0 0 10px", fontSize: 12.5, background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "8px 10px" }}>
+          {erreur}
+        </p>
+      )}
+      {!brouillon && !erreur && <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Préparation du brouillon…</p>}
+
+      {brouillon && etape === "saisie" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {mode === "test" && (
+            <p style={{ margin: 0, fontSize: 12, color: T.accent }}>
+              Mode TEST : l'URSSAF contrôle le message mais n'enregistre aucune déclaration.
+            </p>
+          )}
+          {manques.length > 0 && (
+            <p style={{ margin: 0, fontSize: 12, color: T.err }}>
+              <AlertTriangle size={12} style={{ verticalAlign: "-2px" }} /> À compléter : {manques.join(" · ")}
+            </p>
+          )}
+          {bloc("Employeur (repris de la fiche client)", CHAMPS_DPAE.employeur, "employeur")}
+          {bloc("Salarié", CHAMPS_DPAE.salarie, "salarie")}
+          <fieldset style={{ border: `1px solid ${T.border}`, borderRadius: 8, padding: "10px 12px", margin: 0 }}>
+            <legend style={{ fontSize: 12, color: T.mut, padding: "0 6px" }}>Salarié — sexe · Contrat</legend>
+            <div style={grille}>
+              <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                Sexe *
+                <select style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} value={brouillon.salarie.sexe || ""}
+                  onChange={(e) => maj("salarie", "sexe", e.target.value)}>
+                  <option value="">—</option><option value="1">Homme</option><option value="2">Femme</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                Nature du contrat *
+                <select style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} value={brouillon.contrat.nature}
+                  onChange={(e) => maj("contrat", "nature", e.target.value)}>
+                  <option value="CDI">CDI</option><option value="CDD">CDD</option><option value="CTT">CTT (intérim)</option>
+                </select>
+              </label>
+              <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                Date d'embauche *
+                <input style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} type="date"
+                  value={brouillon.contrat.dateDebut || ""} onChange={(e) => maj("contrat", "dateDebut", e.target.value)} />
+              </label>
+              <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                Heure d'embauche *
+                <input style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} type="time"
+                  value={(brouillon.contrat.heureDebut || "").slice(0, 5)} onChange={(e) => maj("contrat", "heureDebut", e.target.value)} />
+              </label>
+              {(brouillon.contrat.nature === "CDD" || brouillon.contrat.nature === "CTT") && (
+                <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                  Date de fin *
+                  <input style={{ ...champ, padding: "6px 8px", fontSize: 12.5 }} type="date"
+                    value={brouillon.contrat.dateFin || ""} onChange={(e) => maj("contrat", "dateFin", e.target.value)} />
+                </label>
+              )}
+            </div>
+          </fieldset>
+          <p style={{ margin: 0, fontSize: 11.5, color: T.mut }}>
+            Astuce : reportez SIRET, codes APE/URSSAF, ville, CP et service de santé dans la fiche
+            « Paramètres clients » — les prochaines DPAE de ce client arriveront pré-remplies.
+          </p>
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button onClick={onFermer} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, color: T.mut, padding: "9px 6px" }}>Fermer</button>
+            <button onClick={deposer} style={{
+              all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+              background: T.accent, color: "#fff", borderRadius: 8, padding: "9px 18px",
+              fontSize: 13, fontWeight: 600,
+            }}>
+              <Send size={14} /> Déposer la DPAE{mode === "test" ? " (test)" : ""}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {etape === "envoi" && <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Dépôt auprès de l'URSSAF…</p>}
+      {etape === "attente" && <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Déposée ✓ — attente du bilan de conformité URSSAF…</p>}
+      {etape === "depose" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>
+          Déposée ✓ — le bilan n'est pas encore publié. Revenez dans quelques minutes
+          avec le bouton « Vérifier » du tableau.
+        </p>
+      )}
+      {etape === "fini" && resultat && (
+        resultat.conforme ? (
+          <p style={{ margin: 0, fontSize: 12.5, color: T.ok }}>
+            <ShieldCheck size={14} style={{ verticalAlign: "-2px" }} /> DPAE conforme — certificat URSSAF :{" "}
+            <strong style={{ fontFamily: "monospace" }}>{resultat.certificat}</strong>
+          </p>
+        ) : (
+          <p style={{ margin: 0, fontSize: 12.5, color: T.err }}>
+            <AlertTriangle size={14} style={{ verticalAlign: "-2px" }} /> DPAE refusée : {resultat.message}
+          </p>
+        )
+      )}
+      {(etape === "fini" || etape === "depose") && (
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+          <button onClick={onFermer} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, color: T.mut, padding: "4px 6px" }}>Fermer</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Messagerie : boîte de réception des fils clients ─────────────────
    GET /api/me?vue=admin&onglet=messages (tous les fils, tous clients) ;
    réponse et clôture via POST /api/demande { action: "messageRepondre" |
@@ -404,6 +640,191 @@ function BulleAdmin({ fil, qui, quand, texte }) {
       <span style={{ fontSize: 11, color: T.mut, margin: "4px 2px 0" }}>
         {moi ? "Vous" : `${fil.raisonSociale || fil.codeClient}${fil.emailDemandeur ? ` (${fil.emailDemandeur})` : ""}`} — {frLong(quand)}
       </span>
+    </div>
+  );
+}
+
+/* ── Titre de séjour (salariés étrangers) : suivi de l'authentification
+   préfectorale. La demande part par courriel à la préfecture du lieu
+   d'embauche (mail type pré-rempli) au moins 2 jours ouvrables avant la
+   prise de poste ; la réponse est consignée ici (Authentifié / Refusé). */
+const BADGE_TITRE = (e) => {
+  if (!e.titreType) return <span style={{ color: T.mut, fontSize: 12 }}>—</span>;
+  const s = e.titreStatut || "À authentifier";
+  const teinte = s === "Authentifié" ? { bg: "#E4F3EE", fg: T.ok }
+    : s === "Refusé" ? { bg: "#FCEBEB", fg: T.err }
+    : { bg: "#FAEEDA", fg: "#854F0B" };
+  return (
+    <span style={{ background: teinte.bg, color: teinte.fg, borderRadius: 20, padding: "3px 10px", fontSize: 11.5, fontWeight: 600, whiteSpace: "nowrap" }}>
+      {s}
+    </span>
+  );
+};
+
+function PanneauTitre({ embauche: e, raisonSociale, onTitre, onFermer, notifier }) {
+  const [envoi, setEnvoi] = useState(false);
+  const decider = async (decision) => {
+    setEnvoi(true);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminTitreSejour", idContrat: e.id, decision }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      else { onTitre(e.id, j.statut); notifier(`✓ Titre de séjour : ${j.statut}.`); onFermer(); }
+    } catch { notifier("API injoignable — réessayez."); }
+    setEnvoi(false);
+  };
+
+  const sujet = encodeURIComponent("Demande d'authentification d'un titre de séjour avant embauche (art. R.5221-41 du code du travail)");
+  const corps = encodeURIComponent(
+    `Madame, Monsieur,\n\nEn application des articles L.5221-8 et R.5221-41 et suivants du code du travail, je vous prie de bien vouloir authentifier le titre de séjour du salarié que l'entreprise ci-dessous envisage d'embaucher :\n\n` +
+    `Employeur : ${raisonSociale}\nSalarié : ${e.nom} ${e.prenom} (nationalité : ${e.nationalite || "—"})\n` +
+    `Titre présenté : ${e.titreType}\nNuméro du titre : ${e.titreNumero || "—"}\nDate d'expiration : ${e.titreExpiration || "—"}\n` +
+    `Date d'embauche prévue : ${e.debut || "—"}\n\n` +
+    `Copie du titre disponible sur demande.\n\nCordialement,\nOsmose RH, pour le compte de l'employeur`);
+
+  return (
+    <div style={{ background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 16px", marginTop: 8, display: "flex", flexDirection: "column", gap: 10 }}>
+      <p style={{ margin: 0, fontSize: 12.5 }}>
+        <strong>{e.titreType}</strong> n° {e.titreNumero || "—"} — expire le {e.titreExpiration || "—"} ·
+        nationalité : {e.nationalite || "—"} · la copie du titre est dans les Documents du client
+        (Dépôts, fichier « PJ-Embauche_…_titre-sejour_… »).
+      </p>
+      <p style={{ margin: 0, fontSize: 12, color: T.mut }}>
+        1. Adressez la demande d'authentification à la préfecture du département du lieu
+        d'embauche (au moins 2 jours ouvrables avant la prise de poste). Sans réponse sous
+        2 jours ouvrables, l'obligation est réputée accomplie. 2. Consignez la réponse ici.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", alignItems: "center" }}>
+        <a href={`mailto:?subject=${sujet}&body=${corps}`}
+          style={{ fontSize: 12.5, color: T.accent, fontWeight: 600, marginRight: "auto" }}>
+          ✉ Préparer le mail à la préfecture
+        </a>
+        <button onClick={onFermer} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, color: T.mut, padding: "8px 6px" }}>Fermer</button>
+        <button onClick={() => decider("refuse")} disabled={envoi}
+          style={{ all: "unset", cursor: "pointer", color: T.err, fontSize: 12.5, fontWeight: 600, padding: "8px 6px" }}>
+          Titre non valide
+        </button>
+        <button onClick={() => decider("authentifie")} disabled={envoi} style={{
+          all: "unset", cursor: envoi ? "wait" : "pointer", display: "flex", alignItems: "center", gap: 8,
+          background: T.ok, color: "#fff", borderRadius: 8, padding: "8px 16px", fontSize: 12.5, fontWeight: 600,
+        }}>
+          <ShieldCheck size={14} /> Authentifié par la préfecture
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SectionDpae({ embauches, clients, dpaeMode, onStatut, onTitre, notifier }) {
+  const [ouvert, setOuvert] = useState(null); // id du panneau DPAE ouvert
+  const [ouvertTitre, setOuvertTitre] = useState(null); // id du panneau titre ouvert
+  const [verif, setVerif] = useState(null);   // id en cours de vérification
+  const nomClient = (code) => clients.find((c) => c.codeClient === code)?.raisonSociale || code;
+  const fr = (d) => (d ? new Date(d).toLocaleDateString("fr-FR") : "");
+
+  const verifier = async (e) => {
+    setVerif(e.id);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminDpae", phase: "retour", idContrat: e.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) notifier(j.erreur || `Vérification refusée (HTTP ${r.status}).`);
+      else if (!j.pret) notifier("Bilan URSSAF pas encore publié — réessayez dans quelques minutes.");
+      else {
+        onStatut(e.id, j.statut);
+        notifier(j.conforme ? `✓ DPAE conforme — certificat ${j.certificat}` : `DPAE refusée : ${j.message}`);
+      }
+    } catch { notifier("API injoignable — réessayez."); }
+    setVerif(null);
+  };
+
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px" }}>
+      {!dpaeMode && (
+        <p style={{ margin: "0 0 10px", fontSize: 12.5, background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", color: T.mut }}>
+          API DPAE non configurée : renseignez les variables DPAE_* de la SWA (voir docs/DPAE-API.md).
+          Le tableau reste consultatif.
+        </p>
+      )}
+      {dpaeMode === "test" && (
+        <p style={{ margin: "0 0 10px", fontSize: 12, color: T.accent }}>
+          Mode TEST actif (DPAE_MODE=test) — les dépôts sont contrôlés par l'URSSAF mais rien n'est déclaré.
+        </p>
+      )}
+      {embauches.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Aucune embauche déclarée par les clients pour l'instant.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {["Reçue le", "Client", "Salarié", "Contrat", "Début", "Titre séjour", "DPAE", ""].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "6px 8px", background: T.bg, borderBottom: `1px solid ${T.border}`, fontSize: 11.5, color: T.mut }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {embauches.map((e) => (
+                <React.Fragment key={e.id}>
+                  <tr>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{fr(e.recueLe)}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{nomClient(e.codeClient)}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>
+                      <strong>{e.nom}</strong> {e.prenom}
+                    </td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{e.type}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{e.debut || ""}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                      {e.titreType ? (
+                        <button onClick={() => { setOuvertTitre(ouvertTitre === e.id ? null : e.id); setOuvert(null); }}
+                          style={{ all: "unset", cursor: "pointer" }} title="Suivre l'authentification du titre">
+                          {BADGE_TITRE(e)}
+                        </button>
+                      ) : BADGE_TITRE(e)}
+                    </td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{BADGE_DPAE(e.dpaeStatut)}</td>
+                    <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap", textAlign: "right" }}>
+                      {dpaeMode && (e.dpaeStatut || "").startsWith("Déposée") && (
+                        <button onClick={() => verifier(e)} disabled={verif === e.id}
+                          style={{ all: "unset", cursor: verif === e.id ? "wait" : "pointer", color: T.accent, fontSize: 12, fontWeight: 600 }}>
+                          {verif === e.id ? "Vérification…" : "Vérifier"}
+                        </button>
+                      )}
+                      {dpaeMode && !(e.dpaeStatut || "").startsWith("Déposée") && !(e.dpaeStatut || "").startsWith("Conforme") && (
+                        <button onClick={() => { setOuvert(ouvert === e.id ? null : e.id); setOuvertTitre(null); }}
+                          style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600 }}>
+                          {ouvert === e.id ? "Fermer" : (e.dpaeStatut || "").startsWith("Refusée") ? "Corriger" : "Déclarer"}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {ouvertTitre === e.id && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: "0 8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                        <PanneauTitre embauche={e} raisonSociale={nomClient(e.codeClient)} notifier={notifier}
+                          onTitre={onTitre} onFermer={() => setOuvertTitre(null)} />
+                      </td>
+                    </tr>
+                  )}
+                  {ouvert === e.id && (
+                    <tr>
+                      <td colSpan={8} style={{ padding: "0 8px 10px", borderBottom: `1px solid ${T.border}` }}>
+                        <PanneauDpae embauche={e} notifier={notifier}
+                          onStatut={onStatut} onFermer={() => setOuvert(null)} />
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
@@ -562,6 +983,343 @@ function BoiteMessages({ boite, recharger, notifier, filInitial, majLocale }) {
   );
 }
 
+/* ── Brique « Salariés étrangers » — suivi tous clients & dossier
+   inspection. Chargée à l'ouverture (GET /api/me?vue=admin&onglet=etrangers) ;
+   qualification du droit au travail et suivi d'autorisation par ligne
+   (POST /api/demande { action:"adminEtrangers" }). ─────────────────────── */
+const BADGE_ETAT_ETR = (s) => {
+  const rendu = (bg, fg, txt) => <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>{txt}</span>;
+  switch (s.etat) {
+    case "expire": return rendu("#FCEBEB", "#791F1F", "EXPIRÉ");
+    case "en-renouvellement": return rendu("#EAF1FB", T.accent, "En renouvellement");
+    case "a-renouveler": return rendu("#FAEEDA", "#854F0B", `À renouveler (${s.joursRestants} j)`);
+    case "valide": return rendu("#E4F3EE", T.ok, "Valide");
+    default: return rendu(T.bg, T.mut, "À renseigner");
+  }
+};
+
+/* ================================================================
+   ÉCHÉANCES — vue « toutes échéances, tous clients » : le plan de
+   charge du gestionnaire, trié par urgence. Données agrégées côté
+   serveur (GET /api/me?vue=admin&onglet=echeances, module echeancier).
+   ================================================================ */
+const COULEUR_TYPE = {
+  "Fin de CDD": { bg: "#E6F1FB", fg: "#0C447C" },
+  "Période d'essai": { bg: "#EEEDFE", fg: "#3C3489" },
+  "Visite médicale": { bg: "#E1F5EE", fg: "#085041" },
+  "Entretien professionnel": { bg: "#FDF3E4", fg: "#7A5416" },
+  "Titre de séjour": { bg: "#FAEEDA", fg: "#854F0B" },
+  "Habilitation": { bg: "#F1EFE8", fg: "#444441" },
+};
+
+/* ================================================================
+   ABONNEMENTS — suivi commercial des options souscrites.
+   GET /api/me?vue=admin&onglet=abonnements (module abonnements.js).
+   Les montants n'apparaissent que si le catalogue TARIFS_OPTIONS est
+   configuré côté SWA, ou si un forfait négocié est saisi sur la fiche
+   client — aucun prix n'est inventé.
+   ================================================================ */
+function SectionAbonnements() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/api/me?vue=admin&onglet=abonnements")
+      .then(async (r) => {
+        if (r.ok) return setData(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setData({ erreur: e.erreur || `Abonnements indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setData({ erreur: "Abonnements momentanément indisponibles — réessayez." }));
+  }, []);
+
+  if (data === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des abonnements…</p>;
+  if (data.erreur) return <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>{data.erreur}</p>;
+
+  const lignes = data.lignes || [];
+  const euros = (v) => (v == null ? "—" : `${Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`);
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+  const exporter = () => {
+    const cel = (v) => { const t = String(v ?? ""); return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const entetes = ["Code client", "Raison sociale", "Actif", "Options", "Effectif suivi", "Client depuis", "Forfait mensuel", "Opportunités"];
+    const corps = lignes.map((l) => [l.codeClient, l.raisonSociale, l.actif ? "Oui" : "Non",
+      l.libelles.join(" + "), l.effectif, fr(l.depuis), l.montant ?? "",
+      l.opportunites.map((o) => o.libelle).join(" + ")].map(cel).join(";"));
+    const csv = "﻿" + [entetes.map(cel).join(";"), ...corps].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `Abonnements_OsmoseRH_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const opportunites = lignes.filter((l) => l.actif && l.opportunites.length > 0);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 240 }}>
+          Qui a souscrit quoi, depuis quand, pour quel effectif — et les besoins visibles dans les
+          données mais pas encore souscrits.
+        </p>
+        <button onClick={exporter} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: T.accent, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 12px", background: T.card }}>
+          Exporter (Excel)
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        {[["Clients actifs", data.compteurs?.clientsActifs, T.ink],
+          ["Salariés suivis", data.compteurs?.effectifTotal, T.ink],
+          ["Récurrent mensuel", data.compteurs?.recurrentMensuel == null ? "—" : euros(data.compteurs.recurrentMensuel), "#085041"],
+          ["Opportunités", data.compteurs?.opportunites, data.compteurs?.opportunites ? "#854F0B" : T.mut]].map(([lib, val, coul]) => (
+          <div key={lib} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
+            <div style={{ fontSize: 11, color: T.mut }}>{lib}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: coul }}>{val ?? 0}</div>
+          </div>
+        ))}
+      </div>
+
+      {!data.tarifsConfigures && (
+        <p style={{ background: "#FDF3E4", color: "#7A5416", border: "1px solid #F0DCB4", borderRadius: 8, padding: "9px 12px", fontSize: 12.5, marginBottom: 14 }}>
+          Aucun tarif catalogue configuré : posez la variable <code>TARIFS_OPTIONS</code> dans la Static Web App
+          (par exemple <code>{`{"etrangers":15,"securite":20}`}</code>) pour voir les montants, ou saisissez un
+          forfait négocié par client (colonne <code>TarifMensuel</code> de « Paramètres clients »).
+        </p>
+      )}
+
+      {opportunites.length > 0 && (
+        <div style={{ background: "#FDF3E4", border: "1px solid #F0DCB4", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13.5, fontFamily: T.serif, color: "#7A5416", marginBottom: 8 }}>
+            Options à proposer — le besoin est déjà visible dans leurs données
+          </div>
+          {opportunites.map((l) => (
+            <div key={l.codeClient} style={{ fontSize: 12.5, color: "#7A5416", padding: "3px 0" }}>
+              <strong>{l.raisonSociale}</strong> — {l.opportunites.map((o) => `${o.libelle} (${o.motif})`).join(", ")}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 2fr 70px 90px 90px", gap: 8, padding: "9px 14px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+          <span>Client</span><span>Options</span><span>Effectif</span><span>Depuis</span><span>Mensuel</span>
+        </div>
+        {lignes.map((l, i) => (
+          <div key={l.codeClient} style={{ display: "grid", gridTemplateColumns: "1.5fr 2fr 70px 90px 90px", gap: 8, padding: "10px 14px", fontSize: 12.5, borderBottom: i < lignes.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center", opacity: l.actif ? 1 : 0.5 }}>
+            <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.codeClient}>
+              {l.raisonSociale || l.codeClient}{!l.actif && <span style={{ color: T.mut, fontWeight: 400 }}> (inactif)</span>}
+            </span>
+            <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {l.libelles.length === 0
+                ? <span style={{ color: T.mut }}>aucune</span>
+                : l.libelles.map((lib) => (
+                  <span key={lib} style={{ background: "#E6F1FB", color: "#0C447C", fontSize: 10.5, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap" }}>{lib}</span>
+                ))}
+            </span>
+            <span style={{ color: T.mut }}>{l.effectif}</span>
+            <span style={{ color: T.mut }}>{fr(l.depuis)}</span>
+            <span style={{ fontWeight: l.montant ? 600 : 400, color: l.montant ? T.ink : T.mut }} title={l.forfait ? "Forfait négocié" : l.forfaitCatalogue != null ? "Somme du catalogue" : undefined}>
+              {euros(l.montant)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 14, background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "9px 14px", fontSize: 13, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Répartition par option</div>
+        {Object.entries(data.parOption || {}).map(([cle, o], i, t) => (
+          <div key={cle} style={{ display: "grid", gridTemplateColumns: "2fr 80px 90px", gap: 8, padding: "8px 14px", fontSize: 12.5, borderBottom: i < t.length - 1 ? `1px solid ${T.border}` : "none" }}>
+            <span>{o.libelle}</span>
+            <span style={{ color: T.mut }}>{o.clients} client{o.clients > 1 ? "s" : ""}</span>
+            <span style={{ color: T.mut }}>{o.tarif == null ? "—" : `${o.tarif} €/mois`}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function SectionEcheancier() {
+  const [data, setData] = useState(null);
+  const [filtre, setFiltre] = useState("");
+
+  useEffect(() => {
+    apiFetch("/api/me?vue=admin&onglet=echeances")
+      .then(async (r) => {
+        if (r.ok) return setData(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setData({ erreur: e.erreur || `Échéances indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setData({ erreur: "Échéances momentanément indisponibles — réessayez." }));
+  }, []);
+
+  if (data === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Calcul des échéances de tous les clients…</p>;
+  if (data.erreur) return <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>{data.erreur}</p>;
+
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  const lignes = (data.echeances || []).filter((l) => !filtre || l.type === filtre);
+  const types = [...new Set((data.echeances || []).map((l) => l.type))];
+  const BadgeJ = (j) => {
+    const c = j < 0 ? { bg: "#FCEBEB", fg: "#791F1F" } : j <= 7 ? { bg: "#FCEBEB", fg: "#791F1F" } : j <= 30 ? { bg: "#FAEEDA", fg: "#854F0B" } : { bg: "#E6F1FB", fg: "#0C447C" };
+    return <span style={{ background: c.bg, color: c.fg, fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>
+      {j < 0 ? `RETARD ${-j} j` : j === 0 ? "Aujourd'hui" : `${j} j`}</span>;
+  };
+
+  return (
+    <>
+      <p style={{ margin: "0 0 14px", fontSize: 13, color: T.mut }}>
+        Toutes les échéances de tous les clients à 120 jours (retards de moins de 60 jours inclus) —
+        votre plan de charge, trié par urgence.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+        {[["En retard", data.compteurs?.retard, "#791F1F"], ["Sous 30 jours", data.compteurs?.sous30, "#854F0B"], ["Total à 120 jours", data.compteurs?.total, T.ink]].map(([lib, val, coul]) => (
+          <div key={lib} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
+            <div style={{ fontSize: 11, color: T.mut }}>{lib}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: coul }}>{val ?? 0}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        <button onClick={() => setFiltre("")} style={{ all: "unset", cursor: "pointer", fontSize: 11.5, padding: "4px 10px", borderRadius: 99, border: `1px solid ${filtre === "" ? T.accent : T.border}`, background: filtre === "" ? "#E6F1FB" : T.card, color: filtre === "" ? "#0C447C" : T.mut }}>Tout</button>
+        {types.map((t) => (
+          <button key={t} onClick={() => setFiltre(filtre === t ? "" : t)} style={{ all: "unset", cursor: "pointer", fontSize: 11.5, padding: "4px 10px", borderRadius: 99, border: `1px solid ${filtre === t ? T.accent : T.border}`, background: filtre === t ? "#E6F1FB" : T.card, color: filtre === t ? "#0C447C" : T.mut }}>
+            {t} ({(data.echeances || []).filter((l) => l.type === t).length})
+          </button>
+        ))}
+      </div>
+      {lignes.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "30px 22px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucune échéance dans la fenêtre. ✨
+        </div>
+      ) : (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1.4fr 1.3fr 90px 90px", gap: 8, padding: "9px 14px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Client</span><span>Salarié</span><span>Échéance</span><span>Date</span><span>Reste</span>
+          </div>
+          {lignes.map((l, i) => {
+            const c = COULEUR_TYPE[l.type] || { bg: "#F1EFE8", fg: "#444441" };
+            return (
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "1.3fr 1.4fr 1.3fr 90px 90px", gap: 8, padding: "10px 14px", fontSize: 12.5, borderBottom: i < lignes.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.raisonSociale}</span>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.salarie}</span>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.detail || undefined}>
+                  <span style={{ background: c.bg, color: c.fg, fontSize: 10.5, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>{l.type}</span>
+                </span>
+                <span>{fr(l.echeance)}</span>
+                {BadgeJ(l.joursRestants)}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </>
+  );
+}
+
+function SectionEtrangers({ notifier }) {
+  const [donnees, setDonnees] = useState(null); // null=fermé | "chargement" | {salaries…} | {erreur}
+  const [envoi, setEnvoi] = useState(null);
+
+  const charger = () => {
+    setDonnees("chargement");
+    apiFetch("/api/me?vue=admin&onglet=etrangers")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
+      })
+      .catch(() => setDonnees({ erreur: "API injoignable — réessayez." }));
+  };
+
+  const enregistrer = async (s, champ, valeur) => {
+    setEnvoi(s.id);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminEtrangers", id: s.id, [champ]: valeur }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      else setDonnees((d) => ({ ...d, salaries: d.salaries.map((x) => (x.id === s.id ? { ...x, [champ === "droitTravail" ? "droitTravail" : "autorisationTravail"]: valeur, ...(champ === "droitTravail" ? { droitSuggere: false } : {}) } : x)) }));
+    } catch { notifier("API injoignable — réessayez."); }
+    setEnvoi(null);
+  };
+
+  if (donnees === null) {
+    return (
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "16px 20px" }}>
+        <button onClick={charger} style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 13, fontWeight: 600 }}>
+          Ouvrir le suivi des salariés étrangers (tous clients) →
+        </button>
+      </div>
+    );
+  }
+  if (donnees === "chargement") return <p style={{ fontSize: 13, color: T.mut }}>Chargement du suivi…</p>;
+  if (donnees.erreur) return <p style={{ fontSize: 13, color: T.err }}>{donnees.erreur}</p>;
+
+  const cpt = donnees.compteurs || {};
+  const salaries = donnees.salaries || [];
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  return (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px" }}>
+      <p style={{ margin: "0 0 6px", fontSize: 12.5 }}>
+        <strong style={{ color: cpt.expires ? T.err : T.ink }}>{cpt.expires || 0} expiré{cpt.expires > 1 ? "s" : ""}</strong>
+        {" · "}{cpt.enRenouvellement || 0} en renouvellement · {cpt.aRenouveler || 0} à renouveler · {cpt.valides || 0} valide{cpt.valides > 1 ? "s" : ""}
+      </p>
+      <p style={{ margin: "0 0 12px", fontSize: 11.5, color: T.mut }}>
+        Dossier inspection : les copies (colonnes « Pièces ») sont dans les Documents du client concerné.
+        Rappel : la première admission au travail d'un étranger déclenche la taxe employeur (OFII/DGFiP).
+        « Droit au travail » en italique = suggestion d'après le type de titre — qualifiez d'après la mention exacte.
+      </p>
+      {salaries.length === 0 ? (
+        <p style={{ margin: 0, fontSize: 12.5, color: T.mut }}>Aucun salarié étranger suivi.</p>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr>
+                {["Client", "Salarié", "Nationalité", "Titre", "Fin des droits", "État", "Droit au travail", "Autorisation", "Pièces"].map((h) => (
+                  <th key={h} style={{ textAlign: "left", padding: "6px 8px", background: T.bg, borderBottom: `1px solid ${T.border}`, fontSize: 11.5, color: T.mut }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {salaries.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{s.raisonSociale}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}><strong>{s.nom}</strong> {s.prenom}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{s.nationalite || "—"}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }} title={s.titre?.numero ? `N° ${s.titre.numero}` : undefined}>
+                    {s.titre?.type || "—"}{s.recepisse?.fin ? ` + récépissé → ${fr(s.recepisse.fin)}` : ""}
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" }}>{fr(s.finDroits)}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>{BADGE_ETAT_ETR(s)}</td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                    <select value={s.droitTravail || ""} disabled={envoi === s.id}
+                      onChange={(e) => enregistrer(s, "droitTravail", e.target.value)}
+                      style={{ ...champ, padding: "5px 7px", fontSize: 11.5, fontStyle: s.droitSuggere ? "italic" : "normal", minWidth: 150 }}>
+                      {(donnees.droits || []).map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}` }}>
+                    <select value={s.autorisationTravail || ""} disabled={envoi === s.id}
+                      onChange={(e) => enregistrer(s, "autorisationTravail", e.target.value)}
+                      style={{ ...champ, padding: "5px 7px", fontSize: 11.5, minWidth: 110 }}>
+                      {(donnees.autorisations || []).map((o) => <option key={o} value={o}>{o || "—"}</option>)}
+                    </select>
+                  </td>
+                  <td style={{ padding: "7px 8px", borderBottom: `1px solid ${T.border}`, fontSize: 11, color: T.mut, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={[s.titre?.pj, s.recepisse?.pj].filter(Boolean).join(" · ") || undefined}>
+                    {[s.titre?.pj, s.recepisse?.pj].filter(Boolean).join(" · ") || "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminActivation({ user, onLogout, msgInitial: msgProp }) {
   const [donnees, setDonnees] = useState(null); // null | { demandes, clients, options } | { erreur }
   const [boite, setBoite] = useState(null);     // null | { fils, total } | { erreur }
@@ -620,6 +1378,17 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
       ? { ...d, clients: [...d.clients, { codeClient, raisonSociale }].sort((a, b) => a.codeClient.localeCompare(b.codeClient)) }
       : d);
 
+  // Statut DPAE mis à jour en place après un dépôt ou une vérification.
+  const majStatutDpae = (id, statut) =>
+    setDonnees((d) => d?.embauches
+      ? { ...d, embauches: d.embauches.map((e) => (e.id === id ? { ...e, dpaeStatut: statut } : e)) }
+      : d);
+  // Idem pour l'authentification du titre de séjour.
+  const majStatutTitre = (id, statut) =>
+    setDonnees((d) => d?.embauches
+      ? { ...d, embauches: d.embauches.map((e) => (e.id === id ? { ...e, titreStatut: statut } : e)) }
+      : d);
+
   return (
     <div style={{ minHeight: "100vh", background: T.bg, fontFamily: T.sans, color: T.ink }}>
       <header style={{ background: T.navy, color: "#fff", padding: "14px 24px", display: "flex", alignItems: "center", gap: 14 }}>
@@ -636,6 +1405,8 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         {[
           ["acces", `Demandes d'accès${donnees?.demandes?.length ? ` (${donnees.demandes.length})` : ""}`],
           ["messages", `Messages clients${aRepondre ? ` (${aRepondre})` : ""}`],
+          ["echeances", "Échéances"],
+          ["abonnements", "Abonnements"],
         ].map(([id, lib]) => (
           <button key={id} onClick={() => setOnglet(id)} style={{
             all: "unset", cursor: "pointer", padding: "12px 14px", fontSize: 13.5,
@@ -653,6 +1424,10 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
           <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier}
             filInitial={msgInitial} majLocale={majFilBoite} />
         </div>
+
+        {onglet === "echeances" && <SectionEcheancier />}
+
+        {onglet === "abonnements" && <SectionAbonnements />}
 
         {onglet === "acces" && (<>
         {donnees === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des demandes…</p>}
@@ -693,6 +1468,38 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
             </p>
             <FormulaireActivation clients={donnees.clients} options={donnees.options}
               onClientCree={ajouterClient} notifier={notifier} />
+          </section>
+        )}
+
+        {donnees?.embauches && (
+          <section style={{ marginTop: 30 }}>
+            <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+              <ShieldCheck size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+              Embauches — DPAE & titres de séjour
+            </h2>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
+              Chaque embauche reçue est à déclarer à l'URSSAF avant la prise de poste
+              (au plus tôt 8 jours avant) — brouillon pré-rempli, dépôt, certificat.
+              Pour un salarié étranger, faites d'abord authentifier le titre de séjour
+              par la préfecture (2 jours ouvrables) : cliquez sur son badge.
+            </p>
+            <SectionDpae embauches={donnees.embauches} clients={donnees.clients}
+              dpaeMode={donnees.dpaeMode} onStatut={majStatutDpae} onTitre={majStatutTitre} notifier={notifier} />
+          </section>
+        )}
+
+        {donnees?.embauches && (
+          <section style={{ marginTop: 30 }}>
+            <h2 style={{ margin: "0 0 4px", fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+              <ShieldCheck size={15} style={{ verticalAlign: "-2px", marginRight: 7 }} />
+              Salariés étrangers — suivi & dossier inspection
+            </h2>
+            <p style={{ margin: "0 0 12px", fontSize: 12.5, color: T.mut }}>
+              Tous clients : validité des titres, renouvellements en cours, qualification du
+              droit au travail et suivi des autorisations. Vendue en option « Salariés
+              étrangers » — activable client par client à l'activation de l'accès.
+            </p>
+            <SectionEtrangers notifier={notifier} />
           </section>
         )}
 

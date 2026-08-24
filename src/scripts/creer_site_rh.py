@@ -62,6 +62,14 @@ LISTES = [
         col("Representant", T()), col("FonctionRepresentant", T()),
         col("LieuEdition", T()), col("EmailGestionnaire", T()),
         col("Actif", B(True)),
+        # Identification URSSAF de l'employeur (DPAE, 22/08) —
+        # AdresseEntreprise = rue seule, ville et CP à part (norme DPAE).
+        col("CodeUrssaf", T()), col("CodeApe", T()),
+        col("VilleEntreprise", T()), col("CodePostalEntreprise", T()),
+        col("TelephoneEntreprise", T()), col("SanteTravail", T()),
+        # Suivi commercial (23/08) : date de souscription et forfait
+        # mensuel négocié (prime sur le catalogue TARIFS_OPTIONS).
+        col("DateSouscription", D()), col("TarifMensuel", N()),
         # + colonne « Options » (choix multiple) À LA MAIN — voir en-tête
     ]),
     ("Utilisateurs portail", [
@@ -86,19 +94,74 @@ LISTES = [
         col("PaysNaissance", T()), col("CodePaysNaissance", T()),
         col("Iban", T()), col("Bic", T()),
         col("BulletinDematerialise", B(False)),
+        # Salariés étrangers (22/08) : nationalité + titre de séjour
+        # (l'expiration alimentera le suivi de renouvellement)
+        col("Nationalite", T()), col("TitreSejourType", T()),
+        col("TitreSejourNumero", T()), col("TitreSejourExpiration", D()),
+        col("AlerteTitreSejour", T()),  # dernier palier d'alerte e-mail
+        # Brique « Salariés étrangers » (option) : renouvellement + droit
+        # au travail + copies des pièces (dossier inspection)
+        col("TitreSejourPj", T()), col("RecepisseNumero", T()),
+        col("RecepisseFin", D()), col("RecepissePj", T()),
+        col("DroitTravail", T()), col("AutorisationTravail", T()),
+        # Suivi du contrat (23/08) : période d'essai + visites médicales
+        # périodiques (périodicité en mois, 60 par défaut ; alertes = palier)
+        col("FinPeriodeEssai", D()), col("AlertePeriodeEssai", T()),
+        col("PeriodiciteVisiteMois", N()), col("DerniereVisiteMedicale", D()),
+        col("AlerteVisiteMedicale", T()),
+        # Entretiens professionnels (23/08) : tous les 2 ans (L.6315-1),
+        # échéance = dernier entretien + 24 mois, sinon entrée + 24 mois.
+        col("DernierEntretienPro", D()), col("AlerteEntretienPro", T()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
         col("JustificatifUrl", T()),
         col("Statut", CH(["Nouvelle", "Vue", "Traitée"], "Nouvelle")),
+        # Visite de reprise (23/08, R.4624-31) : dernier palier d'alerte
+        # (REPRISE / RETARD) — l'arrêt déclaré déclenche l'obligation.
+        col("AlerteReprise", T()),
     ]),
     ("Visites médicales", SOCLE_PERSONNEL + [
         col("DateVisite", D()),
         col("Statut", CH(["À planifier", "Planifiée", "Réalisée"], "À planifier")),
+        # Nature de la visite (23/08) : la reprise après arrêt est une
+        # obligation distincte du suivi périodique (art. R.4624-31).
+        col("TypeVisite", T()),
     ]),
     ("Adhésions mutuelles", SOCLE_PERSONNEL + [
         col("Mutuelle", T()), col("DateAdhesion", D()),
         col("Statut", CH(["Demande", "Transmise", "Active"], "Demande")),
+    ]),
+    # Habilitations & CACES (23/08) : une ligne = une habilitation d'un
+    # salarié (l'historique se conserve — le recyclage ajoute une ligne,
+    # les alertes ne regardent que la plus récente par salarié + type).
+    ("Habilitations", SOCLE_PERSONNEL + [
+        col("TypeHabilitation", T()), col("Numero", T()), col("Organisme", T()),
+        col("DateObtention", D()), col("DateExpiration", D()),
+        col("AlerteHabilitation", T()),  # dernier palier d'alerte e-mail
+    ]),
+    # Avenants au contrat (23/08) : demande du client → production du
+    # document par le gestionnaire (même circuit que les fins de contrat).
+    ("Avenants", SOCLE_PERSONNEL + [
+        col("TypeAvenant", T()), col("DateEffet", D()), col("Details", TL()),
+        col("Statut", CH(["Nouvelle", "En cours", "Traitée"], "Nouvelle")),
+    ]),
+    # Onboarding salarié (23/08) : le client invite le salarié à compléter
+    # lui-même son dossier via un lien à jeton (durée 14 jours) — une
+    # ligne = une invitation, le jeton est l'unique clé d'accès public.
+    ("Invitations salariés", [
+        col("CodeClient", T()), col("RaisonSociale", T()),
+        col("Nom", T()), col("Prenom", T()), col("IdFiche", T()),
+        col("EmailSalarie", T()), col("Jeton", T()), col("ExpireLe", DH()),
+        col("Statut", CH(["Envoyée", "Complétée"], "Envoyée")),
+        col("Reference", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
+        # Pré-embauche (23/08 soir) : le client embauche SANS les infos du
+        # salarié — le contrat attend l'onboarding. Ces colonnes portent la
+        # commande de contrat ; à la soumission du salarié, la demande part
+        # automatiquement dans « Production contrat ».
+        col("TypeContrat", T()), col("DateDebut", D()), col("DateFin", D()),
+        col("Poste", T()), col("DureeMensuelle", T()), col("FinPeriodeEssai", D()),
+        col("AlerteInvitation", T()),  # dernier palier de relance (J3/J-2/EXPIREE)
     ]),
     ("Fins de contrat", [
         col("CodeClient", T()), col("EmailDemandeur", T()), col("EmailGestionnaire", T()),
@@ -244,6 +307,23 @@ def main():
 
     print("4. Bibliothèque de documents…")
     traiter_liste(site, jeton, listes, BIBLIOTHEQUE, [], gabarit="documentLibrary")
+
+    # « Production contrat » existe déjà (créée à la main, noms internes
+    # accentués) : on ne fait qu'AJOUTER le suivi DPAE — jamais la créer
+    # ici, ses colonnes historiques ne sont pas dans ce script.
+    print("5. Suivi DPAE sur « Production contrat »…")
+    if "Production contrat" in listes:
+        traiter_liste(site, jeton, listes, "Production contrat", [
+            col("DpaeStatut", T()), col("DpaeIdFlux", T()),
+            col("DpaeCertificat", T()), col("DpaeMessage", TL()),
+            col("DpaeDeclareLe", DH()),
+            # Salariés étrangers : titre de séjour + authentification
+            col("TitreSejourType", T()), col("TitreSejourNumero", T()),
+            col("TitreSejourExpiration", D()), col("TitreSejourStatut", T()),
+            col("TitreSejourVerifieLe", DH()),
+        ])
+    else:
+        print("   IGNORÉ : liste absente — créez-la d'abord (plan de bascule).")
 
     print("""
 Terminé. RESTE À FAIRE À LA MAIN (voir docs/Plan-bascule-osmoserh.md) :

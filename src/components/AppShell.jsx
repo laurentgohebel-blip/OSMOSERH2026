@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, UserPlus, Globe
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 import AdminActivation from "./AdminActivation";
@@ -67,6 +67,24 @@ const DEMO_ECHEANCES = {
   recentes: [
     { salarie: "LEROY Anne", poste: "Chargée de com", dateFin: dansNJours(-9), joursRestants: -9, alerte: dansNJours(-40) },
   ],
+  titres: [
+    { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), joursRestants: 48, alerte: new Date().toISOString() },
+  ],
+  essais: [
+    { salarie: "MARTIN Paul", poste: "Assistant RH", dateFin: dansNJours(11), joursRestants: 11, alerte: new Date().toISOString() },
+  ],
+  visitesMedicales: [
+    { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(40), joursRestants: 40, alerte: null },
+  ],
+  habilitations: [
+    { salarie: "MARTIN Paul", type: "CACES R489 (chariots élévateurs)", numero: "489-2021-118", dateExpiration: dansNJours(55), joursRestants: 55, alerte: null },
+  ],
+  entretiens: [
+    { salarie: "DUPONT Marie", poste: "Comptable", echeance: dansNJours(45), joursRestants: 45, alerte: null },
+  ],
+  reprises: [
+    { salarie: "BERNARD Luc", motif: "Maladie (arrêt de travail)", dureeJours: 71, retourLe: dansNJours(3), echeance: dansNJours(11), joursRestants: 11, alerte: null },
+  ],
 };
 
 const latence = (ms = 350) => new Promise((r) => setTimeout(r, ms));
@@ -109,7 +127,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -123,16 +141,23 @@ const BLOCS_TUILES = [
 const TUILES = [
   { id: "personnel", bloc: "salaries", titre: "Gestion du personnel", sous: "Fiche salarié centralisée", icone: Users, cablee: true },
   { id: "embauche", bloc: "salaries", titre: "Embauche", sous: "Contrat + DPAE", icone: FileText, cablee: true },
+  { id: "avenant", bloc: "salaries", titre: "Avenant au contrat", sous: "Modifier un contrat en cours", icone: FileText, cablee: true },
   { id: "fin", bloc: "salaries", titre: "Fin de contrat", sous: "Départ d'un salarié", icone: UserMinus, cablee: true },
   { id: "absences", bloc: "salaries", titre: "Absences", sous: "Déclarer une absence", icone: Clock, cablee: true },
   { id: "visite", bloc: "salaries", titre: "Visite médicale", sous: "Programmation ou suivi", icone: ShieldCheck, cablee: true },
   { id: "mutuelle", bloc: "salaries", titre: "Mutuelle", sous: "Adhésion ou modification", icone: Banknote, cablee: true },
+  // Brique Sécurité (23/08) : développée (VueSecurite, registre des
+  // habilitations) mais VOLONTAIREMENT gardée en « Bientôt disponible »
+  // (décision Laurent 23/08) — pour l'ouvrir : bloc "salaries".
+  // Les habilitations restent accessibles depuis la fiche du salarié
+  // (onglet Habilitations) ; la tuile-formulaire est hors grille (cache).
+  { id: "habilitation", bloc: "cache", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
-  { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "DUERP, registres, affichages", icone: ShieldCheck },
+  { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "Habilitations, DUERP, registres", icone: ShieldCheck, cablee: true },
 ];
 
 /* ================================================================
@@ -253,6 +278,9 @@ export default function AppShell({ user, onLogout }) {
   // Salarié pré-rempli quand une démarche est lancée depuis sa fiche
   // (Gestion du personnel) — vidé à toute ouverture depuis la grille.
   const [salariePrerempli, setSalariePrerempli] = useState("");
+  // Nature de visite pré-remplie : l'alerte de reprise (page Échéances)
+  // ouvre le formulaire déjà réglé sur « Visite de reprise ».
+  const [visitePrereglee, setVisitePrereglee] = useState("");
   const [dossierActif, setDossierActif] = useState("Contrats");
   const [db, setDb] = useState(null);
   const [toast, setToast] = useState(null);
@@ -582,6 +610,9 @@ export default function AppShell({ user, onLogout }) {
         <NavBtn id="dash" icon={ChartBar} label="Tableau de bord" />
         <NavBtn id="prod" icon={FileText} label="Production" />
         <NavBtn id="eche" icon={Clock} label="Échéances" />
+        {(moi?.options || []).includes("etrangers") && (
+          <NavBtn id="etr" icon={Globe} label="Salariés étrangers" />
+        )}
         <NavBtn id="docs" icon={Folder} label="Documents" />
         <div className="osrh-user" style={{ marginTop: "auto", padding: "14px 20px", borderTop: "1px solid rgba(255,255,255,0.12)" }}>
           <div className="osrh-user-info" style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 10 }}>
@@ -835,6 +866,13 @@ export default function AppShell({ user, onLogout }) {
             onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
         )}
 
+        {/* La brique Sécurité aussi : registre des habilitations en pleine
+            largeur (grille par salarié + échéances de recyclage). */}
+        {vue === "prod" && tuile && tuile.id === "securite" && (
+          <VueSecurite onRetour={() => setTuile(null)}
+            onDemarche={(id, salarie) => { setSalariePrerempli(salarie); setTuile(TUILES.find((t) => t.id === id)); }} />
+        )}
+
         {/* La messagerie gestionnaire aussi : liste des fils + conversation,
             un peu plus large qu'un formulaire (lecture confortable). */}
         {vue === "prod" && tuile && tuile.id === "contact" && (
@@ -846,7 +884,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -855,7 +893,7 @@ export default function AppShell({ user, onLogout }) {
               <DemandeAcompte user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "embauche" && (
-              <DemandeEmbauche user={user} client={codeClient} onRetour={() => setTuile(null)} />
+              <DemandeEmbauche user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "fin" && (
               <DemandeFinContrat user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
@@ -864,10 +902,17 @@ export default function AppShell({ user, onLogout }) {
               <DemandeAbsence user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {tuile.id === "visite" && (
-              <DemandeVisite user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+              <DemandeVisite user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli}
+                typeInitial={visitePrereglee} onRetour={() => { setVisitePrereglee(""); setTuile(null); }} />
             )}
             {tuile.id === "mutuelle" && (
               <Demandemutuelle user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "avenant" && (
+              <DemandeAvenant user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
+            )}
+            {tuile.id === "habilitation" && (
+              <DemandeHabilitation user={user} client={codeClient} salaries={refSal} salarieInitial={salariePrerempli} onRetour={() => setTuile(null)} />
             )}
             {!tuile.cablee && (
               <FormulaireTuile tuile={tuile} onRetour={() => setTuile(null)} onSave={(f) => enregistrerDemo(tuile.id, f)} />
@@ -956,6 +1001,168 @@ export default function AppShell({ user, onLogout }) {
                 </div>
               )}
 
+              {(src.reprises || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `2px solid #F0C9A8`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}`, background: "#FDF3E4" }}>
+                    Visites de reprise à organiser — obligation sous 8 jours
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Motif de l'arrêt</span><span>Retour le</span><span>Limite</span><span>Action</span>
+                  </div>
+                  {(src.reprises || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.reprises.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`Arrêt de ${x.dureeJours} jours`}>{x.motif}</span>
+                      <span>{fr(x.retourLe)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ justifySelf: "start" }} title={x.alerte ? "Alerte e-mail envoyée" : "Alerte e-mail programmée au retour"}>
+                        <Btn small onClick={() => {
+                          if (!finInclus) return notifier("Option non incluse dans votre contrat — parlez-en à votre gestionnaire Osmose RH.");
+                          setSalariePrerempli(x.salarie);
+                          setVisitePrereglee("Visite de reprise");
+                          setVue("prod"); setTuile(TUILES.find((t) => t.id === "visite"));
+                        }}>Demander la visite</Btn>
+                      </span>
+                    </div>
+                  ))}
+                  <div style={{ padding: "9px 16px", fontSize: 11.5, color: T.mut, borderTop: `1px solid ${T.border}`, background: "#FCFBF8" }}>
+                    Obligatoire après un congé maternité, une maladie professionnelle, 30 jours d'arrêt pour
+                    accident du travail ou 60 jours de maladie (art. R.4624-31) — demandez la visite depuis
+                    la fiche du salarié, l'alerte s'arrête aussitôt.
+                  </div>
+                </div>
+              )}
+
+              {(src.titres || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Titres de séjour à renouveler
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Titre</span><span>Expire le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.titres || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.titres.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.numero ? `N° ${x.numero}` : undefined}>{x.type || "Titre de séjour"}</span>
+                      <span>{fr(x.dateExpiration)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉ</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée le {fr(x.alerte)}</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-90</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(src.essais || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Périodes d'essai — décision avant le terme
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Terme le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.essais || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.essais.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.dateFin)}</span>
+                      {BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-15</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(src.visitesMedicales || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Visites médicales à programmer
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Échéance le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.visitesMedicales || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.visitesMedicales.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.echeance)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-60</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(src.entretiens || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Entretiens professionnels à planifier
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Poste</span><span>Échéance le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.entretiens || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.entretiens.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.poste || "—"}</span>
+                      <span>{fr(x.echeance)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EN RETARD</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-60</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(src.habilitations || []).length > 0 && (
+                <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+                  <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>
+                    Habilitations à recycler
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+                    <span>Salarié</span><span>Habilitation</span><span>Expire le</span><span>Échéance</span><span>Alerte e-mail</span>
+                  </div>
+                  {(src.habilitations || []).map((x, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < src.habilitations.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+                      <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.salarie}</span>
+                      <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={x.numero ? `N° ${x.numero}` : undefined}>{x.type || "Habilitation"}</span>
+                      <span>{fr(x.dateExpiration)}</span>
+                      {x.joursRestants < 0
+                        ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉE</span>
+                        : BadgeJours(x.joursRestants)}
+                      <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: T.mut }}>
+                        {x.alerte
+                          ? <><Check size={14} color={T.ok} style={{ flexShrink: 0 }} /> Envoyée</>
+                          : <><Clock size={13} style={{ flexShrink: 0 }} /> Programmée à J-90</>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {recentes.length > 0 && (
                 <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
                   <div style={{ padding: "11px 16px", fontSize: 14, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Terminés récemment</div>
@@ -975,11 +1182,14 @@ export default function AppShell({ user, onLogout }) {
                 <ShieldCheck size={13} />
                 {eches.demo
                   ? "Données de démonstration — connectez-vous en production pour vos échéances réelles"
-                  : "En complément, un rappel automatique par e-mail est envoyé 30 jours avant chaque fin de CDD."}
+                  : "Rappels automatiques par e-mail : fins de CDD (J-30), titres de séjour (J-90/J-60/J-30), périodes d'essai (J-15/J-7), visites médicales et entretiens professionnels (J-60/J-30, puis retard), habilitations (J-90/J-60/J-30, puis expiration) et visites de reprise (au retour du salarié)."}
               </div>
             </>
           );
         })()}
+
+        {/* ===== SALARIÉS ÉTRANGERS (option) ===== */}
+        {vue === "etr" && <VueEtrangers notifier={notifier} />}
 
         {/* ===== DOCUMENTS ===== */}
         {vue === "docs" && (() => {
@@ -1540,11 +1750,23 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
    l'accusé, l'approbation (gestionnaire du client) et la génération.
    L'accusé part sur l'email du compte connecté — pas de champ email.
    ================================================================ */
-function DemandeEmbauche({ user, client, onRetour }) {
+// Nationalités dispensées de titre de séjour (UE/EEE/Suisse) — MÊMES
+// radicaux que l'API (demande.js) : une nationalité non reconnue ouvre
+// le volet « salarié étranger » (sur-inclusif = prudent, le gestionnaire
+// tranche). Comparaison sans accents, en minuscules.
+const RADICAUX_UE_EEE_SUISSE = ["franc", "allemand", "autrich", "belg", "bulgar", "chypr", "croat", "danois", "danemark", "espagn", "eston", "finland", "grec", "hongr", "irland", "ital", "letton", "lituan", "luxembourg", "malt", "neerland", "holland", "pays-bas", "pays bas", "polon", "portug", "roumain", "slovaqu", "sloven", "sued", "tchec", "island", "liechtenstein", "norveg", "suisse"];
+const titreSejourRequis = (nationalite) => {
+  const n = String(nationalite || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  if (!n.trim()) return false;
+  return !RADICAUX_UE_EEE_SUISSE.some((r) => n.includes(r));
+};
+const TITRES_SEJOUR = ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"];
+
+function DemandeEmbauche({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     type: "CDI", nom: "", prenom: "", naissance: "", lieuNaissance: "",
     nationalite: "", numeroSS: "", adresse: "", emailSalarie: "",
-    telephone: "", debut: "", fin: "", poste: "", duree: "",
+    telephone: "", debut: "", fin: "", poste: "", duree: "", finEssai: "",
     // Volet administratif (dossier du salarié — alimenté dans « Salariés »).
     // FACULTATIF depuis le modèle « PJ obligatoires » : Osmose transcrit
     // depuis les pièces jointes, le client peut pré-remplir s'il veut.
@@ -1555,15 +1777,139 @@ function DemandeEmbauche({ user, client, onRetour }) {
   });
   // Pièces jointes OBLIGATOIRES (modèle B du 22/08) : pièce d'identité,
   // carte vitale ou attestation de droits, RIB.
-  const [pj, setPj] = useState({ identite: null, vitale: null, rib: null });
+  const [pj, setPj] = useState({ identite: null, vitale: null, rib: null, titre: null });
   const majPj = (k, fichier) => { setPj((p) => ({ ...p, [k]: fichier })); setErr((e) => ({ ...e, ["pj" + k]: false })); };
   const pjValide = (fichier) => !!fichier && /\.(pdf|jpe?g|png)$/i.test(fichier.name) && fichier.size <= 10 * 1024 * 1024;
+  // Salarié étranger : titre de séjour (volet affiché selon la nationalité)
+  const [titre, setTitre] = useState({ type: "", numero: "", expiration: "" });
+  const majTitre = (k, v) => { setTitre((p) => ({ ...p, [k]: v })); setErr((e) => ({ ...e, ["titre" + k]: false })); };
+  const etranger = titreSejourRequis(f.nationalite);
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
   const [envoi, setEnvoi] = useState(false);
   const [fini, setFini] = useState(null);
+  // Deux parcours (23/08 soir) : "direct" = le client a tout (formulaire
+  // complet + PJ) ; "invite" = pré-embauche, le client ne saisit que le
+  // contrat — le salarié remplit son dossier via le lien d'onboarding et
+  // la demande de contrat part TOUTE SEULE à sa soumission.
+  const [mode, setMode] = useState(null);
+
+  // Troisième parcours (24/08) : « il a déjà travaillé ici ». Le dossier
+  // administratif est au référentiel — on ne redemande que le contrat, et
+  // le serveur énonce ce que la réembauche impose (carence entre deux
+  // CDD, titre de séjour à revérifier, période d'essai, visite médicale).
+  const anciens = (salaries || []).filter((s) => s.statut === "Sorti");
+  const [repris, setRepris] = useState(null);      // salarié choisi
+  const [controles, setControles] = useState(null); // { points, repris, ancien }
+  const [derogation, setDerogation] = useState("");
 
   const maj = (k, v) => { setF({ ...f, [k]: v }); setErr({ ...err, [k]: false }); };
+
+  // Les points de vigilance dépendent du contrat envisagé : on les
+  // redemande au serveur dès qu'un élément déterminant change. Le calcul
+  // vit d'un seul côté — le dupliquer ici, c'est le voir diverger.
+  useEffect(() => {
+    if (mode !== "reprise" || !repris) return;
+    let annule = false;
+    (async () => {
+      try {
+        const r = await apiFetch("/api/demande", {
+          method: "POST",
+          body: JSON.stringify({ action: "reembaucheControles", reprise: repris.id || `${repris.nom} ${repris.prenom}`,
+            typeContrat: f.type, dateDebut: f.debut, poste: f.poste }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!annule) setControles(r.ok ? j : { erreur: j.erreur || "Dossier illisible." });
+      } catch { if (!annule) setControles({ erreur: "Contrôles indisponibles — vérifiez votre connexion." }); }
+    })();
+    return () => { annule = true; };
+  }, [mode, repris, f.type, f.debut, f.poste]);
+
+  const validerInvitation = () => {
+    const e = {
+      nom: f.nom.trim().length < 2,
+      prenom: f.prenom.trim().length < 2,
+      debut: !f.debut,
+      fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
+      poste: f.poste.trim().length < 2,
+      duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
+      finEssai: !!f.finEssai && !!f.debut && f.finEssai <= f.debut,
+      emailSalarie: !!f.emailSalarie.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.emailSalarie.trim()),
+    };
+    setErr(e);
+    return !Object.values(e).some(Boolean);
+  };
+
+  const envoyerInvitation = async () => {
+    if (!validerInvitation()) return;
+    setEnvoi(true); setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "onboardingEmbauche",
+          typeContrat: f.type, nom: f.nom.trim(), prenom: f.prenom.trim(),
+          dateDebut: f.debut, ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
+          poste: f.poste.trim(), dureeMensuelle: f.duree.trim().replace(",", "."),
+          ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
+          ...(f.emailSalarie.trim() ? { emailSalarie: f.emailSalarie.trim() } : {}),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErrbar(j.erreur || `Envoi refusé (HTTP ${r.status}).`); setEnvoi(false); return; }
+      setFini({ invitation: j });
+    } catch { setErrbar("API injoignable — réessayez."); setEnvoi(false); }
+  };
+
+  /* Réembauche : on n'envoie QUE le contrat. L'identité, le NIR,
+     l'adresse et la banque viennent du dossier côté serveur — les
+     réenvoyer depuis le navigateur reviendrait à faire transiter des
+     données sensibles sans raison. */
+  const envoyerReembauche = async () => {
+    const e = {};
+    if (!f.poste.trim()) e.poste = true;
+    if (!f.debut) e.debut = true;
+    if (f.type === "CDD" && (!f.fin || f.fin <= f.debut)) e.fin = true;
+    if (!f.duree.trim()) e.duree = true;
+    setErr(e);
+    if (Object.keys(e).length) { setErrbar("Complétez les champs signalés."); return; }
+    const bloquants = (controles?.points || []).filter((p) => p.niveau === "bloquant");
+    if (bloquants.length && !derogation) {
+      setErrbar("Cette réembauche soulève un point bloquant : indiquez le motif qui permet de passer outre.");
+      return;
+    }
+    setEnvoi(true); setErrbar("");
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          demarche: "embauche",
+          reprise: repris.id || `${repris.nom} ${repris.prenom}`,
+          typeContrat: f.type, dateDebut: f.debut, ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
+          poste: f.poste.trim(), dureeMensuelle: f.duree.trim().replace(",", "."),
+          ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
+          ...(derogation ? { motifDerogation: derogation } : {}),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setErrbar(j.erreur || `Envoi refusé (HTTP ${r.status}).`); setEnvoi(false); return; }
+      setFini({ reference: j.reference, reprise: true, salarie: `${repris.nom} ${repris.prenom}` });
+    } catch { setErrbar("API injoignable — réessayez."); setEnvoi(false); }
+  };
+
+  // Après une embauche DIRECTE : proposer quand même l'onboarding pour
+  // que le salarié complète son dossier (état civil, banque…).
+  const inviterApres = async () => {
+    setFini((x) => ({ ...x, invEnvoi: true }));
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "onboardingInviter", id: fini.idFiche }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setFini((x) => ({ ...x, invEnvoi: false, ...(r.ok ? { lien: j.lien, expireLe: j.expireLe } : { invErreur: j.erreur || `Refusé (HTTP ${r.status}).` }) }));
+    } catch { setFini((x) => ({ ...x, invEnvoi: false, invErreur: "API injoignable." })); }
+  };
 
   const valider = () => {
     const ss = f.numeroSS.replace(/\s/g, "");
@@ -1579,6 +1925,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
       fin: f.type === "CDD" && (!f.fin || f.fin <= f.debut),
       poste: f.poste.trim().length < 2,
       duree: !/^\d{1,3}([.,]\d{1,2})?$/.test(f.duree.trim()) || parseFloat(f.duree.replace(",", ".")) <= 0,
+      finEssai: !!f.finEssai && !!f.debut && f.finEssai <= f.debut,
       // Volet administratif FACULTATIF : contrôles de format uniquement
       // si le champ est renseigné.
       codeDeptNaissance: !!f.codeDeptNaissance.trim() && !/^(\d{2,3}|2[AB]|9[78]\d)$/i.test(f.codeDeptNaissance.trim()),
@@ -1591,6 +1938,11 @@ function DemandeEmbauche({ user, client, onRetour }) {
       pjidentite: !pjValide(pj.identite),
       pjvitale: !pjValide(pj.vitale),
       pjrib: !pjValide(pj.rib),
+      // Salarié étranger : titre de séjour + sa pièce, obligatoires
+      titretype: etranger && !titre.type,
+      titrenumero: etranger && titre.numero.trim().length < 4,
+      titreexpiration: etranger && (!/^\d{4}-\d{2}-\d{2}$/.test(titre.expiration) || (!!f.debut && titre.expiration < f.debut)),
+      pjtitre: etranger && !pjValide(pj.titre),
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -1624,6 +1976,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
         pjIdentite: await televerser(pj.identite, "piece-identite"),
         pjVitale: await televerser(pj.vitale, "carte-vitale"),
         pjRib: await televerser(pj.rib, "rib"),
+        ...(etranger ? { pjTitreSejour: await televerser(pj.titre, "titre-sejour") } : {}),
       };
     } catch (e) {
       setErrbar(`Pièces jointes : ${e.message}`);
@@ -1649,6 +2002,7 @@ function DemandeEmbauche({ user, client, onRetour }) {
       ...(f.type === "CDD" ? { dateFin: f.fin } : {}),
       poste: f.poste.trim(),
       dureeMensuelle: f.duree.trim().replace(",", "."),
+      ...(f.finEssai ? { finPeriodeEssai: f.finEssai } : {}),
       // Volet administratif → fiche « Salariés » (dossier complet)
       sexe: f.sexe,
       nomMarital: f.nomMarital.trim(),
@@ -1661,6 +2015,12 @@ function DemandeEmbauche({ user, client, onRetour }) {
       bic: f.bic.replace(/\s/g, "").toUpperCase(),
       bulletinDematerialise: !!f.bulletinDemat,
       matricule: f.matricule.trim(),
+      // Salarié étranger : titre de séjour (contrôlé côté API aussi)
+      ...(etranger ? {
+        titreSejourType: titre.type,
+        titreSejourNumero: titre.numero.trim().toUpperCase(),
+        titreSejourExpiration: titre.expiration,
+      } : {}),
       xq_note: "", // honeypot : doit rester vide
     };
     try {
@@ -1676,13 +2036,43 @@ function DemandeEmbauche({ user, client, onRetour }) {
         return;
       }
       const j = await r.json().catch(() => ({}));
-      setFini({ ref: j.reference || null });
+      setFini({ ref: j.reference || null, idFiche: j.idFiche || null });
     } catch (_) {
       setFini({ demo: true });
     }
   };
 
+  const copierLien = (lien) => { navigator.clipboard?.writeText(lien); setFini((x) => ({ ...x, copie: true })); };
+
   if (fini) {
+    const invitation = fini.invitation; // parcours « invite » : lien créé
+
+    /* Réembauche : le nom vient du dossier repris, pas du formulaire —
+       et on ne propose pas d'onboarding, le dossier est déjà complet. */
+    if (fini.reprise) {
+      return (
+        <>
+          <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+            <ArrowLeft size={15} /> Retour aux tuiles
+          </button>
+          <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "28px 24px", maxWidth: 560, textAlign: "center" }}>
+            <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Check size={24} />
+            </div>
+            <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Réembauche déclarée</h1>
+            <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+              {f.type} pour <strong>{fini.salarie}</strong>, début le <strong>{f.debut.split("-").reverse().join("/")}</strong>.
+            </p>
+            <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+              Le dossier a été repris de son précédent contrat : aucune pièce à redéposer. Votre gestionnaire
+              prépare le contrat et la nouvelle DPAE.
+            </p>
+            {fini.reference && <p style={{ fontSize: 12, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.reference}</p>}
+          </div>
+        </>
+      );
+    }
+
     return (
       <>
         <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
@@ -1692,14 +2082,48 @@ function DemandeEmbauche({ user, client, onRetour }) {
           <div style={{ width: 46, height: 46, borderRadius: "50%", background: "#E1F5EE", color: T.ok, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <Check size={24} />
           </div>
-          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Embauche déclarée</h1>
+          <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>
+            {invitation ? "Salarié invité — contrat en attente" : "Embauche déclarée"}
+          </h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
             {f.type} pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong>, début le <strong>{f.debut.split("-").reverse().join("/")}</strong>.
           </p>
-          <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
-            Votre gestionnaire prépare le contrat et la DPAE. Un accusé vous est adressé à <strong>{user?.email}</strong>.
-          </p>
-          {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+          {invitation ? (
+            <>
+              <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
+                Envoyez ce lien au salarié : il saisit son état civil, ses coordonnées, sa banque et dépose
+                ses pièces — <strong>dès qu'il a terminé, la demande de contrat part automatiquement</strong> chez
+                votre gestionnaire (contrat + DPAE), sans autre action de votre part.
+              </p>
+              <BlocLien lien={invitation.lien} expireLe={invitation.expireLe} copie={fini.copie}
+                onCopie={() => copierLien(invitation.lien)}
+                texte={invitation.deja ? "Un lien d'invitation était déjà actif pour ce salarié" : "Lien d'invitation"} />
+              {invitation.reference && <p style={{ fontSize: 12, color: T.mut, fontFamily: "monospace", marginTop: 12 }}>Référence : {invitation.reference}</p>}
+            </>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
+                Votre gestionnaire prépare le contrat et la DPAE. Un accusé vous est adressé à <strong>{user?.email}</strong>.
+              </p>
+              {fini.ref && <p style={{ fontSize: 13, color: T.mut, fontFamily: "monospace" }}>Référence : {fini.ref}</p>}
+              {fini.idFiche && !fini.lien && (
+                <div style={{ marginTop: 14 }}>
+                  <Btn onClick={inviterApres} disabled={fini.invEnvoi}>
+                    <Send size={13} /> {fini.invEnvoi ? "Génération du lien…" : "Inviter le salarié à compléter son dossier"}
+                  </Btn>
+                  {fini.invErreur && <p style={{ fontSize: 12, color: T.err, margin: "8px 0 0" }}>✗ {fini.invErreur}</p>}
+                  <p style={{ margin: "8px 0 0", fontSize: 11.5, color: T.mut }}>
+                    Facultatif — le salarié saisit lui-même état civil, coordonnées et banque via un lien sécurisé.
+                  </p>
+                </div>
+              )}
+              {fini.lien && (
+                <BlocLien lien={fini.lien} expireLe={fini.expireLe} copie={fini.copie}
+                  onCopie={() => copierLien(fini.lien)}
+                  texte="Lien d'invitation — envoyez-le au salarié" />
+              )}
+            </>
+          )}
           {fini.demo && (
             <p style={{ fontSize: 11.5, color: T.mut, fontStyle: "italic" }}>
               Mode démo : aucun envoi réel (API /api/demande injoignable — normal en dev local).
@@ -1710,10 +2134,250 @@ function DemandeEmbauche({ user, client, onRetour }) {
     );
   }
 
+  /* ── Choix du parcours ─────────────────────────────────────────── */
+  if (mode === null) {
+    const CarteChoix = ({ titre, sous, detail, onClick }) => (
+      <button onClick={onClick} style={{
+        all: "unset", boxSizing: "border-box", cursor: "pointer", display: "block", width: "100%",
+        background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "18px 18px",
+        fontFamily: T.sans, marginBottom: 12,
+      }}
+        onMouseEnter={(e) => (e.currentTarget.style.borderColor = T.accent)}
+        onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}>
+        <span style={{ display: "block", fontSize: 15.5, fontWeight: 600, color: T.ink, marginBottom: 4 }}>{titre}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: T.accent, fontWeight: 600, marginBottom: 6 }}>{sous}</span>
+        <span style={{ display: "block", fontSize: 12.5, color: T.mut, lineHeight: 1.5 }}>{detail}</span>
+      </button>
+    );
+    return (
+      <>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Retour aux tuiles
+        </button>
+        <h1 style={{ margin: "0 0 4px", fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Déclarer une embauche</h1>
+        <p style={{ margin: "0 0 16px", fontSize: 12.5, color: T.mut }}>Comment souhaitez-vous procéder ?</p>
+        <CarteChoix titre="J'ai les informations du salarié" sous="Embauche directe"
+          detail="Vous saisissez le dossier et déposez les trois pièces (identité, Vitale, RIB) — le contrat et la DPAE partent immédiatement en préparation."
+          onClick={() => setMode("direct")} />
+        <CarteChoix titre="Je fais saisir le salarié" sous="Invitation + contrat automatique"
+          detail="Vous ne saisissez que le poste et le contrat. Le salarié reçoit un lien sécurisé, remplit lui-même son dossier et dépose ses pièces — dès qu'il a terminé, la demande de contrat part automatiquement chez votre gestionnaire."
+          onClick={() => setMode("invite")} />
+        {anciens.length > 0 && (
+          <CarteChoix titre="Il a déjà travaillé chez nous" sous={`Réembauche — ${anciens.length} ancien${anciens.length > 1 ? "s" : ""} salarié${anciens.length > 1 ? "s" : ""}`}
+            detail="Son dossier est déjà là : identité, numéro de sécurité sociale, adresse, banque, pièces justificatives. Vous ne saisissez que le nouveau contrat, et le portail vous signale ce que cette réembauche impose (délai de carence, titre de séjour, période d'essai, visite médicale)."
+            onClick={() => setMode("reprise")} />
+        )}
+      </>
+    );
+  }
+
+  /* ── Parcours « réembauche » ─────────────────────────────────────── */
+  if (mode === "reprise") {
+    const COULEUR = { bloquant: { bg: "#FCEBEB", bd: "#F7C1C1", fg: "#791F1F" },
+      attention: { bg: "#FEF6E7", bd: "#F6DFB0", fg: "#7A4E00" },
+      info: { bg: "#EEF2F8", bd: "#D6DFEC", fg: "#33465E" } };
+    const points = controles?.points || [];
+    const bloquants = points.filter((p) => p.niveau === "bloquant");
+
+    return (
+      <>
+        <button onClick={() => { setMode(null); setRepris(null); setControles(null); setDerogation(""); setErr({}); setErrbar(""); }}
+          style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Changer de parcours
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <UserPlus size={20} color={T.accent} strokeWidth={1.6} />
+            <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Réembaucher</h1>
+          </div>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+            Choisissez la personne : son dossier est repris tel quel. Vous ne saisissez que le nouveau contrat.
+          </p>
+
+          {errbar && (
+            <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+              {errbar}
+            </div>
+          )}
+
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
+            Ancien salarié <span style={{ color: T.err }}>*</span>
+          </label>
+          <select value={repris ? String(repris.id || `${repris.nom} ${repris.prenom}`) : ""}
+            onChange={(e) => {
+              const s = anciens.find((x) => String(x.id || `${x.nom} ${x.prenom}`) === e.target.value) || null;
+              setRepris(s); setControles(null); setDerogation("");
+              if (s) setF((p) => ({ ...p, poste: p.poste || s.poste || "" }));
+            }}
+            style={{ ...inputStyle, marginBottom: 14 }}>
+            <option value="">— choisir —</option>
+            {anciens.map((s) => (
+              <option key={s.id || `${s.nom} ${s.prenom}`} value={String(s.id || `${s.nom} ${s.prenom}`)}>
+                {s.nom} {s.prenom}{s.poste ? ` — ${s.poste}` : ""}{s.fin ? ` (parti le ${String(s.fin).split("-").reverse().join("/")})` : ""}
+              </option>
+            ))}
+          </select>
+
+          {repris && (
+            <>
+              <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <ChampReq label="Type de contrat">
+                  <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+                    <option>CDI</option><option>CDD</option>
+                  </select>
+                </ChampReq>
+                <ChampReq label="Poste" erreur={err.poste && "Poste requis"}>
+                  <input type="text" placeholder="Serveur, vendeuse, aide-soignant…" style={{ ...inputStyle, borderColor: err.poste ? T.err : T.border }} value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
+                </ChampReq>
+                <ChampReq label="Date de début" erreur={err.debut && "Date requise"}>
+                  <input type="date" style={{ ...inputStyle, borderColor: err.debut ? T.err : T.border }} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
+                </ChampReq>
+                {f.type === "CDD" ? (
+                  <ChampReq label="Date de fin (CDD)" erreur={err.fin && "Fin postérieure au début requise"}>
+                    <input type="date" style={{ ...inputStyle, borderColor: err.fin ? T.err : T.border }} value={f.fin} onChange={(e) => maj("fin", e.target.value)} />
+                  </ChampReq>
+                ) : <div />}
+                <ChampReq label="Durée mensuelle du travail (heures)" erreur={err.duree && "Ex. 151,67"}>
+                  <input type="text" inputMode="decimal" placeholder="151,67" style={{ ...inputStyle, borderColor: err.duree ? T.err : T.border }} value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
+                </ChampReq>
+              </div>
+
+              {/* Ce que le dossier reprend — dit explicitement, pour que le
+                  client sache ce qu'il n'a PAS à ressaisir. */}
+              {controles?.repris && (
+                <div style={{ background: "#E1F5EE", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 12, color: "#085041", marginTop: 14 }}>
+                  Repris du dossier, rien à ressaisir : {[
+                    controles.repris.numeroSS && "numéro de sécurité sociale",
+                    controles.repris.dateNaissance && "état civil",
+                    controles.repris.adressePostale && "adresse",
+                    (controles.repris.iban || controles.repris.bic) && "coordonnées bancaires",
+                    controles.repris.titreSejourNumero && "titre de séjour",
+                  ].filter(Boolean).join(", ")}. Les pièces justificatives sont déjà dans votre espace documents.
+                </div>
+              )}
+
+              {controles?.erreur && (
+                <p style={{ margin: "12px 0 0", fontSize: 12, color: T.err }}>{controles.erreur}</p>
+              )}
+
+              {points.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <h2 style={{ margin: "0 0 8px", fontSize: 13.5, fontFamily: T.serif, fontWeight: 600 }}>
+                    Ce que cette réembauche implique
+                  </h2>
+                  {points.map((p) => {
+                    const c = COULEUR[p.niveau] || COULEUR.info;
+                    return (
+                      <div key={p.cle} style={{ background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 8, padding: "9px 11px", marginBottom: 8 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: c.fg, marginBottom: 3 }}>{p.titre}</div>
+                        <div style={{ fontSize: 12, color: c.fg, lineHeight: 1.5 }}>{p.detail}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Un point bloquant n'interdit pas : il exige de dire
+                  pourquoi on passe outre, et ce motif est transmis au
+                  gestionnaire avec la demande. */}
+              {bloquants.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
+                    Motif permettant de passer outre <span style={{ color: T.err }}>*</span>
+                  </label>
+                  <select value={derogation} onChange={(e) => { setDerogation(e.target.value); setErrbar(""); }} style={inputStyle}>
+                    <option value="">— choisir —</option>
+                    {(controles?.exceptionsCarence || []).map((x) => <option key={x} value={x}>{x}</option>)}
+                    <option value="Titre de séjour renouvelé (nouveau titre fourni)">Titre de séjour renouvelé (nouveau titre fourni)</option>
+                    <option value="Autre situation — précisée à mon gestionnaire">Autre situation — précisée à mon gestionnaire</option>
+                  </select>
+                  <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut }}>
+                    Ce motif est transmis à votre gestionnaire avec la demande : il pourra vérifier qu'il s'applique bien à votre situation.
+                  </p>
+                </div>
+              )}
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+                <Btn onClick={() => { setMode(null); setRepris(null); setControles(null); setDerogation(""); }}>Annuler</Btn>
+                <Btn primary disabled={envoi} onClick={envoyerReembauche}>{envoi ? "Envoi…" : "Demander le contrat"}</Btn>
+              </div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  }
+
+  /* ── Parcours « invitation » : le contrat seul, le salarié fera le reste ── */
+  if (mode === "invite") {
+    return (
+      <>
+        <button onClick={() => { setMode(null); setErr({}); setErrbar(""); }} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+          <ArrowLeft size={15} /> Changer de parcours
+        </button>
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <Send size={20} color={T.accent} strokeWidth={1.6} />
+            <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Embauche par invitation</h1>
+          </div>
+          <p style={{ margin: "0 0 16px", fontSize: 12, color: T.mut }}>
+            Renseignez le contrat — le salarié saisira lui-même son état civil, ses coordonnées, sa banque
+            et déposera ses pièces. À sa soumission, la demande de contrat part automatiquement.
+          </p>
+
+          {errbar && (
+            <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14 }}>
+              {errbar}
+            </div>
+          )}
+
+          <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <ChampReq label="Type de contrat">
+              <select style={inputStyle} value={f.type} onChange={(e) => maj("type", e.target.value)}>
+                <option>CDI</option><option>CDD</option>
+              </select>
+            </ChampReq>
+            <ChampReq label="Poste" erreur={err.poste && "Poste requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.poste ? T.err : T.border }} value={f.poste} onChange={(e) => maj("poste", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Nom" erreur={err.nom && "Nom requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.nom ? T.err : T.border }} value={f.nom} onChange={(e) => maj("nom", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Prénom" erreur={err.prenom && "Prénom requis"}>
+              <input type="text" style={{ ...inputStyle, borderColor: err.prenom ? T.err : T.border }} value={f.prenom} onChange={(e) => maj("prenom", e.target.value)} />
+            </ChampReq>
+            <ChampReq label="Date de début" erreur={err.debut && "Date requise"}>
+              <input type="date" style={{ ...inputStyle, borderColor: err.debut ? T.err : T.border }} value={f.debut} onChange={(e) => maj("debut", e.target.value)} />
+            </ChampReq>
+            {f.type === "CDD" ? (
+              <ChampReq label="Date de fin (CDD)" erreur={err.fin && "Fin postérieure au début requise"}>
+                <input type="date" style={{ ...inputStyle, borderColor: err.fin ? T.err : T.border }} value={f.fin} onChange={(e) => maj("fin", e.target.value)} />
+              </ChampReq>
+            ) : <div />}
+            <ChampReq label="Durée mensuelle du travail (heures)" erreur={err.duree && "Ex. 151,67"}>
+              <input type="text" inputMode="decimal" placeholder="151,67" style={{ ...inputStyle, borderColor: err.duree ? T.err : T.border }} value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
+            </ChampReq>
+            <ChampOpt label="Fin de la période d'essai (facultatif)" erreur={err.finEssai && "Postérieure au début du contrat"}>
+              <input type="date" style={{ ...inputStyle, borderColor: err.finEssai ? T.err : T.border }} value={f.finEssai} onChange={(e) => maj("finEssai", e.target.value)} />
+            </ChampOpt>
+            <ChampOpt label="E-mail du salarié (facultatif)" erreur={err.emailSalarie && "E-mail invalide"} large>
+              <input type="email" style={{ ...inputStyle, borderColor: err.emailSalarie ? T.err : T.border }} value={f.emailSalarie} onChange={(e) => maj("emailSalarie", e.target.value)} />
+            </ChampOpt>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+            <Btn onClick={() => setMode(null)}>Annuler</Btn>
+            <Btn primary disabled={envoi} onClick={envoyerInvitation}>{envoi ? "Création…" : "Créer le lien d'invitation"}</Btn>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
-      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
-        <ArrowLeft size={15} /> Retour aux tuiles
+      <button onClick={() => { setMode(null); setErr({}); setErrbar(""); }} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Changer de parcours
       </button>
 
       <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "22px 24px", maxWidth: 560 }}>
@@ -1793,6 +2457,10 @@ function DemandeEmbauche({ user, client, onRetour }) {
             <input inputMode="decimal" style={err.duree ? inputInvalid : inputStyle} placeholder="Ex. 151,67" value={f.duree} onChange={(e) => maj("duree", e.target.value)} />
           </ChampReq>
 
+          <ChampOpt label="Fin de la période d'essai (facultatif)" erreur={err.finEssai && "Date postérieure au début requise."}>
+            <input type="date" style={err.finEssai ? inputInvalid : inputStyle} value={f.finEssai} onChange={(e) => maj("finEssai", e.target.value)} />
+          </ChampOpt>
+
           {/* ── Pièces jointes OBLIGATOIRES (modèle B) : Osmose transcrit ── */}
           <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
             <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>
@@ -1810,6 +2478,43 @@ function DemandeEmbauche({ user, client, onRetour }) {
                 onChange={(e) => majPj(k, e.target.files && e.target.files[0])} />
             </ChampReq>
           ))}
+
+          {/* ── Salarié étranger : titre de séjour (selon la nationalité) ── */}
+          {etranger && (
+            <>
+              <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
+                <p style={{ margin: 0, fontSize: 12, fontWeight: 600, color: T.mut, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                  Salarié étranger — titre de séjour <span style={{ color: T.err }}>*</span>
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: 12, color: T.mut }}>
+                  L'embauche d'un ressortissant hors UE/EEE/Suisse exige un titre autorisant le
+                  travail, <strong>authentifié par la préfecture au moins 2 jours ouvrables avant la
+                  prise de poste</strong> — Osmose RH engage cette vérification dès réception.
+                </p>
+              </div>
+
+              <ChampReq label="Type de titre" erreur={err.titretype && "Choisissez le type de titre."}>
+                <select style={err.titretype ? inputInvalid : inputStyle} value={titre.type} onChange={(e) => majTitre("type", e.target.value)}>
+                  <option value="">—</option>
+                  {TITRES_SEJOUR.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </ChampReq>
+
+              <ChampReq label="Numéro du titre (n° étranger / document)" erreur={err.titrenumero && "Numéro du titre requis."}>
+                <input style={err.titrenumero ? inputInvalid : inputStyle} placeholder="Ex. 9902345678" value={titre.numero} onChange={(e) => majTitre("numero", e.target.value)} />
+              </ChampReq>
+
+              <ChampReq label="Date d'expiration du titre" erreur={err.titreexpiration && "Date requise, postérieure à la date d'embauche."}>
+                <input type="date" style={err.titreexpiration ? inputInvalid : inputStyle} value={titre.expiration} onChange={(e) => majTitre("expiration", e.target.value)} />
+              </ChampReq>
+
+              <ChampReq large label="Titre de séjour (recto-verso)" erreur={err.pjtitre && "Fichier requis (PDF/JPG/PNG, 10 Mo max)."}>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png"
+                  style={err.pjtitre ? inputInvalid : inputStyle}
+                  onChange={(e) => majPj("titre", e.target.files && e.target.files[0])} />
+              </ChampReq>
+            </>
+          )}
 
           {/* ── Volet administratif : alimente le dossier du salarié ─── */}
           <div style={{ gridColumn: "1 / -1", margin: "10px 0 2px", paddingTop: 12, borderTop: `1px solid ${T.border}` }}>
@@ -2557,6 +3262,39 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   const [envoi, setEnvoi] = useState(false);
 
   const justifRequis = MOTIFS_ABSENCE.find((x) => x.m === f.motif)?.justif === true;
+  // Photo de l'arrêt : dépôt direct + lecture automatique. Les champs
+  // reconnus sont PROPOSÉS (jamais imposés) — le client corrige ce qu'il
+  // veut avant d'envoyer. Sans OCR configuré, le dépôt marche quand même
+  // et remplit simplement le justificatif.
+  // `lecture` distingue l'option ABSENTE (rien à dire au client) d'une
+  // lecture qui a échoué (là, on l'invite à saisir). Sans ce partage, le
+  // portail annonçait « les dates n'ont pas pu être lues » à des clients
+  // chez qui l'OCR n'est tout simplement pas activé — un service jamais
+  // promis ne doit pas passer pour un service en panne.
+  const [depot, setDepot] = useState(null); // null | {envoi} | {nom, lus[], lecture} | {erreur}
+
+  const deposerJustificatif = async (fichier) => {
+    if (!fichier) return;
+    setDepot({ envoi: true });
+    try {
+      const r = await apiFetch(`/api/depot?analyser=arret&nom=${encodeURIComponent(fichier.name)}`, {
+        method: "POST", headers: { "Content-Type": fichier.type || "application/octet-stream" }, body: fichier,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return setDepot({ erreur: j.erreur || `Dépôt refusé (HTTP ${r.status}).` });
+      const c = j.extraction?.champs || null;
+      const lus = [];
+      setF((p) => {
+        const n = { ...p, justificatifUrl: j.nom };
+        if (c?.dateDebut && !p.dateDebut) { n.dateDebut = c.dateDebut; lus.push("date de début"); }
+        if (c?.dateFin && !p.dateFin) { n.dateFin = c.dateFin; lus.push("date de fin"); }
+        if (c?.motif && !p.motif && MOTIFS_ABSENCE.some((x) => x.m === c.motif)) { n.motif = c.motif; lus.push("motif"); }
+        return n;
+      });
+      setErr(false);
+      setDepot({ nom: j.nom, lus, lecture: j.extraction?.motif !== "non configuré" });
+    } catch { setDepot({ erreur: "Dépôt impossible — vérifiez votre connexion." }); }
+  };
 
   const envoyer = async () => {
     if (!f.salarie.trim() || !f.dateDebut || !f.motif || (justifRequis && !f.justificatifUrl.trim())) { setErr(true); return; }
@@ -2605,8 +3343,29 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
             Justificatif {justifRequis ? <span style={{ color: T.err }}>*</span> : <span style={{ fontWeight: 400 }}>(lien optionnel)</span>}
           </label>
+          <div style={{ border: `1px dashed ${err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12.5, color: T.accent, cursor: depot?.envoi ? "default" : "pointer", fontWeight: 600 }}>
+              {depot?.envoi ? "Envoi du document…" : "📷 Photographier ou joindre l'arrêt"}
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png" capture="environment" style={{ display: "none" }}
+                disabled={depot?.envoi} onChange={(e) => deposerJustificatif(e.target.files?.[0])} />
+            </label>
+            <span style={{ fontSize: 11.5, color: T.mut, flex: 1, minWidth: 140 }}>
+              {depot?.nom ? `✓ ${depot.nom}` : "Le document est joint à votre déclaration."}
+            </span>
+          </div>
+          {depot?.lus?.length > 0 && (
+            <p style={{ margin: "0 0 8px", fontSize: 11.5, background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "7px 10px" }}>
+              Lu sur le document : {depot.lus.join(", ")} — vérifiez et corrigez si besoin avant d'envoyer.
+            </p>
+          )}
+          {depot?.nom && depot.lus.length === 0 && depot.lecture && (
+            <p style={{ margin: "0 0 8px", fontSize: 11.5, color: T.mut }}>
+              Document joint. Les dates n'ont pas pu être lues automatiquement : saisissez-les ci-dessus.
+            </p>
+          )}
+          {depot?.erreur && <p style={{ margin: "0 0 8px", fontSize: 11.5, color: T.err }}>✗ {depot.erreur}</p>}
           <input type="text" style={{ ...inputStyle, borderColor: err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border }}
-            placeholder="Lien vers le document déposé dans l'onglet Documents" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+            placeholder="…ou collez le lien d'un document déjà déposé" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
           {justifRequis && (
             <p style={{ margin: "5px 0 0", fontSize: 11.5, color: err && !f.justificatifUrl.trim() ? T.err : T.mut }}>
               Ce motif exige un justificatif (arrêt de travail, certificat…) : déposez-le dans l'onglet <strong>Documents</strong> puis collez son lien ici.
@@ -2631,8 +3390,13 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
 /* ================================================================
    VISITE MÉDICALE
    ================================================================ */
-function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
-  const VIDE = { salarie: salarieInitial || "", dateVisite: "" };
+/* Nature de la visite — miroir strict de TYPES_VISITE côté serveur
+   (demande.js). La reprise après arrêt est une obligation distincte du
+   suivi périodique : c'est elle que l'alerte de reprise pré-remplit. */
+const TYPES_VISITE = ["Visite d'information et de prévention (embauche)", "Visite périodique", "Visite de reprise", "Visite de pré-reprise", "Visite à la demande"];
+
+function DemandeVisite({ user, client, salaries, salarieInitial, typeInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", dateVisite: "", typeVisite: typeInitial || "Visite périodique" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -2643,6 +3407,7 @@ function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
     setEnvoi(true); setMsg(null);
     try {
       const r = await apiFetch("/api/demande?demarche=visite-medicale", { method: "POST", body: JSON.stringify({ demarche: "visite-medicale", ...f }) });
+      // (le type part avec f — voir TYPES_VISITE, validé côté serveur)
       const j = await r.json().catch(() => ({}));
       if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire organise la visite et vous confirme le rendez-vous.` }); setF(VIDE); setErr(false); }
       else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
@@ -2666,12 +3431,20 @@ function DemandeVisite({ user, client, salaries, salarieInitial, onRetour }) {
           <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
         </div>
         <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Nature de la visite *</label>
+          <select style={inputStyle} value={f.typeVisite} onChange={(e) => setF({ ...f, typeVisite: e.target.value })}>
+            {TYPES_VISITE.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date souhaitée *</label>
           <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateVisite ? T.err : T.border }} value={f.dateVisite} onChange={(e) => setF({ ...f, dateVisite: e.target.value })} />
         </div>
       </div>
       <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
-        Embauche, reprise après arrêt, visite périodique… votre gestionnaire prend contact avec le service de santé au travail.
+        {f.typeVisite === "Visite de reprise"
+          ? "Obligatoire dans les 8 jours du retour (art. R.4624-31) : indiquez une date au plus près de la reprise — votre gestionnaire saisit le service de santé au travail en priorité."
+          : "Votre gestionnaire prend contact avec le service de santé au travail et vous confirme le rendez-vous."}
       </p>
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
@@ -2738,6 +3511,459 @@ function Demandemutuelle({ user, client, salaries, salarieInitial, onRetour }) {
 }
 
 /* ================================================================
+   HABILITATIONS & CACES — déclaration (obtention ou recyclage).
+   Une déclaration = une ligne dans « Habilitations » ; l'historique se
+   conserve, les alertes de recyclage (J-90/J-60/J-30, puis EXPIRÉE) ne
+   regardent que la plus récente par salarié + type.
+   ================================================================ */
+const TYPES_HABILITATION = ["CACES R489 (chariots élévateurs)", "CACES R486 (nacelles / PEMP)", "CACES R482 (engins de chantier)", "CACES R490 (grues auxiliaires)", "Habilitation électrique B0/H0", "Habilitation électrique B1/B2/BR/BC", "SST (sauveteur secouriste du travail)", "Travail en hauteur / port du harnais", "AIPR (travaux à proximité des réseaux)", "Autre"];
+
+function DemandeHabilitation({ user, client, salaries, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", type: "", typeAutre: "", numero: "", organisme: "", dateObtention: "", dateExpiration: "" };
+  const [f, setF] = useState(VIDE);
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const typeFinal = f.type === "Autre" ? f.typeAutre.trim() : f.type;
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !typeFinal || !f.dateExpiration) { setErr(true); return; }
+    if (f.dateObtention && f.dateExpiration <= f.dateObtention) { setMsg({ erreur: "La fin de validité doit être postérieure à l'obtention." }); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande?demarche=habilitation", { method: "POST", body: JSON.stringify({
+        demarche: "habilitation", salarie: f.salarie, typeHabilitation: typeFinal,
+        numero: f.numero, organisme: f.organisme,
+        ...(f.dateObtention ? { dateObtention: f.dateObtention } : {}), dateExpiration: f.dateExpiration,
+      }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Habilitation enregistrée — réf. ${j.reference}. Le recyclage sera rappelé automatiquement avant l'expiration.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Habilitation / CACES</h2>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Type d'habilitation *</label>
+          <select style={{ ...inputStyle, borderColor: err && !typeFinal ? T.err : T.border }} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+            <option value="">— Choisir —</option>
+            {TYPES_HABILITATION.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        {f.type === "Autre" && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Précisez l'habilitation *</label>
+            <input type="text" style={{ ...inputStyle, borderColor: err && !typeFinal ? T.err : T.border }} placeholder="Ex. FIMO, habilitation gaz, ADR…" value={f.typeAutre} onChange={(e) => setF({ ...f, typeAutre: e.target.value })} />
+          </div>
+        )}
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Numéro / référence</label>
+          <input type="text" style={inputStyle} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Organisme formateur</label>
+          <input type="text" style={inputStyle} placeholder="Ex. AFTRAL, APAVE…" value={f.organisme} onChange={(e) => setF({ ...f, organisme: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'obtention</label>
+          <input type="date" style={inputStyle} value={f.dateObtention} onChange={(e) => setF({ ...f, dateObtention: e.target.value })} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Fin de validité *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateExpiration ? T.err : T.border }} value={f.dateExpiration} onChange={(e) => setF({ ...f, dateExpiration: e.target.value })} />
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Déclarez chaque obtention ET chaque recyclage : la fiche du salarié garde l'historique, et les rappels de recyclage partent automatiquement (J-90, J-60, J-30 avant la fin de validité).
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Enregistrer l'habilitation"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   AVENANT AU CONTRAT — demande de modification d'un contrat en cours ;
+   le gestionnaire produit et fait signer l'avenant (même circuit humain
+   que les fins de contrat). Liste TYPES_AVENANT = miroir du serveur.
+   ================================================================ */
+const TYPES_AVENANT = ["Changement de poste / qualification", "Durée du travail", "Rémunération", "Lieu de travail", "Passage temps partiel / temps plein", "Télétravail", "Prolongation de CDD", "Renouvellement de période d'essai", "Autre modification"];
+
+function DemandeAvenant({ user, client, salaries, salarieInitial, onRetour }) {
+  const VIDE = { salarie: salarieInitial || "", typeAvenant: "", dateEffet: "", details: "" };
+  const [f, setF] = useState(VIDE);
+  const [err, setErr] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+
+  const envoyer = async () => {
+    if (!f.salarie.trim() || !f.typeAvenant || !f.dateEffet || f.details.trim().length < 10) { setErr(true); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande?demarche=avenant", { method: "POST", body: JSON.stringify({ demarche: "avenant", ...f }) });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { setMsg({ ok: `Demande transmise — réf. ${j.reference}. Votre gestionnaire prépare l'avenant et revient vers vous pour la signature.` }); setF(VIDE); setErr(false); }
+      else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
+    } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
+    setEnvoi(false);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+        <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 14 }}><ArrowLeft size={18} /></button>
+        <h2 style={{ margin: 0, fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Avenant au contrat</h2>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Salarié *</label>
+          <ChampSalarie salaries={salaries} valeur={f.salarie} onChange={(v) => setF({ ...f, salarie: v })} invalide={err && !f.salarie.trim()} />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Objet de l'avenant *</label>
+          <select style={{ ...inputStyle, borderColor: err && !f.typeAvenant ? T.err : T.border }} value={f.typeAvenant} onChange={(e) => setF({ ...f, typeAvenant: e.target.value })}>
+            <option value="">— Choisir —</option>
+            {TYPES_AVENANT.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date d'effet souhaitée *</label>
+          <input type="date" style={{ ...inputStyle, borderColor: err && !f.dateEffet ? T.err : T.border }} value={f.dateEffet} onChange={(e) => setF({ ...f, dateEffet: e.target.value })} />
+        </div>
+        <div style={{ gridColumn: "1 / -1" }}>
+          <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Modification souhaitée *</label>
+          <textarea rows={4} style={{ ...inputStyle, resize: "vertical", borderColor: err && f.details.trim().length < 10 ? T.err : T.border }}
+            placeholder="Décrivez précisément le changement : nouveau poste, nouvel horaire hebdomadaire, nouveau salaire brut, nouvelle adresse du lieu de travail…"
+            value={f.details} onChange={(e) => setF({ ...f, details: e.target.value })} />
+          {err && f.details.trim().length < 10 && <span style={{ fontSize: 11, color: T.err }}>Décrivez la modification (10 caractères minimum).</span>}
+        </div>
+      </div>
+      <p style={{ fontSize: 11.5, color: T.mut, margin: "-8px 0 16px" }}>
+        Votre gestionnaire vérifie la faisabilité (convention collective, délais légaux), rédige l'avenant et vous le transmet pour signature avant la date d'effet.
+      </p>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Demander l'avenant"}</Btn>
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   SÉCURITÉ — registre des habilitations & CACES de l'effectif.
+   Données : /api/personnel (habilitations + salariés, déjà filtrées
+   par client côté serveur). La déclaration passe par la tuile cachée
+   « habilitation » (onDemarche) ; les recyclages sont rappelés par
+   e-mail (J-90/J-60/J-30 puis EXPIRÉE) et listés page Échéances.
+   ================================================================ */
+function VueSecurite({ onRetour, onDemarche }) {
+  const [dossier, setDossier] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/api/personnel")
+      .then(async (r) => {
+        if (r.ok) return setDossier(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setDossier(import.meta.env.DEV ? { demo: true } : { erreur: e.erreur || `Données indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setDossier(import.meta.env.DEV ? { demo: true } : { erreur: "Données momentanément indisponibles — réessayez." }));
+  }, []);
+
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+  if (dossier === null) {
+    return (
+      <>
+        <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut }}>Chargement des habilitations…</p>
+      </>
+    );
+  }
+  if (dossier.erreur) {
+    return (
+      <>
+        <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+        <p style={{ fontSize: 13, color: T.mut, margin: "12px 0" }}>{dossier.erreur}</p>
+        <Btn primary onClick={() => window.location.reload()}>Réessayer</Btn>
+      </>
+    );
+  }
+  const src = dossier.demo ? DEMO_PERSONNEL : dossier;
+  const aujourdhui = new Date().toISOString().slice(0, 10);
+  const dans90 = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
+  // La plus récente par salarié + type fait foi (le recyclage éteint
+  // l'ancienne ligne) — même règle que les alertes côté serveur.
+  const parCle = {};
+  for (const h of src.habilitations || []) {
+    if (!h.expiration) continue;
+    const k = `${h.cle}|${String(h.type).toUpperCase()}`;
+    if (!parCle[k] || parCle[k].expiration < h.expiration) parCle[k] = h;
+  }
+  const habs = Object.values(parCle).sort((a, b) => String(a.expiration).localeCompare(String(b.expiration)));
+  const expirees = habs.filter((h) => h.expiration < aujourdhui).length;
+  const aRecycler = habs.filter((h) => h.expiration >= aujourdhui && h.expiration <= dans90).length;
+
+  const BadgeHab = (h) => h.expiration < aujourdhui
+    ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>EXPIRÉE</span>
+    : h.expiration <= dans90
+      ? <span style={{ background: "#FAEEDA", color: "#854F0B", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>À recycler</span>
+      : <span style={{ background: "#E1F5EE", color: "#085041", fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>Valide</span>;
+
+  return (
+    <>
+      <EnteteFiche titre="Sécurité" onRetour={onRetour} />
+      <div style={{ margin: "-12px 0 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 220 }}>
+          Habilitations & CACES de votre effectif — la plus récente par salarié et par type fait foi,
+          les recyclages sont rappelés automatiquement par e-mail.
+        </p>
+        <Btn primary onClick={() => onDemarche("habilitation", "")}><Plus size={14} /> Déclarer une habilitation</Btn>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <Kpi label="Habilitations suivies" val={habs.length} icon={ShieldCheck} />
+        <Kpi label="À recycler sous 90 jours" val={aRecycler} warn={aRecycler > 0} icon={Clock} />
+        <Kpi label="Expirées" val={expirees} warn={expirees > 0} icon={AlertCircle} />
+      </div>
+
+      {habs.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucune habilitation déclarée pour l'instant.<br />
+          Déclarez les CACES, habilitations électriques, SST… de vos salariés : le portail suivra les recyclages.
+        </div>
+      ) : (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, marginBottom: 14, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.6fr 2fr 1.2fr 110px 110px", gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Salarié</span><span>Habilitation</span><span>Organisme</span><span>Fin de validité</span><span>État</span>
+          </div>
+          {habs.map((h, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 2fr 1.2fr 110px 110px", gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: i < habs.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center" }}>
+              <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.salarie || h.cle}</span>
+              <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={h.numero ? `N° ${h.numero}` : undefined}>{h.type || "—"}</span>
+              <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.organisme || "—"}</span>
+              <span>{fr(h.expiration)}</span>
+              {BadgeHab(h)}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: T.card, border: `1px dashed ${T.border}`, borderRadius: 12, padding: "14px 16px", fontSize: 12.5, color: T.mut, marginBottom: 14 }}>
+        <strong style={{ color: T.ink }}>Bientôt dans cette brique :</strong> DUERP (document unique),
+        registres de sécurité et affichages obligatoires.
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+        <ShieldCheck size={13} />
+        {dossier.demo
+          ? "Données de démonstration — connectez-vous en production pour vos habilitations réelles"
+          : "Rappels de recyclage automatiques par e-mail : J-90, J-60, J-30, puis expiration."}
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
+   SALARIÉS ÉTRANGERS — brique autonome (option « etrangers »)
+   GET /api/me?vue=etrangers : états des titres calculés côté serveur
+   (Valide / À renouveler / En renouvellement / EXPIRÉ sans droits) ;
+   le client déclare récépissés et nouveaux titres (PJ via /api/depot,
+   POST /api/demande action titreRenouvellement).
+   ================================================================ */
+const BADGE_ETAT_TITRE = (s) => {
+  const rendu = (bg, fg, txt) => (
+    <span style={{ background: bg, color: fg, fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap", justifySelf: "start" }}>{txt}</span>
+  );
+  switch (s.etat) {
+    case "expire": return rendu("#FCEBEB", "#791F1F", "EXPIRÉ — interdiction d'emploi");
+    case "en-renouvellement": return rendu("#E6F1FB", "#0C447C", `En renouvellement (récépissé → ${String(s.recepisse?.fin || "").split("-").reverse().join("/")})`);
+    case "a-renouveler": return rendu("#FAEEDA", "#854F0B", `À renouveler — ${s.joursRestants} j`);
+    case "valide": return rendu("#E4F3EE", "#0F6E56", "Valide");
+    default: return rendu("#F4F6F9", "#5C6B80", "Titre à renseigner");
+  }
+};
+
+function VueEtrangers({ notifier }) {
+  const [donnees, setDonnees] = useState(null); // null | {salaries…} | {erreur}
+  const [ouvert, setOuvert] = useState(null);   // { id, mode }
+  const [f, setF] = useState({ numero: "", date: "", type: "", fichier: null });
+  const [envoi, setEnvoi] = useState(false);
+
+  const charger = () => {
+    setDonnees(null);
+    apiFetch("/api/me?vue=etrangers")
+      .then(async (r) => {
+        const j = await r.json().catch(() => ({}));
+        setDonnees(r.ok ? j : { erreur: j.erreur || `HTTP ${r.status}` });
+      })
+      .catch(() => setDonnees({ erreur: "Suivi momentanément indisponible — réessayez." }));
+  };
+  useEffect(charger, []);
+
+  const ouvrir = (id, mode, sal) => {
+    setOuvert({ id, mode });
+    setF({ numero: "", date: "", type: sal?.titre?.type || "", fichier: null });
+  };
+
+  const envoyer = async (sal) => {
+    const recepisse = ouvert.mode === "recepisse";
+    if (!f.date) return notifier(recepisse ? "Indiquez la fin de validité du récépissé." : "Indiquez la date d'expiration du nouveau titre.");
+    if (!recepisse && (!f.type || f.numero.trim().length < 4)) return notifier("Type et numéro du nouveau titre requis.");
+    setEnvoi(true);
+    try {
+      let pj = "";
+      if (f.fichier) {
+        const ext = (f.fichier.name.split(".").pop() || "pdf").toLowerCase();
+        const nom = `Titre-sejour_${sal.nom}-${sal.prenom}_${recepisse ? "recepisse" : "nouveau-titre"}_${new Date().toISOString().slice(0, 10).replace(/-/g, "")}.${ext}`;
+        const rd = await apiFetch(`/api/depot?nom=${encodeURIComponent(nom)}`, {
+          method: "POST", headers: { "Content-Type": f.fichier.type || "application/octet-stream" }, body: f.fichier,
+        });
+        if (!rd.ok) { notifier("Dépôt de la pièce refusé — réessayez."); setEnvoi(false); return; }
+        pj = (await rd.json().catch(() => ({}))).nom || nom;
+      }
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "titreRenouvellement", id: sal.id, mode: ouvert.mode, pj,
+          ...(recepisse
+            ? { recepisseNumero: f.numero.trim(), recepisseFin: f.date }
+            : { titreType: f.type, titreNumero: f.numero.trim(), titreExpiration: f.date }),
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEnvoi(false);
+      if (!r.ok) return notifier(j.erreur || `Enregistrement refusé (HTTP ${r.status}).`);
+      notifier(recepisse ? "✓ Récépissé enregistré — les relances sont suspendues." : "✓ Nouveau titre enregistré.");
+      setOuvert(null);
+      charger();
+    } catch { setEnvoi(false); notifier("API injoignable — réessayez."); }
+  };
+
+  if (donnees === null) return <p style={{ fontSize: 13, color: T.mut }}>Chargement du suivi…</p>;
+  if (donnees.erreur) return <p style={{ fontSize: 13, color: T.mut }}>{donnees.erreur}</p>;
+  const salaries = donnees.salaries || [];
+  const expires = salaries.filter((s) => s.etat === "expire");
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+  const grille = "1.6fr 1.2fr 1.8fr 110px 1.6fr 1.6fr";
+  const petit = { ...inputStyle, padding: "7px 9px", fontSize: 12.5 };
+
+  return (
+    <>
+      <h1 style={{ margin: 0, fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>Salariés étrangers</h1>
+      <p style={{ margin: "4px 0 16px", fontSize: 13, color: T.mut }}>
+        Titres de séjour de vos salariés hors UE/EEE/Suisse : validité, renouvellements,
+        droit au travail. Déclarez ici le récépissé dès le dépôt du renouvellement en
+        préfecture, puis le nouveau titre à sa réception — Osmose RH suit le reste.
+      </p>
+
+      {expires.length > 0 && (
+        <div style={{ background: "#FCEBEB", border: "1px solid #F7C1C1", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: "#791F1F" }}>
+          <strong>⚠ {expires.length === 1 ? "Un titre de séjour a expiré" : `${expires.length} titres de séjour ont expiré`} sans récépissé de renouvellement.</strong>{" "}
+          L'emploi d'un salarié sans titre valide est interdit (art. L.8251-1 du code du travail) :
+          déclarez le récépissé ci-dessous s'il existe, sinon contactez immédiatement votre gestionnaire Osmose RH.
+        </div>
+      )}
+
+      {salaries.length === 0 ? (
+        <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
+          Aucun salarié étranger suivi pour l'instant.<br />
+          Les salariés hors UE/EEE/Suisse déclarés via la démarche Embauche apparaissent ici automatiquement.
+        </div>
+      ) : (
+        <div className="osrh-table" style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "10px 16px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+            <span>Salarié</span><span>Nationalité</span><span>Titre de séjour</span><span>Fin des droits</span><span>État</span><span></span>
+          </div>
+          {salaries.map((s, i) => (
+            <React.Fragment key={s.id || i}>
+              <div style={{ display: "grid", gridTemplateColumns: grille, gap: 8, padding: "11px 16px", fontSize: 13, borderBottom: `1px solid ${T.border}`, alignItems: "center" }}>
+                <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.nom} {s.prenom}</span>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.nationalite || "—"}</span>
+                <span style={{ color: T.mut, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={s.titre?.numero ? `N° ${s.titre.numero}` : undefined}>
+                  {s.titre?.type || "—"}
+                </span>
+                <span>{fr(s.finDroits)}</span>
+                {BADGE_ETAT_TITRE(s)}
+                <span style={{ display: "flex", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {s.etat !== "en-renouvellement" && (
+                    <button onClick={() => (ouvert?.id === s.id && ouvert.mode === "recepisse" ? setOuvert(null) : ouvrir(s.id, "recepisse", s))}
+                      style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                      Déclarer un récépissé
+                    </button>
+                  )}
+                  <button onClick={() => (ouvert?.id === s.id && ouvert.mode === "nouveauTitre" ? setOuvert(null) : ouvrir(s.id, "nouveauTitre", s))}
+                    style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>
+                    Nouveau titre reçu
+                  </button>
+                </span>
+              </div>
+              {ouvert?.id === s.id && (
+                <div style={{ padding: "12px 16px", borderBottom: `1px solid ${T.border}`, background: T.bg, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  {ouvert.mode === "nouveauTitre" && (
+                    <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 220 }}>
+                      Type du nouveau titre *
+                      <select style={petit} value={f.type} onChange={(e) => setF({ ...f, type: e.target.value })}>
+                        <option value="">—</option>
+                        {(donnees.titres || []).map((t) => <option key={t} value={t}>{t}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 160 }}>
+                    {ouvert.mode === "recepisse" ? "N° du récépissé" : "N° du titre *"}
+                    <input style={petit} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} />
+                  </label>
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3 }}>
+                    {ouvert.mode === "recepisse" ? "Valide jusqu'au *" : "Expire le *"}
+                    <input type="date" style={petit} value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} />
+                  </label>
+                  <label style={{ fontSize: 11, color: T.mut, display: "flex", flexDirection: "column", gap: 3, minWidth: 200 }}>
+                    Copie (PDF/JPG/PNG — recommandé)
+                    <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={petit}
+                      onChange={(e) => setF({ ...f, fichier: e.target.files && e.target.files[0] })} />
+                  </label>
+                  <Btn primary disabled={envoi} onClick={() => envoyer(s)}>
+                    {envoi ? "Enregistrement…" : ouvert.mode === "recepisse" ? "Enregistrer le récépissé" : "Enregistrer le titre"}
+                  </Btn>
+                </div>
+              )}
+            </React.Fragment>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 14, display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.mut }}>
+        <ShieldCheck size={13} />
+        Rappels automatiques par e-mail à J-90, J-60 et J-30 avant l'expiration, puis en cas
+        d'expiration — un récépissé déclaré suspend les relances. Copies conservées dans vos Documents.
+      </div>
+    </>
+  );
+}
+
+/* ================================================================
    GESTION DU PERSONNEL — dossier salarié centralisé
    ================================================================ */
 const DEMO_PERSONNEL = {
@@ -2749,9 +3975,13 @@ const DEMO_PERSONNEL = {
     { cle: "MARTIN PAUL", salarie: "Martin Paul", du: dansNJours(-6), au: dansNJours(-4), motif: "Maladie", justificatifUrl: "", statut: "Nouvelle", reference: "ABS-DEMO1" },
   ],
   visites: [
-    { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO1" },
+    { cle: "DUPONT MARIE", salarie: "Dupont Marie", date: dansNJours(9), type: "Visite périodique", statut: "À planifier", reference: "VIS-DEMO1" },
   ],
   mutuelles: [],
+  habilitations: [
+    { cle: "MARTIN PAUL", salarie: "Martin Paul", type: "CACES R489 (chariots élévateurs)", numero: "489-2021-118", organisme: "AFTRAL", obtention: dansNJours(-1650), expiration: dansNJours(55), alerte: null, reference: "HAB-DEMO1" },
+  ],
+  avenants: [],
   fins: [],
 };
 
@@ -2765,6 +3995,9 @@ const FICHE_VIDE = {
   codeDepartementNaissance: "", paysNaissance: "", codePaysNaissance: "",
   adressePostale: "", email: "", telephone: "", iban: "", bic: "",
   matricule: "", bulletinDematerialise: false,
+  nationalite: "", titreSejourType: "", titreSejourNumero: "", titreSejourExpiration: "",
+  finPeriodeEssai: "", periodiciteVisiteMois: "", derniereVisiteMedicale: "",
+  dernierEntretienPro: "",
 };
 // Champs OBLIGATOIRES du dossier (décision du 22/08) — tout sauf le nom
 // marital (n'existe pas pour tous) et le matricule (attribué par la paie).
@@ -2789,6 +4022,25 @@ const SECTIONS_DOSSIER = [
     ["paysNaissance", "Pays de naissance", "texte"],
     ["codePaysNaissance", "Code pays (ex. FR)", "texte"],
   ]],
+  // Salariés étrangers uniquement — champs FACULTATIFS (hors de la règle
+  // « dossier complet ») : le titre vient de l'embauche, Osmose le tient
+  // à jour au renouvellement.
+  // Suivi du contrat — FACULTATIF (hors règle « dossier complet ») :
+  // alimente les échéances (fin d'essai J-15/J-7, visite médicale
+  // périodique — 60 mois par défaut, 48 en suivi renforcé).
+  ["Suivi du contrat", [
+    ["finPeriodeEssai", "Fin de la période d'essai", "date"],
+    ["periodiciteVisiteMois", "Périodicité visite médicale (mois)", "choix", ["", "12", "24", "48", "60"]],
+    ["derniereVisiteMedicale", "Dernière visite médicale", "date"],
+    ["dernierEntretienPro", "Dernier entretien professionnel", "date"],
+  ]],
+  ["Nationalité & titre de séjour", [
+    ["nationalite", "Nationalité", "texte"],
+    ["titreSejourType", "Type de titre de séjour", "choix",
+      ["", "Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"]],
+    ["titreSejourNumero", "Numéro du titre", "texte"],
+    ["titreSejourExpiration", "Date d'expiration du titre", "date"],
+  ]],
   ["Coordonnées", [
     ["adressePostale", "Adresse postale", "texte"],
     ["email", "E-mail personnel", "texte"],
@@ -2807,7 +4059,23 @@ function DossierSalarie({ sal, onMaj }) {
   const [f, setF] = useState({ ...FICHE_VIDE, matricule: sal.matricule || "", ...(sal.fiche || {}) });
   const [envoi, setEnvoi] = useState(false);
   const [msg, setMsg] = useState(null); // { ok } | { erreur }
+  const [invitation, setInvitation] = useState(null); // null | { envoi } | { lien, expireLe, deja } | { erreur }
   const maj = (k, v) => setF((p) => ({ ...p, [k]: v }));
+
+  // Onboarding : le salarié remplit lui-même son dossier via un lien à
+  // jeton (14 jours). Le lien est affiché au client, qui l'envoie par le
+  // canal de son choix (e-mail, SMS, WhatsApp…).
+  const inviterSalarie = async () => {
+    setInvitation({ envoi: true });
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "onboardingInviter", id: sal.id }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setInvitation(r.ok ? j : { erreur: j.erreur || `Invitation refusée (HTTP ${r.status}).` });
+    } catch { setInvitation({ erreur: "API injoignable — réessayez." }); }
+  };
 
   const libelles = Object.fromEntries(SECTIONS_DOSSIER.flatMap(([, champs]) => champs.map(([c, l]) => [c, l])));
   const manquants = (fiche) => REQUIS_DOSSIER.filter((k) => !String(fiche[k] ?? "").trim());
@@ -2854,6 +4122,29 @@ function DossierSalarie({ sal, onMaj }) {
           <p style={{ fontSize: 12.5, background: "#FDF3E4", color: "#7A5416", border: "1px solid #F0DCB4", borderRadius: 8, padding: "9px 12px", margin: "0 0 12px" }}>
             ⚠ Dossier incomplet — à renseigner : {m.map((k) => libelles[k]).join(", ")}.
           </p>
+        )}
+        {m.length > 0 && sal.id && !invitation?.lien && (
+          <div style={{ margin: "0 0 14px" }}>
+            <Btn onClick={inviterSalarie} disabled={invitation?.envoi}>
+              <Send size={13} /> {invitation?.envoi ? "Génération du lien…" : "Inviter le salarié à compléter son dossier"}
+            </Btn>
+            {invitation?.erreur && <p style={{ fontSize: 12, color: T.err, margin: "8px 0 0" }}>✗ {invitation.erreur}</p>}
+          </div>
+        )}
+        {invitation?.lien && (
+          <div style={{ background: "#E6F1FB", border: "1px solid #BFDCF7", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, color: "#0C447C", margin: "0 0 14px" }}>
+            {invitation.deja ? "Un lien d'invitation est déjà actif" : "Lien d'invitation créé"} — envoyez-le au salarié
+            (valable jusqu'au {String(invitation.expireLe).slice(0, 10).split("-").reverse().join("/")}) :
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+              <code style={{ fontSize: 11, background: "#fff", border: `1px solid ${T.border}`, borderRadius: 6, padding: "6px 8px", wordBreak: "break-all", flex: 1, minWidth: 200 }}>{invitation.lien}</code>
+              <Btn small onClick={() => { navigator.clipboard?.writeText(invitation.lien); setInvitation((i) => ({ ...i, copie: true })); }}>
+                {invitation.copie ? "✓ Copié" : "Copier"}
+              </Btn>
+            </div>
+            <p style={{ margin: "8px 0 0", fontSize: 11.5 }}>
+              Le salarié y saisit son état civil, ses coordonnées, sa banque et dépose ses pièces — sa fiche se complète toute seule.
+            </p>
+          </div>
         )}
         {SECTIONS_DOSSIER.map(([titre, champs]) => (
           <div key={titre} style={{ marginBottom: 14 }}>
@@ -2953,10 +4244,14 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
     const visites = (src.visites || []).filter((x) => x.cle === sal.cle);
     const mutuelles = (src.mutuelles || []).filter((x) => x.cle === sal.cle);
     const fins = (src.fins || []).filter((x) => x.cle === sal.cle);
+    const habilitations = (src.habilitations || []).filter((x) => x.cle === sal.cle);
+    const avenants = (src.avenants || []).filter((x) => x.cle === sal.cle);
     const onglets = [
       { id: "Contrat", n: null }, { id: "Dossier", n: null },
       { id: "Absences", n: absences.length },
       { id: "Visites", n: visites.length }, { id: "Mutuelle", n: mutuelles.length },
+      { id: "Habilitations", n: habilitations.length },
+      { id: "Avenants", n: avenants.length },
       { id: "Fin", n: fins.length },
     ];
 
@@ -3019,7 +4314,7 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
               {visites.length === 0 && <Vide texte="Aucune visite médicale enregistrée pour ce salarié." />}
               {visites.map((v, i) => (
                 <Rangee key={i} dernier={i === visites.length - 1}
-                  gauche={<><strong>Visite médicale</strong><span style={{ color: T.mut }}> — {fr(v.date)}</span></>}
+                  gauche={<><strong>{v.type || "Visite médicale"}</strong><span style={{ color: T.mut }}> — {fr(v.date)}</span></>}
                   milieu={v.reference}
                   droite={<Badge s={v.statut} />} />
               ))}
@@ -3047,6 +4342,49 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
           </>
         )}
 
+        {ong === "Habilitations" && (
+          <>
+            <Carte>
+              {habilitations.length === 0 && <Vide texte="Aucune habilitation déclarée pour ce salarié." />}
+              {habilitations.map((h, i) => {
+                const expiree = h.expiration && h.expiration < new Date().toISOString().slice(0, 10);
+                return (
+                  <Rangee key={i} dernier={i === habilitations.length - 1}
+                    gauche={<><strong>{h.type || "Habilitation"}</strong><span style={{ color: T.mut }}>{h.numero ? ` — n° ${h.numero}` : ""}{h.organisme ? ` · ${h.organisme}` : ""}</span></>}
+                    milieu={h.reference}
+                    droite={expiree
+                      ? <span style={{ background: "#FCEBEB", color: "#791F1F", fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Expirée le {fr(h.expiration)}</span>
+                      : <span style={{ background: "#E1F5EE", color: "#085041", fontSize: 11, padding: "3px 10px", borderRadius: 99, whiteSpace: "nowrap" }}>Valide → {fr(h.expiration)}</span>} />
+                );
+              })}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("habilitation", nomComplet)}><Plus size={14} /> Déclarer une habilitation</Btn>
+            </div>
+            <p style={{ marginTop: 10, fontSize: 11.5, color: T.mut }}>
+              L'historique se conserve : un recyclage se déclare comme une nouvelle habilitation du même type — les rappels suivent automatiquement la plus récente.
+              Ces habilitations alimentent la brique <strong>Sécurité</strong> (bientôt disponible) : registre de l'effectif, DUERP, registres réglementaires.
+            </p>
+          </>
+        )}
+
+        {ong === "Avenants" && (
+          <>
+            <Carte>
+              {avenants.length === 0 && <Vide texte="Aucun avenant demandé pour ce salarié." />}
+              {avenants.map((a, i) => (
+                <Rangee key={i} dernier={i === avenants.length - 1}
+                  gauche={<><strong>{a.type || "Avenant"}</strong><span style={{ color: T.mut }}> — effet au {fr(a.dateEffet)}</span></>}
+                  milieu={a.reference}
+                  droite={<Badge s={a.statut} />} />
+              ))}
+            </Carte>
+            <div style={{ marginTop: 12 }}>
+              <Btn primary onClick={() => onDemarche("avenant", nomComplet)}><Plus size={14} /> Demander un avenant</Btn>
+            </div>
+          </>
+        )}
+
         {ong === "Fin" && (
           <>
             <Carte>
@@ -3069,12 +4407,47 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
 
   /* ── Liste des salariés ─────────────────────────────────────── */
   const compteur = (liste, cle) => (src[liste] || []).filter((x) => x.cle === cle).length;
+
+  // Export des fiches : CSV « ; » UTF-8 (BOM) — s'ouvre directement dans
+  // Excel en français, sans dépendance. Généré côté navigateur à partir
+  // des données déjà chargées (rien ne transite de plus par le réseau).
+  const exporterFiches = () => {
+    const entetes = ["Matricule", "Nom", "Prénom", "Poste", "Type de contrat", "Date d'entrée", "Date de sortie", "Statut",
+      "E-mail", "Téléphone", "Adresse postale", "N° sécurité sociale", "Date de naissance", "Sexe",
+      "Nom de naissance", "Nom marital", "Situation familiale", "Département de naissance", "Code département",
+      "Pays de naissance", "Code pays", "IBAN", "BIC", "Bulletin dématérialisé"];
+    const cel = (v) => {
+      const t = String(v ?? "");
+      return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
+    };
+    const lignes = salaries.map((s) => {
+      const f = s.fiche || {};
+      return [s.matricule, s.nom, s.prenom, s.poste, s.type, fr(s.debut), s.fin ? fr(s.fin) : "", s.statut,
+        f.email, f.telephone, f.adressePostale, f.numeroSS, f.dateNaissance ? fr(f.dateNaissance) : "", f.sexe,
+        f.nomNaissance, f.nomMarital, f.situationFamiliale, f.departementNaissance, f.codeDepartementNaissance,
+        f.paysNaissance, f.codePaysNaissance, f.iban, f.bic,
+        "bulletinDematerialise" in f ? (f.bulletinDematerialise ? "Oui" : "Non") : ""].map(cel).join(";");
+    });
+    const csv = "\uFEFF" + [entetes.map(cel).join(";"), ...lignes].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Effectif_${client || "osmose"}_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
       <EnteteFiche titre="Gestion du personnel" onRetour={onRetour} />
-      <p style={{ margin: "-12px 0 16px", fontSize: 13, color: T.mut }}>
-        Les salariés déclarés via la démarche Embauche — cliquez pour ouvrir le dossier.
-      </p>
+      <div style={{ margin: "-12px 0 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 220 }}>
+          Les salariés déclarés via la démarche Embauche — cliquez pour ouvrir le dossier.
+        </p>
+        {salaries.length > 0 && (
+          <Btn onClick={exporterFiches}><Download size={14} /> Exporter les fiches (Excel)</Btn>
+        )}
+      </div>
 
       {salaries.length === 0 ? (
         <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "34px 24px", textAlign: "center", fontSize: 13.5, color: T.mut }}>
@@ -3087,7 +4460,7 @@ function GestionPersonnel({ user, client, onRetour, onDemarche }) {
             <span>Salarié</span><span>Poste</span><span>Contrat</span><span>Entrée</span><span>Suivi</span>
           </div>
           {salaries.map((s, i) => {
-            const n = compteur("absences", s.cle) + compteur("visites", s.cle) + compteur("mutuelles", s.cle) + compteur("fins", s.cle);
+            const n = compteur("absences", s.cle) + compteur("visites", s.cle) + compteur("mutuelles", s.cle) + compteur("habilitations", s.cle) + compteur("avenants", s.cle) + compteur("fins", s.cle);
             return (
               <button key={s.cle + i} onClick={() => { setSalCle(s.cle); setOng("Contrat"); }} style={{
                 all: "unset", boxSizing: "border-box", width: "100%", display: "grid",

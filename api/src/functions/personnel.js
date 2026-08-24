@@ -6,7 +6,7 @@
 // normalisée (les démarches saisissent le salarié en texte libre).
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, SELECT_SALARIES } = require("../annuaire");
 
 const cle = (nom, prenom) =>
   `${String(nom || "").trim().toUpperCase()} ${String(prenom || "").trim().toUpperCase()}`.trim();
@@ -23,13 +23,17 @@ app.http("personnel", {
 
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
-      const [registre, contrats, absences, visites, mutuelles, fins] = await Promise.all([
-        items(tok, ids["Salariés"], "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise"),
+      // Habilitations et Avenants : listes du lot 23/08 — lecture
+      // conditionnelle tant que creer_site_rh.py n'a pas été relancé.
+      const [registre, contrats, absences, visites, mutuelles, fins, habilitations, avenants] = await Promise.all([
+        items(tok, ids["Salariés"], SELECT_SALARIES),
         items(tok, ids["Production contrat"], "CodeClient,Nom,Pr_x00e9_nom,Type_x0020_contrat,Postedetravail,Dateded_x00e9_but,Datedefin,Created"),
         items(tok, ids["Absences"], "CodeClient,Title,SalarieNom,SalariePrenom,DateDebut,DateFin,Motif,JustificatifUrl,Statut,Reference"),
-        items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,Statut,Reference"),
+        items(tok, ids["Visites médicales"], "CodeClient,Title,SalarieNom,SalariePrenom,DateVisite,TypeVisite,Statut,Reference"),
         items(tok, ids["Adhésions mutuelles"], "CodeClient,Title,SalarieNom,SalariePrenom,Mutuelle,DateAdhesion,Statut,Reference"),
         items(tok, ids["Fins de contrat"], "CodeClient,Title,Nom,Prenom,TypeContrat,Motif,DateFin,Statut"),
+        ids["Habilitations"] ? items(tok, ids["Habilitations"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeHabilitation,Numero,Organisme,DateObtention,DateExpiration,AlerteHabilitation,Reference") : [],
+        ids["Avenants"] ? items(tok, ids["Avenants"], "CodeClient,Title,SalarieNom,SalariePrenom,TypeAvenant,DateEffet,Statut,Reference") : [],
       ]);
       const du = (liste) => liste.filter((x) => x.CodeClient === c.codeClient);
 
@@ -66,6 +70,14 @@ app.http("personnel", {
           iban: x.Iban || "",
           bic: x.Bic || "",
           bulletinDematerialise: x.BulletinDematerialise === true,
+          nationalite: x.Nationalite || "",
+          titreSejourType: x.TitreSejourType || "",
+          titreSejourNumero: x.TitreSejourNumero || "",
+          titreSejourExpiration: dateParis(x.TitreSejourExpiration) || "",
+          finPeriodeEssai: dateParis(x.FinPeriodeEssai) || "",
+          periodiciteVisiteMois: x.PeriodiciteVisiteMois ? String(x.PeriodiciteVisiteMois) : "",
+          derniereVisiteMedicale: dateParis(x.DerniereVisiteMedicale) || "",
+          dernierEntretienPro: dateParis(x.DernierEntretienPro) || "",
         },
       }));
       const clesRegistre = new Set(duRegistre.map((x) => x.cle));
@@ -95,13 +107,25 @@ app.http("personnel", {
         })).sort((a, b) => String(b.du).localeCompare(String(a.du))),
         visites: du(visites).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
-          date: dateParis(x.DateVisite), statut: x.Statut || "À planifier", reference: x.Reference || "",
+          date: dateParis(x.DateVisite), type: x.TypeVisite || "",
+          statut: x.Statut || "À planifier", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
         mutuelles: du(mutuelles).map((x) => ({
           cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
           mutuelle: x.Mutuelle || "", date: dateParis(x.DateAdhesion),
           statut: x.Statut || "Demande", reference: x.Reference || "",
         })).sort((a, b) => String(b.date).localeCompare(String(a.date))),
+        habilitations: du(habilitations).map((x) => ({
+          cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
+          type: x.TypeHabilitation || "", numero: x.Numero || "", organisme: x.Organisme || "",
+          obtention: dateParis(x.DateObtention), expiration: dateParis(x.DateExpiration),
+          alerte: x.AlerteHabilitation || null, reference: x.Reference || "",
+        })).sort((a, b) => String(a.expiration).localeCompare(String(b.expiration))),
+        avenants: du(avenants).map((x) => ({
+          cle: cle(x.SalarieNom, x.SalariePrenom), salarie: x.Title || "",
+          type: x.TypeAvenant || "", dateEffet: dateParis(x.DateEffet),
+          statut: x.Statut || "Nouvelle", reference: x.Reference || "",
+        })).sort((a, b) => String(b.dateEffet).localeCompare(String(a.dateEffet))),
         fins: du(fins).map((x) => ({
           cle: cle(x.Nom, x.Prenom), salarie: cle(x.Nom, x.Prenom),
           type: x.TypeContrat || "", motif: x.Motif || "",

@@ -32,6 +32,39 @@ app.http("me", {
               return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
             }
           }
+          // &onglet=etrangers : brique « Salariés étrangers », vue tous
+          // clients (états des titres, dossier inspection).
+          if (request.query.get("onglet") === "etrangers") {
+            try {
+              return await require("../etrangers").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/etrangers :", e);
+              return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
+            }
+          }
+          // &onglet=abonnements : suivi commercial des options souscrites
+          // (qui a quoi, depuis quand, opportunités détectées).
+          if (request.query.get("onglet") === "abonnements") {
+            try {
+              return await require("../abonnements").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/abonnements :", e);
+              return { status: 500, jsonBody: { erreur: `Module abonnements inchargeable : ${e.message}` } };
+            }
+          }
+          // &onglet=echeances : vue « toutes échéances, tous clients » —
+          // le plan de charge du gestionnaire, trié par urgence.
+          if (request.query.get("onglet") === "echeances") {
+            try {
+              return await require("../echeancier").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/echeances :", e);
+              return { status: 500, jsonBody: { erreur: `Module echeancier inchargeable : ${e.message}` } };
+            }
+          }
           try {
             return await require("../admin").donnees(request, context);
           } catch (e) {
@@ -54,6 +87,17 @@ app.http("me", {
           return { status: 500, jsonBody: { erreur: `Module messages inchargeable : ${e.message}` } };
         }
       }
+      // ?vue=etrangers : brique « Salariés étrangers » du client (option) —
+      // même contournement, module paresseux src/etrangers.js.
+      if ((request.query && request.query.get && request.query.get("vue")) === "etrangers") {
+        try {
+          return await require("../etrangers").donneesClient(request, context);
+        } catch (e) {
+          if (e && e.status) throw e;
+          context.error("me/vue=etrangers :", e);
+          return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
+        }
+      }
       const c = await resoudreClient(email);
       // Pastille « messages non lus » de la tuile Mon gestionnaire —
       // best effort : une panne de lecture ne bloque jamais l'entrée.
@@ -73,7 +117,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-22-pj-embauche";
+const VERSION_API = "2026-08-24-reembauche";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",

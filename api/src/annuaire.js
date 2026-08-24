@@ -68,6 +68,13 @@ async function tokenGraph() {
   return graphTok.valeur;
 }
 
+/* $select UNIQUE de la liste « Salariés » — le cache items() est indexé
+   par liste (pas par champs) : tous les lecteurs (personnel, admin,
+   échéances, étrangers) partagent CE select pour ne jamais s'appauvrir
+   mutuellement pendant les 60 s de cache. Toute nouvelle colonne
+   s'ajoute ICI (et dans creer_site_rh.py). */
+const SELECT_SALARIES = "CodeClient,Matricule,Nom,Prenom,Poste,TypeContrat,DateEntree,DateSortie,Statut,Email,Telephone,AdressePostale,NumeroSS,DateNaissance,Sexe,NomNaissance,NomMarital,SituationFamiliale,DepartementNaissance,CodeDepartementNaissance,PaysNaissance,CodePaysNaissance,Iban,Bic,BulletinDematerialise,Nationalite,TitreSejourType,TitreSejourNumero,TitreSejourExpiration,AlerteTitreSejour,TitreSejourPj,RecepisseNumero,RecepisseFin,RecepissePj,DroitTravail,AutorisationTravail,FinPeriodeEssai,AlertePeriodeEssai,PeriodiciteVisiteMois,DerniereVisiteMedicale,AlerteVisiteMedicale,DernierEntretienPro,AlerteEntretienPro";
+
 let listeIds; // { "Utilisateurs portail": id, "Paramètres clients": id }
 async function idsListes(tok) {
   if (listeIds) return listeIds;
@@ -126,6 +133,16 @@ async function items(tok, listeId, champs) {
   return tout;
 }
 
+/* $select UNIQUE de « Paramètres clients » — SOURCE UNIQUE, comme
+   SELECT_SALARIES. Le cache items() est indexé par LISTE, pas par
+   champs : un lecteur au $select étroit qui remplit le cache le premier
+   appauvrit tous les suivants pendant 60 s (constaté le 23/08 : quatre
+   lecteurs divergents, dont admin.donnees sans Options — un client se
+   connectant dans la minute suivant une consultation gestionnaire
+   voyait toutes ses tuiles grisées, puis « ça se réparait tout seul »).
+   Toute nouvelle colonne lue s'ajoute ICI (et dans creer_site_rh.py). */
+const SELECT_CLIENTS = "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options,CodeUrssaf,CodeApe,VilleEntreprise,CodePostalEntreprise,TelephoneEntreprise,SanteTravail,DateSouscription,TarifMensuel";
+
 /** email vérifié → { codeClient, entreprise… } ou lève 403. */
 async function resoudreClient(email) {
   const tok = await tokenGraph();
@@ -135,8 +152,7 @@ async function resoudreClient(email) {
   const u = utilisateurs.find((x) => (x.Email || "").toLowerCase() === email && x.Actif !== false);
   if (!u || !u.CodeClient) throw { status: 403, erreur: "Compte non rattaché à un client — contactez votre gestionnaire Osmose RH." };
 
-  const clients = await items(tok, ids["Paramètres clients"],
-    "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const c = clients.find((x) => x.CodeClient === u.CodeClient && x.Actif !== false);
   if (!c) throw { status: 403, erreur: "Client inactif ou inconnu — contactez votre gestionnaire Osmose RH." };
 
@@ -221,6 +237,16 @@ async function creerEmbauche(email, clientInfo, d, reference) {
     "Dur_x00e9_edutempsdetravail_x002": Number(String(d.dureeMensuelle).replace(",", ".")),
   };
   if (d.dateFin) fields.Datedefin = d.dateFin;
+  // Salarié étranger : le titre de séjour suit l'embauche — son
+  // authentification préfectorale (R.5221-41 s.) est pilotée depuis
+  // l'écran gestionnaire, statut initial « À authentifier ».
+  if (d.titreSejourType) {
+    fields.TitreSejourType = String(d.titreSejourType).trim().slice(0, 60);
+    fields.TitreSejourNumero = String(d.titreSejourNumero || "").trim().toUpperCase().slice(0, 40);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || "")))
+      fields.TitreSejourExpiration = d.titreSejourExpiration;
+    fields.TitreSejourStatut = "À authentifier";
+  }
 
   const r = await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${listeId}/items`, {
     method: "POST",
@@ -433,7 +459,7 @@ async function majCyclePaie(codeClient, mois, statutCible) {
   if (!rl.ok) return;
   const existante = (await rl.json()).value.find((x) => x.fields.CodeClient === codeClient && x.fields.Mois === mois);
 
-  const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const raisonSociale = clients.find((c) => c.CodeClient === codeClient)?.RaisonSociale || codeClient;
 
   const corps = {
@@ -513,4 +539,4 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
   return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems, SELECT_SALARIES, SELECT_CLIENTS };

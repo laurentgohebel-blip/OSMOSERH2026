@@ -40,15 +40,49 @@ app.http("demande", {
       }
     }
 
+    // 1 bis-2. Onboarding salarié PUBLIC : le salarié invité n'a pas de
+    // compte — le jeton d'invitation (48 hex, 14 jours, usage unique)
+    // est l'unique clé. AVANT le verrou jeton utilisateur, protégé par
+    // le pot de miel ci-dessus + les contrôles du module onboarding.
+    if (d.action === "onboarding") {
+      try {
+        const onboarding = require("../onboarding");
+        return d.mode === "soumettre"
+          ? await onboarding.soumettre(d, context)
+          : await onboarding.info(d, context);
+      } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+        context.error("demande/onboarding :", e);
+        return { status: 500, jsonBody: { erreur: `Module onboarding inchargeable : ${e.message}` } };
+      }
+    }
+
+    // 1 bis-3. Courriels entrants : le flux de la boîte de dépôt poste
+    // ici le message d'un client. Pas de jeton utilisateur — un patron
+    // qui transfère un arrêt depuis son téléphone n'ouvre pas le
+    // portail —, mais un secret d'en-tête et, surtout, un expéditeur
+    // qui doit être un contact portail actif : le CodeClient vient de
+    // l'annuaire, jamais du contenu du message.
+    if (d.action === "courriel") {
+      try {
+        return await require("../courriel").recevoir(request, d, context);
+      } catch (e) {
+        context.error("demande/courriel :", e);
+        return { status: 500, jsonBody: { erreur: `Module courriel inchargeable : ${e.message}` } };
+      }
+    }
+
     // 1 ter. Détour gestionnaire : même contournement — l'activation des
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
     // ADMIN_EMAILS — un client ordinaire reçoit un 403.
-    if (d.action === "adminActiver" || d.action === "adminImportSalaries") {
+    if (d.action === "adminActiver" || d.action === "adminImportSalaries" || d.action === "adminDpae" || d.action === "adminTitreSejour" || d.action === "adminEtrangers") {
       try {
+        if (d.action === "adminEtrangers") return await require("../etrangers").adminMaj(request, context, d);
         const admin = require("../admin");
-        return d.action === "adminActiver"
-          ? await admin.activer(request, context, d)
+        return d.action === "adminActiver" ? await admin.activer(request, context, d)
+          : d.action === "adminDpae" ? await admin.dpae(request, context, d)
+          : d.action === "adminTitreSejour" ? await admin.titreSejour(request, context, d)
           : await admin.importerSalaries(request, context, d);
       } catch (e) {
         if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
@@ -92,7 +126,7 @@ app.http("demande", {
       // serveur, même si l'appel contourne l'interface (tuiles grisées).
       // fin-contrat relève de l'option 'embauche' : elle couvre le cycle
       // contrat complet (entrées ET sorties).
-      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche" };
+      const OPTION_PAR_DEMARCHE = { "attestation-employeur": "attestation", "acompte": "acompte", "embauche": "embauche", "variables-paie": "paie", "fin-contrat": "embauche", "absences": "embauche", "visite-medicale": "embauche", "mutuelle": "embauche", "avenant": "embauche" };
       const option = OPTION_PAR_DEMARCHE[d.demarche];
       if (option && !clientInfo.options.includes(option))
         return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
@@ -101,10 +135,45 @@ app.http("demande", {
       // action cliente sur la route historique (doctrine du 21/08).
       // Verrous : jeton + client résolus ci-dessus, option embauche,
       // et propriété de l'élément vérifiée AVANT toute écriture.
+      // Réembauche, écran de contrôle : le client choisit un ancien
+      // salarié et un projet de contrat, et voit AVANT de valider ce que
+      // le dossier reprend et ce que la loi impose (carence, titre,
+      // essai, visite). Lecture seule — rien n'est écrit ici.
+      if (d.action === "reembaucheControles") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          return await require("../reembauche").controles(clientInfo, d);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/reembaucheControles :", e);
+          return { status: 502, jsonBody: { erreur: "Lecture du dossier impossible — réessayez." } };
+        }
+      }
+
       if (d.action === "majSalarie") {
         if (!clientInfo.options.includes("embauche"))
           return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
         return await majSalarie(clientInfo, d, context);
+      }
+
+      // Onboarding : le client génère (ou retrouve) le lien d'invitation
+      // d'une fiche — verrous : option embauche + propriété de la fiche
+      // (vérifiée dans le module).
+      if (d.action === "onboardingInviter" || d.action === "onboardingEmbauche") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        const onboarding = require("../onboarding");
+        return d.action === "onboardingEmbauche"
+          ? await onboarding.embaucher(email, clientInfo, d, context)
+          : await onboarding.inviter(email, clientInfo, d, context);
+      }
+
+      // Brique « Salariés étrangers » : le client déclare un récépissé de
+      // renouvellement ou un nouveau titre (verrous option + propriété
+      // dans le module).
+      if (d.action === "titreRenouvellement") {
+        return await require("../etrangers").renouveler(clientInfo, d, context);
       }
 
       // Cas particulier « fin-contrat » : déclaration de départ — écrite
@@ -154,13 +223,31 @@ app.http("demande", {
         // (onglet Dossier, bandeau « Dossier incomplet »). Le volet
         // administratif reste accepté mais FACULTATIF : chaque champ
         // transmis est contrôlé, aucun n'est exigé.
+        // Réembauche (24/08) : le salarié a déjà travaillé ici, son
+        // dossier est au référentiel. On le REPREND — identité, NIR,
+        // adresse, banque — et on ne redemande que ce qui appartient au
+        // nouveau contrat. Les trois pièces ne sont pas réclamées : elles
+        // sont déjà dans la GED du client depuis la première embauche.
+        // `preparer` revérifie les points bloquants côté serveur ; le
+        // contrôle d'affichage ne prouve rien.
+        let reembauche = null;
+        if (d.reprise) {
+          try {
+            reembauche = await require("../reembauche").preparer(clientInfo, d);
+            d = { ...d, ...reembauche.demande };
+          } catch (e) {
+            if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur, ...(e.points ? { points: e.points } : {}) } };
+            context.error("demande/reembauche :", e);
+            return { status: 502, jsonBody: { erreur: "Reprise du dossier impossible — réessayez." } };
+          }
+        }
         const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle",
-          "pjIdentite", "pjVitale", "pjRib"];
+          ...(reembauche ? [] : ["pjIdentite", "pjVitale", "pjRib"])];
         for (const c of requis)
           if (!d[c] || !String(d[c]).trim())
             return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
         for (const c of ["pjIdentite", "pjVitale", "pjRib"])
-          if (!/\.(pdf|jpe?g|png)$/i.test(String(d[c]).trim()) || String(d[c]).length > 255)
+          if (d[c] && (!/\.(pdf|jpe?g|png)$/i.test(String(d[c]).trim()) || String(d[c]).length > 255))
             return { status: 400, jsonBody: { erreur: "Pièce jointe invalide — reprenez le dépôt des trois documents." } };
         if (!/^[12]\d{12}(\d{2})?$/.test(String(d.numeroSS).replace(/\s/g, "")))
           return { status: 400, jsonBody: { erreur: "Numéro de sécurité sociale invalide (13 ou 15 chiffres)." } };
@@ -180,12 +267,53 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Code pays invalide (2 lettres)." } };
         if (d.emailSalarie && !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(String(d.emailSalarie).trim()))
           return { status: 400, jsonBody: { erreur: "E-mail du salarié invalide." } };
+        if (d.finPeriodeEssai && (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.finPeriodeEssai)) || String(d.finPeriodeEssai) <= String(d.dateDebut)))
+          return { status: 400, jsonBody: { erreur: "Fin de période d'essai invalide (postérieure au début du contrat)." } };
+        // Salarié étranger (hors UE/EEE/Suisse) : titre de séjour EXIGÉ —
+        // type, numéro, date d'expiration et pièce jointe dédiée. Son
+        // authentification préfectorale est ensuite suivie par le
+        // gestionnaire (écran admin, statut « À authentifier »).
+        if (titreSejourRequis(d.nationalite)) {
+          for (const c of ["titreSejourType", "titreSejourNumero", "titreSejourExpiration", "pjTitreSejour"])
+            if (!d[c] || !String(d[c]).trim())
+              return { status: 400, jsonBody: { erreur: `Champ manquant (salarié étranger) : ${c}` } };
+          if (!TITRES_SEJOUR.includes(d.titreSejourType))
+            return { status: 400, jsonBody: { erreur: "Type de titre de séjour invalide." } };
+          if (!/\.(pdf|jpe?g|png)$/i.test(String(d.pjTitreSejour).trim()) || String(d.pjTitreSejour).length > 255)
+            return { status: 400, jsonBody: { erreur: "Pièce jointe du titre de séjour invalide — reprenez le dépôt." } };
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration)))
+            return { status: 400, jsonBody: { erreur: "Date d'expiration du titre invalide (AAAA-MM-JJ)." } };
+          if (String(d.titreSejourExpiration) < String(d.dateDebut))
+            return { status: 400, jsonBody: { erreur: "Le titre de séjour expire avant la date d'embauche — embauche impossible en l'état." } };
+        }
         // La fiche d'abord (upsert idempotent), le contrat ensuite : en cas
         // d'échec du contrat, une nouvelle tentative re-complète la fiche.
-        await creerFicheSalarie(clientInfo, d);
+        const idFiche = await creerFicheSalarie(clientInfo, d);
         const reference = `EMB-${Date.now().toString(36).toUpperCase()}`;
         await creerEmbauche(email, clientInfo, d, reference);
-        return { status: 202, jsonBody: { reference } };
+        // Une réembauche décidée malgré un point bloquant doit se VOIR :
+        // le gestionnaire reçoit le motif invoqué et les points passés
+        // outre. C'est ce qui distingue une dérogation assumée d'un
+        // oubli — et ce qu'on veut retrouver en cas de contrôle.
+        if (reembauche?.derogation) {
+          try {
+            await creerMessageGestionnaire(email, clientInfo, {
+              objet: `Réembauche en dérogation — ${d.nom} ${d.prenom} (${reference})`,
+              message: [
+                `Réembauche de ${d.nom} ${d.prenom}, contrat ${d.typeContrat} au ${d.dateDebut}.`,
+                `Motif invoqué : ${reembauche.derogation}`,
+                "",
+                "Points signalés et passés outre :",
+                ...reembauche.points.filter((p) => p.niveau === "bloquant").map((p) => `— ${p.titre} : ${p.detail}`),
+              ].join("\n"),
+            }, reference);
+          } catch (e) {
+            // La dérogation est tracée pour le gestionnaire, pas pour le
+            // client : son échec ne doit pas annuler une embauche valide.
+            context.error("demande/reembauche-derogation :", e);
+          }
+        }
+        return { status: 202, jsonBody: { reference, ...(idFiche ? { idFiche: String(idFiche) } : {}), ...(reembauche ? { reprise: true } : {}) } };
       }
 
       // Bascule « connecteurs standard » (chantier fin du Premium,
@@ -318,14 +446,80 @@ app.http("demande", {
       }
 
       if (d.demarche === "visite-medicale") {
+        // Nature de la visite : miroir strict de TYPES_VISITE (front).
+        // La reprise après arrêt est une obligation distincte du suivi
+        // périodique — c'est elle qui éteint l'alerte correspondante.
+        const TYPES_VISITE = ["Visite d'information et de prévention (embauche)", "Visite périodique", "Visite de reprise", "Visite de pré-reprise", "Visite à la demande"];
         if (!d.salarie || String(d.salarie).trim().length < 2)
           return { status: 400, jsonBody: { erreur: "Salarié requis." } };
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateVisite || "")))
           return { status: 400, jsonBody: { erreur: "Date souhaitée requise." } };
+        if (d.typeVisite && !TYPES_VISITE.includes(d.typeVisite))
+          return { status: 400, jsonBody: { erreur: "Type de visite invalide — choisissez dans la liste." } };
         const reference = `VIS-${Date.now().toString(36).toUpperCase()}`;
         await creerElementPersonnel("Visites médicales", email, clientInfo, d, reference, {
           DateVisite: d.dateVisite,
+          TypeVisite: d.typeVisite || "Visite périodique",
           Statut: "À planifier",
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
+      // Habilitations & CACES (23/08) : le client déclare une habilitation
+      // (obtention ou recyclage) — une LIGNE PAR HABILITATION, l'historique
+      // se conserve. La date d'expiration alimente les alertes de recyclage
+      // (echeances.js : J-90/J-60/J-30 puis EXPIRÉE, sur la plus récente
+      // par salarié + type).
+      if (d.demarche === "habilitation") {
+        // Les habilitations appartiennent à la brique SÉCURITÉ, future
+        // option payante « securite ». Bascule commerciale SANS
+        // redéploiement : poser SECURITE_STRICTE=1 dans la SWA — seule
+        // l'option securite ouvrira alors la démarche. En transition,
+        // l'option embauche suffit (clients actuels non impactés).
+        const accesSecurite = clientInfo.options.includes("securite") ||
+          (!process.env.SECURITE_STRICTE && clientInfo.options.includes("embauche"));
+        if (!accesSecurite)
+          return { status: 403, jsonBody: { erreur: "Option Sécurité (habilitations & CACES) non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!d.typeHabilitation || String(d.typeHabilitation).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Type d'habilitation requis." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateExpiration || "")))
+          return { status: 400, jsonBody: { erreur: "Date de fin de validité requise (elle pilote les alertes de recyclage)." } };
+        if (d.dateObtention && !/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateObtention)))
+          return { status: 400, jsonBody: { erreur: "Date d'obtention invalide." } };
+        if (d.dateObtention && String(d.dateExpiration) <= String(d.dateObtention))
+          return { status: 400, jsonBody: { erreur: "La fin de validité doit être postérieure à l'obtention." } };
+        const reference = `HAB-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Habilitations", email, clientInfo, d, reference, {
+          TypeHabilitation: String(d.typeHabilitation).trim().slice(0, 120),
+          Numero: String(d.numero || "").trim().slice(0, 60),
+          Organisme: String(d.organisme || "").trim().slice(0, 120),
+          ...(d.dateObtention ? { DateObtention: d.dateObtention } : {}),
+          DateExpiration: d.dateExpiration,
+        });
+        return { status: 202, jsonBody: { reference } };
+      }
+
+      // Avenants au contrat (23/08) : demande de modification d'un contrat
+      // en cours — le gestionnaire produit et fait signer l'avenant (même
+      // circuit humain que les fins de contrat).
+      if (d.demarche === "avenant") {
+        const TYPES_AVENANT = ["Changement de poste / qualification", "Durée du travail", "Rémunération", "Lieu de travail", "Passage temps partiel / temps plein", "Télétravail", "Prolongation de CDD", "Renouvellement de période d'essai", "Autre modification"];
+        if (!d.salarie || String(d.salarie).trim().length < 2)
+          return { status: 400, jsonBody: { erreur: "Salarié requis." } };
+        if (!TYPES_AVENANT.includes(d.typeAvenant))
+          return { status: 400, jsonBody: { erreur: "Type d'avenant invalide — choisissez dans la liste." } };
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateEffet || "")))
+          return { status: 400, jsonBody: { erreur: "Date d'effet souhaitée requise." } };
+        if (!d.details || String(d.details).trim().length < 10)
+          return { status: 400, jsonBody: { erreur: "Décrivez la modification souhaitée (nouveau poste, nouvel horaire, nouveau salaire…)." } };
+        const reference = `AVE-${Date.now().toString(36).toUpperCase()}`;
+        await creerElementPersonnel("Avenants", email, clientInfo, d, reference, {
+          TypeAvenant: d.typeAvenant,
+          DateEffet: d.dateEffet,
+          Details: String(d.details).trim().slice(0, 4000),
+          Statut: "Nouvelle",
         });
         return { status: 202, jsonBody: { reference } };
       }
@@ -448,6 +642,17 @@ async function creerFicheSalarie(clientInfo, d) {
     ...si("Bic", String(d.bic || "").replace(/\s/g, "").toUpperCase().slice(0, 11)),
     ...(d.bulletinDematerialise === true || d.bulletinDematerialise === false
       ? { BulletinDematerialise: d.bulletinDematerialise === true } : {}),
+    // Nationalité (toujours utile au dossier) + titre de séjour pour les
+    // salariés étrangers — l'expiration alimentera le suivi de
+    // renouvellement.
+    ...si("Nationalite", String(d.nationalite || "").trim().slice(0, 80)),
+    ...si("TitreSejourType", String(d.titreSejourType || "").trim().slice(0, 60)),
+    ...si("TitreSejourNumero", String(d.titreSejourNumero || "").trim().toUpperCase().slice(0, 40)),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.titreSejourExpiration || ""))
+      ? { TitreSejourExpiration: d.titreSejourExpiration } : {}),
+    ...si("TitreSejourPj", String(d.pjTitreSejour || "").trim().slice(0, 255)),
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(String(d.finPeriodeEssai || ""))
+      ? { FinPeriodeEssai: d.finPeriodeEssai } : {}),
   };
 
   const base = `https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Salariés"]}/items`;
@@ -464,6 +669,9 @@ async function creerFicheSalarie(clientInfo, d) {
       });
   if (!r.ok) throw { status: 502, erreur: "Création de la fiche salarié impossible — réessayez." };
   viderCacheItems();
+  // L'id de la fiche permet d'enchaîner sur l'invitation d'onboarding
+  // depuis l'écran de confirmation d'embauche.
+  return existant ? existant.id : (await r.json().catch(() => ({}))).id || null;
 }
 
 /* Met à jour le dossier d'un salarié (liste « Salariés ») pour le client
@@ -473,6 +681,15 @@ async function creerFicheSalarie(clientInfo, d) {
    un id d'un autre client donne 404, jamais une fuite. */
 const SEXES = ["", "Masculin", "Féminin"];
 const SITUATIONS = ["", "Célibataire", "Marié(e)", "Pacsé(e)", "Divorcé(e)", "Séparé(e)", "Veuf(ve)", "Union libre"];
+
+/* ── Salarié étranger (22/08) ─────────────────────────────────────────
+   Un ressortissant hors UE/EEE/Suisse ne peut être embauché qu'avec un
+   titre de séjour autorisant le travail, que l'employeur doit faire
+   AUTHENTIFIER par la préfecture au moins 2 jours ouvrables avant
+   l'embauche (art. L.8251-1 et R.5221-41 s. du code du travail).
+   Détection et référentiels : brique autonome ../etrangers (source
+   unique — le front duplique la même liste de radicaux). */
+const { titreSejourRequis, TITRES_SEJOUR } = require("../etrangers");
 async function majSalarie(clientInfo, d, context) {
   const id = String(d.id || "").trim();
   if (!/^\d+$/.test(id)) return { status: 400, jsonBody: { erreur: "Fiche salarié introuvable." } };
@@ -545,6 +762,18 @@ async function majSalarie(clientInfo, d, context) {
     Iban: iban,
     Bic: bic,
     BulletinDematerialise: f.bulletinDematerialise === true,
+    // Nationalité et titre de séjour : FACULTATIFS (seuls les salariés
+    // étrangers sont concernés par le titre) — hors de la règle REQUIS.
+    Nationalite: txt(f.nationalite, 80),
+    TitreSejourType: txt(f.titreSejourType, 60),
+    TitreSejourNumero: txt(f.titreSejourNumero, 40).toUpperCase(),
+    TitreSejourExpiration: dateOuVide(f.titreSejourExpiration) || null,
+    // Suivi du contrat (facultatif) : période d'essai + visite médicale
+    FinPeriodeEssai: dateOuVide(f.finPeriodeEssai) || null,
+    PeriodiciteVisiteMois: /^\d{1,3}$/.test(String(f.periodiciteVisiteMois || "").trim())
+      ? Number(f.periodiciteVisiteMois) : null,
+    DerniereVisiteMedicale: dateOuVide(f.derniereVisiteMedicale) || null,
+    DernierEntretienPro: dateOuVide(f.dernierEntretienPro) || null,
   };
 
   const r = await fetch(`${base}/fields`, {

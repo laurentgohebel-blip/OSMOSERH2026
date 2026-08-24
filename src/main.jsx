@@ -30,6 +30,23 @@ function FatalError({ error }) {
 
 (async () => {
   const root = ReactDOM.createRoot(document.getElementById("root"));
+
+  // Onboarding salarié : lien public ?onboarding=<jeton> — formulaire
+  // autonome SANS authentification (le salarié n'a pas de compte), donc
+  // avant toute initialisation MSAL.
+  const jetonOnboarding = new URLSearchParams(window.location.search).get("onboarding");
+  if (jetonOnboarding) {
+    const { default: OnboardingSalarie } = await import("./components/OnboardingSalarie.jsx");
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <OnboardingSalarie jeton={jetonOnboarding} />
+        </ErrorBoundary>
+      </React.StrictMode>
+    );
+    return;
+  }
+
   root.render(<Splash />);
 
   try {

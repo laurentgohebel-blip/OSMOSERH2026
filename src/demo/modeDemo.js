@@ -38,7 +38,7 @@ export const UTILISATEUR_DEMO = {
 };
 
 const CODE_CLIENT_DEMO = "DEMO";
-const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie"];
+const OPTIONS_DEMO = ["embauche", "acompte", "attestation", "paie", "etrangers", "securite"];
 
 /* ── Dates relatives (AAAA-MM-JJ) ─────────────────────────────────────── */
 const dansNJours = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
@@ -65,6 +65,13 @@ function etatInitial() {
     { nom: "ROUX", prenom: "Thomas", matricule: "DP-006", type: "CDD", poste: "Vendeur", debut: dansNJours(-140), fin: dansNJours(18) },
     { nom: "FONTAINE", prenom: "Hugo", matricule: "DP-007", type: "Alternance", poste: "Apprenti boulanger", debut: "2025-09-01", fin: "2027-08-31" },
     { nom: "BLANCHARD", prenom: "Emma", matricule: "DP-008", type: "CDD", poste: "Vendeuse (renfort été)", debut: dansNJours(-30), fin: dansNJours(48) },
+    // Anciens salariés — matière du parcours « réembauche ». PEREZ sort
+    // d'un CDD récent : un nouveau CDD sur le même poste se heurte au
+    // délai de carence. LEFEVRE sortait d'un CDI : rien ne s'y oppose.
+    { nom: "PEREZ", prenom: "Manon", matricule: "DP-009", type: "CDD", poste: "Vendeuse (renfort)",
+      debut: dansNJours(-70), fin: dansNJours(-8), statut: "Sorti" },
+    { nom: "LEFEVRE", prenom: "Antoine", matricule: "DP-010", type: "CDI", poste: "Boulanger",
+      debut: "2021-01-05", fin: dansNJours(-400), statut: "Sorti" },
   ].map((s) => ({ cle: cleNomPrenom(s.nom, s.prenom), statut: "Actif", ...s }));
 
   /* Embauches des 6 derniers mois (barres du tableau de bord) — libellés
@@ -107,12 +114,19 @@ function etatInitial() {
         { cle: "GARCIA LÉA", salarie: "GARCIA Léa", du: dansNJours(-20), au: dansNJours(-13), motif: "Congés payés", justificatifUrl: "", statut: "Traitée", reference: "ABS-DEMO01" },
       ],
       visites: [
-        { cle: "FONTAINE HUGO", salarie: "FONTAINE Hugo", date: dansNJours(9), statut: "À planifier", reference: "VIS-DEMO02" },
-        { cle: "BERTRAND SOPHIE", salarie: "BERTRAND Sophie", date: dansNJours(-90), statut: "Réalisée", reference: "VIS-DEMO01" },
+        { cle: "FONTAINE HUGO", salarie: "FONTAINE Hugo", date: dansNJours(9), type: "Visite d'information et de prévention (embauche)", statut: "À planifier", reference: "VIS-DEMO02" },
+        { cle: "BERTRAND SOPHIE", salarie: "BERTRAND Sophie", date: dansNJours(-90), type: "Visite périodique", statut: "Réalisée", reference: "VIS-DEMO01" },
       ],
       mutuelles: [
         { cle: "BLANCHARD EMMA", salarie: "BLANCHARD Emma", mutuelle: "Harmonie Mutuelle", date: dansNJours(-28), statut: "Demande", reference: "MUT-DEMO02" },
         { cle: "ROUX THOMAS", salarie: "ROUX Thomas", mutuelle: "Harmonie Mutuelle", date: dansNJours(-135), statut: "Traitée", reference: "MUT-DEMO01" },
+      ],
+      habilitations: [
+        { cle: "ROUX THOMAS", salarie: "ROUX Thomas", type: "CACES R489 (chariots élévateurs)", numero: "489-2022-0871", organisme: "AFTRAL", obtention: dansNJours(-1750), expiration: dansNJours(75), alerte: "J-90 " + new Date().toISOString(), reference: "HAB-DEMO02" },
+        { cle: "GARCIA LÉA", salarie: "GARCIA Léa", type: "SST (sauveteur secouriste du travail)", numero: "", organisme: "Croix-Rouge", obtention: dansNJours(-740), expiration: dansNJours(-10), alerte: "EXPIRE " + new Date().toISOString(), reference: "HAB-DEMO01" },
+      ],
+      avenants: [
+        { cle: "NGUYEN LINH", salarie: "NGUYEN Linh", type: "Durée du travail", dateEffet: dansNJours(20), statut: "En cours", reference: "AVE-DEMO01" },
       ],
       fins: [
         { cle: "LEFEBVRE MARC", salarie: "LEFEBVRE MARC", type: "CDD", motif: "Fin de CDD (terme prévu)", date: dansNJours(-25), statut: "Traitée", reference: "FIN-DEMO01" },
@@ -126,6 +140,48 @@ function etatInitial() {
       ],
       recentes: [
         { salarie: "LEFEBVRE Marc", poste: "Vendeur", dateFin: dansNJours(-25), joursRestants: -25, alerte: dansNJours(-56) },
+      ],
+      titres: [
+        { salarie: "OKAFOR Chidi", type: "Carte de séjour pluriannuelle", numero: "9901234567", dateExpiration: dansNJours(48), finDroits: dansNJours(48), etat: "a-renouveler", joursRestants: 48, alerte: "J-90 " + new Date().toISOString() },
+      ],
+      essais: [
+        { salarie: "BLANCHARD Emma", poste: "Vendeuse (renfort été)", dateFin: dansNJours(9), joursRestants: 9, alerte: "J-15 " + new Date().toISOString() },
+      ],
+      visitesMedicales: [
+        { salarie: "ROUX Thomas", poste: "Vendeur", echeance: dansNJours(35), joursRestants: 35, alerte: null },
+        { salarie: "LEROY Anne", poste: "Chargée de com", echeance: dansNJours(-12), joursRestants: -12, alerte: "RETARD " + new Date().toISOString() },
+      ],
+      habilitations: [
+        { salarie: "ROUX Thomas", type: "CACES R489 (chariots élévateurs)", numero: "489-2022-0871", dateExpiration: dansNJours(75), joursRestants: 75, alerte: "J-90 " + new Date().toISOString() },
+        { salarie: "GARCIA Léa", type: "SST (sauveteur secouriste du travail)", numero: "", dateExpiration: dansNJours(-10), joursRestants: -10, alerte: "EXPIRE " + new Date().toISOString() },
+      ],
+      entretiens: [
+        { salarie: "BERTRAND Sophie", poste: "Responsable boutique", echeance: dansNJours(50), joursRestants: 50, alerte: null },
+        { salarie: "MOREAU Julien", poste: "Magasinier", echeance: dansNJours(-30), joursRestants: -30, alerte: "RETARD " + new Date().toISOString() },
+      ],
+      reprises: [
+        { salarie: "MOREAU Julien", motif: "Maladie (arrêt de travail)", dureeJours: 68, retourLe: dansNJours(1), echeance: dansNJours(9), joursRestants: 9, alerte: null },
+      ],
+    },
+
+    /* Brique « Salariés étrangers » : trois états pour la démonstration
+       (à renouveler, en renouvellement, valide). */
+    etrangers: {
+      seuil: 90,
+      titres: ["Carte de séjour pluriannuelle", "Carte de séjour temporaire", "Carte de résident", "VLS-TS (visa long séjour valant titre)", "Récépissé avec autorisation de travail", "Autorisation provisoire de séjour", "Carte de séjour citoyen UE/famille", "Autre"],
+      salaries: [
+        { id: "demo-etr-1", cle: "OKAFOR CHIDI", nom: "OKAFOR", prenom: "Chidi", poste: "Menuisier", nationalite: "Nigériane",
+          titre: { type: "Carte de séjour pluriannuelle", numero: "9901234567", expiration: dansNJours(48), pj: "" },
+          recepisse: { numero: "", fin: null, pj: "" }, droitTravail: "Plein", droitSuggere: false, autorisationTravail: "Non requise",
+          etat: "a-renouveler", joursRestants: 48, finDroits: dansNJours(48), alerte: "J-90 " + new Date().toISOString() },
+        { id: "demo-etr-2", cle: "PETROV IVAN", nom: "PETROV", prenom: "Ivan", poste: "Poseur", nationalite: "Serbe",
+          titre: { type: "Carte de séjour temporaire", numero: "8804522190", expiration: dansNJours(-5), pj: "" },
+          recepisse: { numero: "R-2026-1187", fin: dansNJours(80), pj: "" }, droitTravail: "Plein", droitSuggere: false, autorisationTravail: "Accordée",
+          etat: "en-renouvellement", joursRestants: 80, finDroits: dansNJours(80), alerte: null },
+        { id: "demo-etr-3", cle: "TANAKA YUKI", nom: "TANAKA", prenom: "Yuki", poste: "Assistante ADV", nationalite: "Japonaise",
+          titre: { type: "VLS-TS (visa long séjour valant titre)", numero: "7712093344", expiration: dansNJours(210), pj: "" },
+          recepisse: { numero: "", fin: null, pj: "" }, droitTravail: "", droitSuggere: true, autorisationTravail: "",
+          etat: "valide", joursRestants: 210, finDroits: dansNJours(210), alerte: null },
       ],
     },
 
@@ -186,6 +242,9 @@ export async function reponseDemo(chemin, options = {}) {
       if (url.searchParams.get("vue") === "messages") {
         return json(200, { fils: [...e.fils].sort((a, b) => String(b.derniereMaj).localeCompare(String(a.derniereMaj))) });
       }
+      if (url.searchParams.get("vue") === "etrangers") {
+        return json(200, e.etrangers);
+      }
       return json(200, {
         email: UTILISATEUR_DEMO.email,
         client: CODE_CLIENT_DEMO,
@@ -224,7 +283,21 @@ export async function reponseDemo(chemin, options = {}) {
         taille: options.body?.size || 24_576,
         modifie: new Date().toISOString(),
       });
-      return json(200, { ok: true, nom });
+      // Lecture automatique simulée : la démo montre le geste (champs
+      // proposés, corrigeables) sans appeler de service d'analyse.
+      const aAnalyser = url.searchParams.get("analyser");
+      const EXTRACTIONS_DEMO = {
+        arret: { dateDebut: dansNJours(-2), dateFin: dansNJours(12), motif: "Maladie (arrêt de travail)" },
+        rib: { iban: "FR7630006000011234567890189", bic: "AGRIFRPP" },
+        vitale: { numeroSS: "294051234567846" },
+        identite: { nomNaissance: "DUPONT", dateNaissance: "1994-05-12", sexe: "Féminin", communeNaissance: "Toulon" },
+      };
+      return json(200, {
+        ok: true, nom,
+        ...(aAnalyser ? { extraction: EXTRACTIONS_DEMO[aAnalyser]
+          ? { champs: EXTRACTIONS_DEMO[aAnalyser] }
+          : { champs: null, motif: "type de pièce inconnu" } } : {}),
+      });
     }
 
     case "/api/demande":
@@ -238,16 +311,128 @@ export async function reponseDemo(chemin, options = {}) {
 /* ── POST /api/demande : mêmes références que l'API réelle, et l'état
       local est muté pour que la démarche apparaisse aussitôt dans les
       vues (fiche salarié, échéances, tableau de bord) ─────────────────── */
+/* Le front désigne l'ancien salarié par son identifiant de fiche quand
+   il en a un, sinon par « Nom Prénom » — la clé démo, elle, est tout en
+   majuscules. On compare donc sans tenir compte de la casse. */
+const memeSalarie = (s, reprise) => {
+  const cible = String(reprise || "").trim().toUpperCase();
+  return String(s.id || "") === String(reprise) || String(s.cle || "").toUpperCase() === cible
+    || `${s.nom} ${s.prenom}`.toUpperCase() === cible;
+};
+
+/* Points de vigilance d'une réembauche — VERSION DÉMO. Le calcul qui
+   fait foi vit dans api/src/reembauche.js ; celui-ci n'en montre que le
+   résultat, comme le reste du mode démonstration. */
+function pointsReembaucheDemo(ancien, d) {
+  const points = [];
+  const jours = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
+  if (ancien.type === "CDD" && d.typeContrat === "CDD" && ancien.debut && ancien.fin) {
+    const duree = jours(ancien.debut, ancien.fin) + 1;
+    const delai = duree >= 14 ? Math.ceil(duree / 3) : Math.ceil(duree / 2);
+    const auPlusTot = new Date(Date.parse(ancien.fin) + (delai + 1) * 86400000).toISOString().slice(0, 10);
+    const fr = (x) => x.split("-").reverse().join("/");
+    const respecte = d.dateDebut ? d.dateDebut >= auPlusTot : null;
+    points.push({
+      cle: "carence", niveau: respecte === false ? "bloquant" : "info",
+      titre: respecte === false ? "Délai de carence non respecté" : "Délai de carence",
+      detail: `Le contrat précédent a duré ${duree} jours : le délai de carence est de ${delai} jours d'ouverture de l'entreprise (un tiers de la durée). Un nouveau CDD sur le même poste ne peut pas commencer avant le ${fr(auPlusTot)} — et plus tard encore si l'entreprise n'ouvre pas tous les jours. Une exception légale peut s'appliquer.`,
+    });
+  }
+  if (ancien.type === "CDD" && d.typeContrat === "CDI") {
+    points.push({ cle: "essai", niveau: "attention", titre: "Période d'essai à réduire",
+      detail: "Le salarié a déjà occupé un poste dans l'entreprise : selon les fonctions, la durée du contrat précédent peut devoir être déduite de la période d'essai." });
+  }
+  points.push({ cle: "visite", niveau: "info", titre: "Visite médicale peut-être non nécessaire",
+    detail: "Si le salarié reprend un emploi identique aux mêmes risques et qu'aucun avis d'inaptitude n'est intervenu, une nouvelle visite peut ne pas être requise. À confirmer avec le service de santé au travail." });
+  points.push({ cle: "dpae", niveau: "info", titre: "Déclaration préalable à l'embauche",
+    detail: "Une nouvelle DPAE est obligatoire, au plus tôt huit jours avant la prise de poste." });
+  return points;
+}
+
+const EXCEPTIONS_CARENCE_DEMO = [
+  "Nouvelle absence du salarié remplacé", "Travaux urgents de sécurité", "Emploi saisonnier",
+  "CDD d'usage (secteur le permettant)", "Remplacement d'un chef d'entreprise ou d'exploitation",
+  "Rupture anticipée à l'initiative du salarié", "Refus du salarié de renouveler son contrat",
+  "Accord de branche prévoyant d'autres modalités",
+];
+
 function traiterDemande(e, options) {
   let d;
   try { d = JSON.parse(options.body); } catch { return json(400, { erreur: "JSON attendu" }); }
   const p = e.personnel;
+
+  // Réembauche, écran de contrôle : dossier repris + points de vigilance.
+  if (d.action === "reembaucheControles") {
+    const a = (p.salaries || []).find((s) => memeSalarie(s, d.reprise));
+    if (!a) return json(404, { erreur: "Salarié introuvable dans votre effectif." });
+    if (a.statut !== "Sorti") return json(409, { erreur: `${a.prenom} ${a.nom} fait toujours partie de l'effectif — un avenant convient mieux qu'une réembauche.` });
+    return json(200, {
+      ancien: { nom: a.nom, prenom: a.prenom, matricule: a.matricule, poste: a.poste, typeContrat: a.type, dateEntree: a.debut, dateSortie: a.fin },
+      repris: {
+        nom: a.nom, prenom: a.prenom, numeroSS: "2 94 05 12 345 678 46",
+        dateNaissance: "1994-05-12", adressePostale: "12 rue des Lices, 83000 Toulon",
+        iban: "FR76 3000 6000 0112 3456 7890 189", bic: "AGRIFRPP",
+      },
+      points: pointsReembaucheDemo(a, d),
+      bloquants: pointsReembaucheDemo(a, d).filter((x) => x.niveau === "bloquant").map((x) => x.cle),
+      exceptionsCarence: EXCEPTIONS_CARENCE_DEMO,
+    });
+  }
 
   // Mise à jour du dossier salarié (onglet Dossier) — mutée en mémoire
   // pour que la fiche reflète aussitôt la saisie, comme en réel.
   if (d.action === "majSalarie") {
     const s = (p.salaries || []).find((x) => x.cle === d.cle);
     if (s) s.fiche = { ...(s.fiche || {}), ...(d.fiche || {}) };
+    return json(200, { ok: true });
+  }
+
+  // Pré-embauche par invitation : fiche minimale créée + lien factice —
+  // en réel, le contrat part automatiquement à la soumission du salarié.
+  if (d.action === "onboardingEmbauche") {
+    p.salaries.push({
+      cle: cleNomPrenom(d.nom, d.prenom),
+      nom: String(d.nom || "").toUpperCase(), prenom: d.prenom || "",
+      matricule: "", type: d.typeContrat, poste: d.poste || "",
+      debut: d.dateDebut, fin: d.dateFin || null, statut: "Actif",
+    });
+    p.salaries.sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
+    return json(201, {
+      lien: `${window.location.origin}/?onboarding=demo000000000000000000000000000000000000000000000`,
+      expireLe: new Date(Date.now() + 14 * 86400000).toISOString(),
+      reference: referenceDemo("INV"), deja: false,
+    });
+  }
+
+  // Onboarding : lien d'invitation factice (le formulaire public n'est
+  // pas simulé — la démo montre le geste côté employeur).
+  if (d.action === "onboardingInviter") {
+    return json(201, {
+      lien: `${window.location.origin}/?onboarding=demo000000000000000000000000000000000000000000000`,
+      expireLe: new Date(Date.now() + 14 * 86400000).toISOString(),
+      reference: referenceDemo("INV"), deja: false,
+    });
+  }
+
+  // Brique « Salariés étrangers » : récépissé ou nouveau titre — l'état
+  // est recalculé comme côté serveur (le récépissé prolonge les droits).
+  if (d.action === "titreRenouvellement") {
+    const s = (e.etrangers.salaries || []).find((x) => String(x.id) === String(d.id));
+    if (!s) return json(404, { erreur: "Fiche salarié introuvable." });
+    if (d.mode === "recepisse") {
+      s.recepisse = { numero: d.recepisseNumero || "", fin: d.recepisseFin, pj: d.pj || "" };
+      s.etat = "en-renouvellement";
+      s.finDroits = d.recepisseFin;
+      s.alerte = null;
+    } else {
+      s.titre = { type: d.titreType, numero: d.titreNumero || "", expiration: d.titreExpiration, pj: d.pj || "" };
+      s.recepisse = { numero: "", fin: null, pj: "" };
+      const jours = Math.round((new Date(d.titreExpiration) - Date.now()) / 86400000);
+      s.etat = jours <= 90 ? "a-renouveler" : "valide";
+      s.joursRestants = jours;
+      s.finDroits = d.titreExpiration;
+      s.alerte = null;
+    }
     return json(200, { ok: true });
   }
 
@@ -291,8 +476,12 @@ function traiterDemande(e, options) {
       const reference = referenceDemo("VIS");
       p.visites.unshift({
         cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
-        date: d.dateVisite, statut: "À planifier", reference,
+        date: d.dateVisite, type: d.typeVisite || "Visite périodique", statut: "À planifier", reference,
       });
+      // Comme en réel : une visite demandée depuis le retour éteint
+      // l'obligation de reprise du salarié concerné.
+      const cible = String(d.salarie || "").trim().toUpperCase();
+      e.echeances.reprises = (e.echeances.reprises || []).filter((r) => r.salarie.toUpperCase() !== cible);
       return json(202, { reference });
     }
 
@@ -302,6 +491,36 @@ function traiterDemande(e, options) {
         cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
         mutuelle: d.mutuelle, date: d.dateAdhesion || dansNJours(0),
         statut: "Demande", reference,
+      });
+      return json(202, { reference });
+    }
+
+    case "habilitation": {
+      const reference = referenceDemo("HAB");
+      const expiration = d.dateExpiration;
+      p.habilitations.unshift({
+        cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
+        type: d.typeHabilitation || "", numero: d.numero || "", organisme: d.organisme || "",
+        obtention: d.dateObtention || null, expiration, alerte: null, reference,
+      });
+      // La plus récente par salarié + type pilote l'échéance : on remplace
+      // l'éventuelle ligne du même couple dans la page Échéances.
+      const salarie = String(d.salarie || "").trim();
+      e.echeances.habilitations = [
+        ...e.echeances.habilitations.filter((h) => !(h.salarie.toUpperCase() === salarie.toUpperCase() && h.type === d.typeHabilitation)),
+        ...(expiration ? [{ salarie, type: d.typeHabilitation || "", numero: d.numero || "",
+          dateExpiration: expiration,
+          joursRestants: Math.round((new Date(expiration) - new Date(dansNJours(0))) / 86400000),
+          alerte: null }] : []),
+      ].filter((h) => h.joursRestants <= 120).sort((a, b) => a.dateExpiration.localeCompare(b.dateExpiration));
+      return json(202, { reference });
+    }
+
+    case "avenant": {
+      const reference = referenceDemo("AVE");
+      p.avenants.unshift({
+        cle: cleSalarie(d.salarie), salarie: String(d.salarie || "").trim(),
+        type: d.typeAvenant || "", dateEffet: d.dateEffet, statut: "Nouvelle", reference,
       });
       return json(202, { reference });
     }
@@ -317,6 +536,18 @@ function traiterDemande(e, options) {
 
     case "embauche": {
       const reference = referenceDemo("EMB");
+      // Réembauche : le nom vient du dossier repris, pas du formulaire.
+      if (d.reprise) {
+        const a = (p.salaries || []).find((s) => memeSalarie(s, d.reprise));
+        if (!a) return json(404, { erreur: "Salarié introuvable dans votre effectif." });
+        const bloquant = pointsReembaucheDemo(a, d).some((x) => x.niveau === "bloquant");
+        if (bloquant && !d.motifDerogation)
+          return json(409, { erreur: "Cette réembauche se heurte au délai de carence — indiquez le motif qui permet de passer outre." });
+        a.statut = "Actif"; a.type = d.typeContrat; a.poste = d.poste || a.poste;
+        a.debut = d.dateDebut; a.fin = d.dateFin || null;
+        e.dashboard.aTraiter.unshift({ t: `Réembauche ${d.typeContrat} ${a.nom} ${a.prenom} — en attente d'approbation`, s: "À traiter" });
+        return json(202, { reference, reprise: true });
+      }
       p.salaries.push({
         cle: cleNomPrenom(d.nom, d.prenom),
         nom: String(d.nom || "").toUpperCase(), prenom: d.prenom || "",
