@@ -56,15 +56,42 @@ export default function OnboardingSalarie({ jeton }) {
       .catch(() => setEtat({ erreur: "Connexion impossible — vérifiez votre réseau et rechargez la page." }));
   }, [jeton]);
 
+  // Lecture automatique : la pièce déposée pré-remplit les champs encore
+  // vides (jamais ceux déjà saisis — le salarié reste maître de sa
+  // saisie). Sans OCR configuré côté serveur, le dépôt fonctionne à
+  // l'identique, sans pré-remplissage.
+  const [lus, setLus] = useState([]);
+  const LIBELLES_LUS = {
+    iban: "IBAN", bic: "BIC", numeroSS: "n° de sécurité sociale",
+    nomNaissance: "nom de naissance", dateNaissance: "date de naissance",
+    sexe: "sexe", communeNaissance: "commune de naissance",
+  };
+
   const deposer = async (cle, fichier) => {
     if (!fichier) return;
     setEnvoiPj(cle);
     try {
-      const r = await fetch(`/api/depot?invitation=${encodeURIComponent(jeton)}&nom=${encodeURIComponent(fichier.name)}`,
+      const r = await fetch(`/api/depot?invitation=${encodeURIComponent(jeton)}&analyser=${cle}&nom=${encodeURIComponent(fichier.name)}`,
         { method: "POST", headers: { "Content-Type": fichier.type || "application/octet-stream" }, body: fichier });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) setPj((p) => ({ ...p, [cle]: j.nom }));
-      else setMsg({ erreur: j.erreur || "Dépôt du fichier refusé." });
+      if (r.ok) {
+        setPj((p) => ({ ...p, [cle]: j.nom }));
+        const c = j.extraction?.champs || null;
+        if (c) {
+          const ajoutes = [];
+          setF((p) => {
+            const n = { ...p };
+            for (const [champ, valeur] of Object.entries(c)) {
+              if (!(champ in VIDE) || !valeur) continue;
+              if (String(p[champ] || "").trim()) continue; // ne jamais écraser
+              n[champ] = valeur;
+              ajoutes.push(LIBELLES_LUS[champ] || champ);
+            }
+            return n;
+          });
+          if (ajoutes.length) setLus((l) => [...new Set([...l, ...ajoutes])]);
+        }
+      } else setMsg({ erreur: j.erreur || "Dépôt du fichier refusé." });
     } catch { setMsg({ erreur: "Dépôt impossible — vérifiez votre connexion." }); }
     setEnvoiPj(null);
   };
@@ -208,6 +235,12 @@ export default function OnboardingSalarie({ jeton }) {
             ? "Photos ou PDF acceptés (10 Mo max par fichier) — les trois pièces sont nécessaires à la préparation de votre contrat."
             : "Photos ou PDF acceptés (10 Mo max par fichier) — facultatif si vous les avez déjà remises à votre employeur."}
         </p>
+        {lus.length > 0 && (
+          <div style={{ background: "#E1F5EE", border: "1px solid #B7E4D4", borderRadius: 8, padding: "9px 12px", fontSize: 12, color: "#085041", marginBottom: 10 }}>
+            Rempli automatiquement depuis vos documents : {lus.join(", ")}. Vérifiez ces informations
+            et corrigez-les si besoin — rien n'est transmis avant votre validation.
+          </div>
+        )}
         <div style={{ display: "grid", gap: 10, marginBottom: 22 }}>
           {PIECES.map(([cle, label]) => (
             <div key={cle} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", border: `1px dashed ${T.border}`, borderRadius: 8, padding: "10px 12px" }}>

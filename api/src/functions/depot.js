@@ -36,7 +36,19 @@ app.http("depot", {
         contenu
       );
       context.log(`Dépôt ${codeClient} : ${nomFinal} (${contenu.byteLength} octets) par ${auteur}`);
-      return { status: 201, jsonBody: { nom: nomFinal } };
+
+      // Lecture automatique (facultative) : ?analyser=arret|rib|vitale|
+      // identite → champs proposés au formulaire, JAMAIS écrits d'office.
+      // Le dépôt a déjà réussi : une extraction en échec ne dégrade pas
+      // la réponse, elle ajoute seulement un motif consultable.
+      const aAnalyser = request.query.get("analyser");
+      let extraction;
+      if (aAnalyser) {
+        const ocr = require("../ocr");
+        const r = await ocr.analyser(aAnalyser, contenu, request.headers.get("content-type"), context);
+        extraction = r.champs ? { champs: r.champs } : { champs: null, motif: r.erreur };
+      }
+      return { status: 201, jsonBody: { nom: nomFinal, ...(extraction ? { extraction } : {}) } };
     } catch (e) {
       if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
       context.error("depot :", e);

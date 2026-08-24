@@ -14,6 +14,19 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Lecture automatique des pièces (OCR)** (24/08, voir
+  docs/OCR-lecture-pieces.md) : la photo d'un document pré-remplit le
+  formulaire — arrêt de travail (dates + motif) dans la déclaration
+  d'absence, RIB (IBAN/BIC), carte Vitale (NIR) et pièce d'identité
+  (nom de naissance, naissance, sexe, commune) dans l'onboarding.
+  Bouton « 📷 Photographier ou joindre » qui ouvre l'appareil photo sur
+  mobile. Un champ déjà saisi n'est jamais écrasé ; une bannière annonce
+  ce qui a été lu et invite à vérifier. Le dépôt prime sur l'analyse :
+  échec d'analyse = dépôt réussi quand même.
+  **Mise en service (facultative)** : ressource Azure AI Document
+  Intelligence + variables `OCR_ENDPOINT` et `OCR_CLE` dans la SWA.
+  Sans elles, la fonctionnalité est absente, pas en panne — aucun appel,
+  aucun coût.
 - **Suivi commercial des options + correction d'un bug de cache**
   (24/08) : onglet gestionnaire « Abonnements » — qui a souscrit quoi,
   depuis quand, pour quel effectif suivi, quel forfait mensuel ; totaux

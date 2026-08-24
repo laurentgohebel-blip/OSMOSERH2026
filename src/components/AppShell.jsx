@@ -3028,6 +3028,34 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   const [envoi, setEnvoi] = useState(false);
 
   const justifRequis = MOTIFS_ABSENCE.find((x) => x.m === f.motif)?.justif === true;
+  // Photo de l'arrêt : dépôt direct + lecture automatique. Les champs
+  // reconnus sont PROPOSÉS (jamais imposés) — le client corrige ce qu'il
+  // veut avant d'envoyer. Sans OCR configuré, le dépôt marche quand même
+  // et remplit simplement le justificatif.
+  const [depot, setDepot] = useState(null); // null | {envoi} | {nom, lus[]} | {erreur}
+
+  const deposerJustificatif = async (fichier) => {
+    if (!fichier) return;
+    setDepot({ envoi: true });
+    try {
+      const r = await apiFetch(`/api/depot?analyser=arret&nom=${encodeURIComponent(fichier.name)}`, {
+        method: "POST", headers: { "Content-Type": fichier.type || "application/octet-stream" }, body: fichier,
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return setDepot({ erreur: j.erreur || `Dépôt refusé (HTTP ${r.status}).` });
+      const c = j.extraction?.champs || null;
+      const lus = [];
+      setF((p) => {
+        const n = { ...p, justificatifUrl: j.nom };
+        if (c?.dateDebut && !p.dateDebut) { n.dateDebut = c.dateDebut; lus.push("date de début"); }
+        if (c?.dateFin && !p.dateFin) { n.dateFin = c.dateFin; lus.push("date de fin"); }
+        if (c?.motif && !p.motif && MOTIFS_ABSENCE.some((x) => x.m === c.motif)) { n.motif = c.motif; lus.push("motif"); }
+        return n;
+      });
+      setErr(false);
+      setDepot({ nom: j.nom, lus });
+    } catch { setDepot({ erreur: "Dépôt impossible — vérifiez votre connexion." }); }
+  };
 
   const envoyer = async () => {
     if (!f.salarie.trim() || !f.dateDebut || !f.motif || (justifRequis && !f.justificatifUrl.trim())) { setErr(true); return; }
@@ -3076,8 +3104,29 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
             Justificatif {justifRequis ? <span style={{ color: T.err }}>*</span> : <span style={{ fontWeight: 400 }}>(lien optionnel)</span>}
           </label>
+          <div style={{ border: `1px dashed ${err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <label style={{ fontSize: 12.5, color: T.accent, cursor: depot?.envoi ? "default" : "pointer", fontWeight: 600 }}>
+              {depot?.envoi ? "Lecture en cours…" : "📷 Photographier ou joindre l'arrêt"}
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png" capture="environment" style={{ display: "none" }}
+                disabled={depot?.envoi} onChange={(e) => deposerJustificatif(e.target.files?.[0])} />
+            </label>
+            <span style={{ fontSize: 11.5, color: T.mut, flex: 1, minWidth: 140 }}>
+              {depot?.nom ? `✓ ${depot.nom}` : "Le document est déposé et les dates lues automatiquement."}
+            </span>
+          </div>
+          {depot?.lus?.length > 0 && (
+            <p style={{ margin: "0 0 8px", fontSize: 11.5, background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "7px 10px" }}>
+              Lu sur le document : {depot.lus.join(", ")} — vérifiez et corrigez si besoin avant d'envoyer.
+            </p>
+          )}
+          {depot?.nom && depot.lus.length === 0 && (
+            <p style={{ margin: "0 0 8px", fontSize: 11.5, color: T.mut }}>
+              Document joint. Les dates n'ont pas pu être lues automatiquement : saisissez-les ci-dessus.
+            </p>
+          )}
+          {depot?.erreur && <p style={{ margin: "0 0 8px", fontSize: 11.5, color: T.err }}>✗ {depot.erreur}</p>}
           <input type="text" style={{ ...inputStyle, borderColor: err && justifRequis && !f.justificatifUrl.trim() ? T.err : T.border }}
-            placeholder="Lien vers le document déposé dans l'onglet Documents" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
+            placeholder="…ou collez le lien d'un document déjà déposé" value={f.justificatifUrl} onChange={(e) => setF({ ...f, justificatifUrl: e.target.value })} />
           {justifRequis && (
             <p style={{ margin: "5px 0 0", fontSize: 11.5, color: err && !f.justificatifUrl.trim() ? T.err : T.mut }}>
               Ce motif exige un justificatif (arrêt de travail, certificat…) : déposez-le dans l'onglet <strong>Documents</strong> puis collez son lien ici.
