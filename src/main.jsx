@@ -47,6 +47,22 @@ function FatalError({ error }) {
     return;
   }
 
+  // Pointage : lien public ?pointage=<jeton> ouvert par le QR code
+  // affiché près de la porte. Même principe que l'onboarding — le
+  // salarié n'a pas de compte, donc rien de MSAL ne doit démarrer.
+  const jetonPointage = new URLSearchParams(window.location.search).get("pointage");
+  if (jetonPointage) {
+    const { default: PointageSalarie } = await import("./components/PointageSalarie.jsx");
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <PointageSalarie jeton={jetonPointage} />
+        </ErrorBoundary>
+      </React.StrictMode>
+    );
+    return;
+  }
+
   root.render(<Splash />);
 
   try {

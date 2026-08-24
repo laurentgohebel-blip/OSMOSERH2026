@@ -117,6 +117,31 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("planning d'équipe : poser un créneau et voir les heures du mois", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Planning d'équipe").first().click();
+    await expect(page.getByRole("heading", { name: "Planning d'équipe" })).toBeVisible();
+
+    // Le lien de pointage s'affiche : c'est ce que le client colle près de la porte.
+    await expect(page.getByText(/Pointage sans matériel/)).toBeVisible();
+    await expect(page.getByText(/\?pointage=/)).toBeVisible();
+
+    // Poser un créneau sur le premier salarié, premier jour de la semaine.
+    await page.locator("button:visible", { hasText: "+ ajouter" }).first().click();
+    const valider = page.locator("button", { hasText: /^Ajouter$/ });
+    await expect(valider).toBeVisible();
+    await valider.click();
+    await expect(page.getByText("09:00–17:00").first()).toBeVisible();
+
+    // Les heures du mois se calculent depuis le planning.
+    await page.getByRole("button", { name: /Voir les heures du mois/ }).click();
+    await expect(page.getByText(/Heures calculées pour/)).toBeVisible();
+    await page.getByRole("button", { name: /Transmettre ces heures/ }).click();
+    await expect(page.getByText(/ligne.*transmise/)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("les documents fictifs sont listés", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Documents" }).click();

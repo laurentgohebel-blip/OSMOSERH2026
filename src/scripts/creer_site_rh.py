@@ -112,6 +112,11 @@ LISTES = [
         # Entretiens professionnels (23/08) : tous les 2 ans (L.6315-1),
         # échéance = dernier entretien + 24 mois, sinon entrée + 24 mois.
         col("DernierEntretienPro", D()), col("AlerteEntretienPro", T()),
+        # Durée mensuelle du travail (24/08) : 151,67 h = temps plein.
+        # C'est ELLE qui décide si une heure au-delà est complémentaire
+        # (temps partiel) ou supplémentaire (temps plein) — deux régimes
+        # qui n'ont ni la même majoration ni les mêmes limites.
+        col("DureeMensuelle", N()),
     ]),
     ("Absences", SOCLE_PERSONNEL + [
         col("DateDebut", D()), col("DateFin", D()), col("Motif", T()),
@@ -207,6 +212,18 @@ LISTES = [
             ["En attente variables", "Variables reçues", "Saisie Cegid", "Contrôlée", "Bulletins déposés"],
             "En attente variables")),
         col("VariablesRecuesLe", DH()),
+    ]),
+    # Temps de travail (24/08) : une ligne = UN CRÉNEAU. Deux créneaux le
+    # même jour pour un service coupé, une fin antérieure au début quand
+    # le service passe minuit. Source distingue le planning prévu du
+    # temps réellement pointé — les deux coexistent, le pointage ne
+    # remplace pas le planning, il le confronte.
+    ("Temps de travail", [
+        col("CodeClient", T()), col("SalarieNom", T()), col("SalariePrenom", T()),
+        col("Jour", D()), col("Debut", T()), col("Fin", T()), col("PauseMinutes", N()),
+        col("Source", CH(["Planning", "Pointage"], "Planning")),
+        col("Statut", CH(["Prévu", "Réalisé", "Validé"], "Prévu")),
+        col("Commentaire", TL()), col("Reference", T()),
     ]),
 ]
 

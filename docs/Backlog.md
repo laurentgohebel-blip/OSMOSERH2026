@@ -6,6 +6,22 @@ Laurent). Une idée dictée = une ligne ici ; développée = déplacée dans
 synthèse de session et les docs dédiées.
 
 ## En ligne récemment (rien à faire)
+- **Planning d'équipe + pointage sans matériel** (24/08, voir
+  docs/Planning-et-pointage.md) : le planning que le client fait déjà
+  devient la source des heures de paie. Grille salariés × jours,
+  totaux hebdomadaires décomposés (normales, +25 %, +50 %,
+  complémentaires, nuit, dimanche/fériés), bouton « Transmettre ces
+  heures à mon gestionnaire » qui écrit dans les variables. Décompte
+  **hebdomadaire** (l'erreur classique du calcul à la main).
+  Contrôles à la saisie : 10 h/jour, 48 h et 44 h/semaine, temps
+  partiel porté à 35 h (requalification), repos quotidien de 11 h, six
+  jours consécutifs, 1er mai. On informe, on ne bloque pas.
+  **Pointage** : QR code près de la porte, aucun compte, heure du
+  serveur ; jeton dérivé du code client par HMAC, donc aucune colonne
+  et révocation globale en changeant le secret.
+  **Gestes** : relancer creer_site_rh.py (liste « Temps de travail » +
+  colonne `DureeMensuelle` sur Salariés, à renseigner pour les temps
+  partiels), et poser `POINTAGE_SECRET` dans la SWA pour le pointage.
 - **Réembauche d'un ancien salarié** (24/08, voir docs/Reembauche.md) :
   troisième parcours de la brique Embauche — « Il a déjà travaillé chez
   nous ». Le dossier est repris (identité, NIR, adresse, banque, titre
