@@ -276,7 +276,21 @@ export async function reponseDemo(chemin, options = {}) {
         taille: options.body?.size || 24_576,
         modifie: new Date().toISOString(),
       });
-      return json(200, { ok: true, nom });
+      // Lecture automatique simulée : la démo montre le geste (champs
+      // proposés, corrigeables) sans appeler de service d'analyse.
+      const aAnalyser = url.searchParams.get("analyser");
+      const EXTRACTIONS_DEMO = {
+        arret: { dateDebut: dansNJours(-2), dateFin: dansNJours(12), motif: "Maladie (arrêt de travail)" },
+        rib: { iban: "FR7630006000011234567890189", bic: "AGRIFRPP" },
+        vitale: { numeroSS: "294051234567846" },
+        identite: { nomNaissance: "DUPONT", dateNaissance: "1994-05-12", sexe: "Féminin", communeNaissance: "Toulon" },
+      };
+      return json(200, {
+        ok: true, nom,
+        ...(aAnalyser ? { extraction: EXTRACTIONS_DEMO[aAnalyser]
+          ? { champs: EXTRACTIONS_DEMO[aAnalyser] }
+          : { champs: null, motif: "type de pièce inconnu" } } : {}),
+      });
     }
 
     case "/api/demande":
