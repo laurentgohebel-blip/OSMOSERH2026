@@ -6,6 +6,17 @@ Laurent). Une idée dictée = une ligne ici ; développée = déplacée dans
 synthèse de session et les docs dédiées.
 
 ## En ligne récemment (rien à faire)
+- **Réembauche d'un ancien salarié** (24/08, voir docs/Reembauche.md) :
+  troisième parcours de la brique Embauche — « Il a déjà travaillé chez
+  nous ». Le dossier est repris (identité, NIR, adresse, banque, titre
+  de séjour, pièces justificatives) ; le client ne saisit que le
+  nouveau contrat. Le portail énonce ce que la réembauche impose :
+  délai de carence entre deux CDD (chiffré et daté, L.1244-3-1), titre
+  de séjour revérifié à la date d'embauche, période d'essai à réduire,
+  visite médicale peut-être non nécessaire, ancienneté reprise, DPAE
+  toujours due. Un point bloquant n'interdit pas : il exige un motif
+  d'exception, tracé auprès du gestionnaire. Aucune colonne
+  SharePoint, aucune variable, rien à faire pour l'activer.
 - **La boîte mail comme point d'entrée** (24/08, voir
   docs/Courriel-boite-de-depot.md) : le client transfère l'arrêt à
   l'adresse de dépôt du cabinet, le portail reconnaît l'expéditeur,

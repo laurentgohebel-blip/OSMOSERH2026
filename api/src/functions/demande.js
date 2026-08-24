@@ -133,6 +133,22 @@ app.http("demande", {
       // action cliente sur la route historique (doctrine du 21/08).
       // Verrous : jeton + client résolus ci-dessus, option embauche,
       // et propriété de l'élément vérifiée AVANT toute écriture.
+      // Réembauche, écran de contrôle : le client choisit un ancien
+      // salarié et un projet de contrat, et voit AVANT de valider ce que
+      // le dossier reprend et ce que la loi impose (carence, titre,
+      // essai, visite). Lecture seule — rien n'est écrit ici.
+      if (d.action === "reembaucheControles") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          return await require("../reembauche").controles(clientInfo, d);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/reembaucheControles :", e);
+          return { status: 502, jsonBody: { erreur: "Lecture du dossier impossible — réessayez." } };
+        }
+      }
+
       if (d.action === "majSalarie") {
         if (!clientInfo.options.includes("embauche"))
           return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
@@ -205,13 +221,31 @@ app.http("demande", {
         // (onglet Dossier, bandeau « Dossier incomplet »). Le volet
         // administratif reste accepté mais FACULTATIF : chaque champ
         // transmis est contrôlé, aucun n'est exigé.
+        // Réembauche (24/08) : le salarié a déjà travaillé ici, son
+        // dossier est au référentiel. On le REPREND — identité, NIR,
+        // adresse, banque — et on ne redemande que ce qui appartient au
+        // nouveau contrat. Les trois pièces ne sont pas réclamées : elles
+        // sont déjà dans la GED du client depuis la première embauche.
+        // `preparer` revérifie les points bloquants côté serveur ; le
+        // contrôle d'affichage ne prouve rien.
+        let reembauche = null;
+        if (d.reprise) {
+          try {
+            reembauche = await require("../reembauche").preparer(clientInfo, d);
+            d = { ...d, ...reembauche.demande };
+          } catch (e) {
+            if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur, ...(e.points ? { points: e.points } : {}) } };
+            context.error("demande/reembauche :", e);
+            return { status: 502, jsonBody: { erreur: "Reprise du dossier impossible — réessayez." } };
+          }
+        }
         const requis = ["typeContrat", "nom", "prenom", "dateNaissance", "lieuNaissance", "nationalite", "numeroSS", "adressePostale", "dateDebut", "poste", "dureeMensuelle",
-          "pjIdentite", "pjVitale", "pjRib"];
+          ...(reembauche ? [] : ["pjIdentite", "pjVitale", "pjRib"])];
         for (const c of requis)
           if (!d[c] || !String(d[c]).trim())
             return { status: 400, jsonBody: { erreur: `Champ manquant : ${c}` } };
         for (const c of ["pjIdentite", "pjVitale", "pjRib"])
-          if (!/\.(pdf|jpe?g|png)$/i.test(String(d[c]).trim()) || String(d[c]).length > 255)
+          if (d[c] && (!/\.(pdf|jpe?g|png)$/i.test(String(d[c]).trim()) || String(d[c]).length > 255))
             return { status: 400, jsonBody: { erreur: "Pièce jointe invalide — reprenez le dépôt des trois documents." } };
         if (!/^[12]\d{12}(\d{2})?$/.test(String(d.numeroSS).replace(/\s/g, "")))
           return { status: 400, jsonBody: { erreur: "Numéro de sécurité sociale invalide (13 ou 15 chiffres)." } };
@@ -255,7 +289,29 @@ app.http("demande", {
         const idFiche = await creerFicheSalarie(clientInfo, d);
         const reference = `EMB-${Date.now().toString(36).toUpperCase()}`;
         await creerEmbauche(email, clientInfo, d, reference);
-        return { status: 202, jsonBody: { reference, ...(idFiche ? { idFiche: String(idFiche) } : {}) } };
+        // Une réembauche décidée malgré un point bloquant doit se VOIR :
+        // le gestionnaire reçoit le motif invoqué et les points passés
+        // outre. C'est ce qui distingue une dérogation assumée d'un
+        // oubli — et ce qu'on veut retrouver en cas de contrôle.
+        if (reembauche?.derogation) {
+          try {
+            await creerMessageGestionnaire(email, clientInfo, {
+              objet: `Réembauche en dérogation — ${d.nom} ${d.prenom} (${reference})`,
+              message: [
+                `Réembauche de ${d.nom} ${d.prenom}, contrat ${d.typeContrat} au ${d.dateDebut}.`,
+                `Motif invoqué : ${reembauche.derogation}`,
+                "",
+                "Points signalés et passés outre :",
+                ...reembauche.points.filter((p) => p.niveau === "bloquant").map((p) => `— ${p.titre} : ${p.detail}`),
+              ].join("\n"),
+            }, reference);
+          } catch (e) {
+            // La dérogation est tracée pour le gestionnaire, pas pour le
+            // client : son échec ne doit pas annuler une embauche valide.
+            context.error("demande/reembauche-derogation :", e);
+          }
+        }
+        return { status: 202, jsonBody: { reference, ...(idFiche ? { idFiche: String(idFiche) } : {}), ...(reembauche ? { reprise: true } : {}) } };
       }
 
       // Bascule « connecteurs standard » (chantier fin du Premium,

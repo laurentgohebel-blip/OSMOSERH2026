@@ -86,6 +86,37 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("réembaucher un ancien salarié : dossier repris et carence signalée", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Embauche", { exact: true }).first().click();
+    await page.getByText("Il a déjà travaillé chez nous").click();
+
+    // PEREZ sort d'un CDD récent : un nouveau CDD se heurte à la carence.
+    await page.locator("select").first().selectOption("PEREZ Manon");
+    await page.locator("select").nth(1).selectOption("CDD");
+    await page.locator('input[type="date"]').first().fill(dansNJours(2));
+    await page.locator('input[type="date"]').nth(1).fill(dansNJours(60));
+    await page.getByPlaceholder("151,67").fill("151,67");
+
+    // Ce que le client n'a PAS à ressaisir doit être dit explicitement.
+    await expect(page.getByText(/Repris du dossier, rien à ressaisir/)).toBeVisible();
+    await expect(page.getByText(/num[ée]ro de s[ée]curit[ée] sociale/)).toBeVisible();
+
+    // Et ce que la loi impose doit être énoncé, chiffré.
+    await expect(page.getByText("Délai de carence non respecté")).toBeVisible();
+    await expect(page.getByText(/jours d'ouverture de l'entreprise/)).toBeVisible();
+
+    // Un point bloquant n'interdit pas : il exige un motif.
+    await page.getByRole("button", { name: /Demander le contrat/ }).click();
+    await expect(page.getByText(/indiquez le motif/i)).toBeVisible();
+    await page.locator("select").last().selectOption({ label: "Emploi saisonnier" });
+    await page.getByRole("button", { name: /Demander le contrat/ }).click();
+    await expect(page.getByText("Réembauche déclarée")).toBeVisible();
+    await expect(page.getByText(/aucune pi[èe]ce [àa] red[ée]poser/i)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("les documents fictifs sont listés", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Documents" }).click();
