@@ -9,7 +9,7 @@
 //    la consultation ne consomme pas l'alerte e-mail.
 
 const { app } = require("@azure/functions");
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, SELECT_SALARIES } = require("../annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, SELECT_SALARIES, SELECT_CLIENTS } = require("../annuaire");
 
 const FENETRE_JOURS = 30;   // fenêtre d'alerte e-mail
 const RECENT_JOURS = 60;    // fins passées encore affichées sur le portail
@@ -466,7 +466,7 @@ async function modeAlertes(context) {
   if (aAlerter.length === 0 && titresAAlerter.length === 0 && essaisAAlerter.length === 0 && visitesAAlerter.length === 0 && habilitationsAAlerter.length === 0 && entretiensAAlerter.length === 0 && invitationsAAlerter.length === 0 && reprisesAAlerter.length === 0)
     return { status: 200, jsonBody: { alertes: [], notifications: [] } };
 
-  const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,EmailGestionnaire,Actif");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const utilisateurs = await items(tok, ids["Utilisateurs portail"], "Email,CodeClient,Actif");
 
   // Destinataires d'un client : ses contacts portail + le gestionnaire ;

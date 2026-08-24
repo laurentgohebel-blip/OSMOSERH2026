@@ -6,7 +6,7 @@
 // Fenêtre : échéances à 120 jours + retards récents (60 j). Les règles
 // de calcul sont IMPORTÉES d'echeances.js (source unique).
 
-const { tokenGraph, idsListes, items, dateParis, SELECT_SALARIES } = require("./annuaire");
+const { tokenGraph, idsListes, items, dateParis, SELECT_SALARIES, SELECT_CLIENTS } = require("./annuaire");
 const { echeanceVisite, echeanceEntretien, dernieresHabilitations, reprisesRequises } = require("./functions/echeances");
 const { etatTitre } = require("./etrangers");
 
@@ -20,7 +20,7 @@ async function donneesAdmin(request, context) {
   const jusqua = (date) => Math.round((new Date(date) - new Date(aujourdhui)) / 86400000);
   const dansFenetre = (j) => j <= FENETRE_JOURS && j >= -RETARD_JOURS;
 
-  const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,Actif");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const raisonDe = (code) => clients.find((c) => c.CodeClient === code)?.RaisonSociale || code || "—";
 
   const lignes = [];

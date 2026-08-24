@@ -990,6 +990,132 @@ const COULEUR_TYPE = {
   "Habilitation": { bg: "#F1EFE8", fg: "#444441" },
 };
 
+/* ================================================================
+   ABONNEMENTS — suivi commercial des options souscrites.
+   GET /api/me?vue=admin&onglet=abonnements (module abonnements.js).
+   Les montants n'apparaissent que si le catalogue TARIFS_OPTIONS est
+   configuré côté SWA, ou si un forfait négocié est saisi sur la fiche
+   client — aucun prix n'est inventé.
+   ================================================================ */
+function SectionAbonnements() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    apiFetch("/api/me?vue=admin&onglet=abonnements")
+      .then(async (r) => {
+        if (r.ok) return setData(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setData({ erreur: e.erreur || `Abonnements indisponibles (HTTP ${r.status}).` });
+      })
+      .catch(() => setData({ erreur: "Abonnements momentanément indisponibles — réessayez." }));
+  }, []);
+
+  if (data === null) return <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des abonnements…</p>;
+  if (data.erreur) return <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>{data.erreur}</p>;
+
+  const lignes = data.lignes || [];
+  const euros = (v) => (v == null ? "—" : `${Number(v).toLocaleString("fr-FR", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} €`);
+  const fr = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+
+  const exporter = () => {
+    const cel = (v) => { const t = String(v ?? ""); return /[;"\n\r]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+    const entetes = ["Code client", "Raison sociale", "Actif", "Options", "Effectif suivi", "Client depuis", "Forfait mensuel", "Opportunités"];
+    const corps = lignes.map((l) => [l.codeClient, l.raisonSociale, l.actif ? "Oui" : "Non",
+      l.libelles.join(" + "), l.effectif, fr(l.depuis), l.montant ?? "",
+      l.opportunites.map((o) => o.libelle).join(" + ")].map(cel).join(";"));
+    const csv = "﻿" + [entetes.map(cel).join(";"), ...corps].join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = `Abonnements_OsmoseRH_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const opportunites = lignes.filter((l) => l.actif && l.opportunites.length > 0);
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 13, color: T.mut, flex: 1, minWidth: 240 }}>
+          Qui a souscrit quoi, depuis quand, pour quel effectif — et les besoins visibles dans les
+          données mais pas encore souscrits.
+        </p>
+        <button onClick={exporter} style={{ all: "unset", cursor: "pointer", fontSize: 12.5, fontWeight: 600, color: T.accent, border: `1px solid ${T.border}`, borderRadius: 8, padding: "7px 12px", background: T.card }}>
+          Exporter (Excel)
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        {[["Clients actifs", data.compteurs?.clientsActifs, T.ink],
+          ["Salariés suivis", data.compteurs?.effectifTotal, T.ink],
+          ["Récurrent mensuel", data.compteurs?.recurrentMensuel == null ? "—" : euros(data.compteurs.recurrentMensuel), "#085041"],
+          ["Opportunités", data.compteurs?.opportunites, data.compteurs?.opportunites ? "#854F0B" : T.mut]].map(([lib, val, coul]) => (
+          <div key={lib} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: "10px 16px", minWidth: 120 }}>
+            <div style={{ fontSize: 11, color: T.mut }}>{lib}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: coul }}>{val ?? 0}</div>
+          </div>
+        ))}
+      </div>
+
+      {!data.tarifsConfigures && (
+        <p style={{ background: "#FDF3E4", color: "#7A5416", border: "1px solid #F0DCB4", borderRadius: 8, padding: "9px 12px", fontSize: 12.5, marginBottom: 14 }}>
+          Aucun tarif catalogue configuré : posez la variable <code>TARIFS_OPTIONS</code> dans la Static Web App
+          (par exemple <code>{`{"etrangers":15,"securite":20}`}</code>) pour voir les montants, ou saisissez un
+          forfait négocié par client (colonne <code>TarifMensuel</code> de « Paramètres clients »).
+        </p>
+      )}
+
+      {opportunites.length > 0 && (
+        <div style={{ background: "#FDF3E4", border: "1px solid #F0DCB4", borderRadius: 12, padding: "12px 14px", marginBottom: 16 }}>
+          <div style={{ fontSize: 13.5, fontFamily: T.serif, color: "#7A5416", marginBottom: 8 }}>
+            Options à proposer — le besoin est déjà visible dans leurs données
+          </div>
+          {opportunites.map((l) => (
+            <div key={l.codeClient} style={{ fontSize: 12.5, color: "#7A5416", padding: "3px 0" }}>
+              <strong>{l.raisonSociale}</strong> — {l.opportunites.map((o) => `${o.libelle} (${o.motif})`).join(", ")}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.5fr 2fr 70px 90px 90px", gap: 8, padding: "9px 14px", fontSize: 11, color: T.mut, borderBottom: `1px solid ${T.border}` }}>
+          <span>Client</span><span>Options</span><span>Effectif</span><span>Depuis</span><span>Mensuel</span>
+        </div>
+        {lignes.map((l, i) => (
+          <div key={l.codeClient} style={{ display: "grid", gridTemplateColumns: "1.5fr 2fr 70px 90px 90px", gap: 8, padding: "10px 14px", fontSize: 12.5, borderBottom: i < lignes.length - 1 ? `1px solid ${T.border}` : "none", alignItems: "center", opacity: l.actif ? 1 : 0.5 }}>
+            <span style={{ fontWeight: 600, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.codeClient}>
+              {l.raisonSociale || l.codeClient}{!l.actif && <span style={{ color: T.mut, fontWeight: 400 }}> (inactif)</span>}
+            </span>
+            <span style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {l.libelles.length === 0
+                ? <span style={{ color: T.mut }}>aucune</span>
+                : l.libelles.map((lib) => (
+                  <span key={lib} style={{ background: "#E6F1FB", color: "#0C447C", fontSize: 10.5, padding: "2px 7px", borderRadius: 99, whiteSpace: "nowrap" }}>{lib}</span>
+                ))}
+            </span>
+            <span style={{ color: T.mut }}>{l.effectif}</span>
+            <span style={{ color: T.mut }}>{fr(l.depuis)}</span>
+            <span style={{ fontWeight: l.montant ? 600 : 400, color: l.montant ? T.ink : T.mut }} title={l.forfait ? "Forfait négocié" : l.forfaitCatalogue != null ? "Somme du catalogue" : undefined}>
+              {euros(l.montant)}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 14, background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, overflow: "hidden" }}>
+        <div style={{ padding: "9px 14px", fontSize: 13, fontFamily: T.serif, borderBottom: `1px solid ${T.border}` }}>Répartition par option</div>
+        {Object.entries(data.parOption || {}).map(([cle, o], i, t) => (
+          <div key={cle} style={{ display: "grid", gridTemplateColumns: "2fr 80px 90px", gap: 8, padding: "8px 14px", fontSize: 12.5, borderBottom: i < t.length - 1 ? `1px solid ${T.border}` : "none" }}>
+            <span>{o.libelle}</span>
+            <span style={{ color: T.mut }}>{o.clients} client{o.clients > 1 ? "s" : ""}</span>
+            <span style={{ color: T.mut }}>{o.tarif == null ? "—" : `${o.tarif} €/mois`}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 function SectionEcheancier() {
   const [data, setData] = useState(null);
   const [filtre, setFiltre] = useState("");
@@ -1253,6 +1379,7 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
           ["acces", `Demandes d'accès${donnees?.demandes?.length ? ` (${donnees.demandes.length})` : ""}`],
           ["messages", `Messages clients${aRepondre ? ` (${aRepondre})` : ""}`],
           ["echeances", "Échéances"],
+          ["abonnements", "Abonnements"],
         ].map(([id, lib]) => (
           <button key={id} onClick={() => setOnglet(id)} style={{
             all: "unset", cursor: "pointer", padding: "12px 14px", fontSize: 13.5,
@@ -1269,6 +1396,8 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         )}
 
         {onglet === "echeances" && <SectionEcheancier />}
+
+        {onglet === "abonnements" && <SectionAbonnements />}
 
         {onglet === "acces" && (<>
         {donnees === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement des demandes…</p>}
