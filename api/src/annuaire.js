@@ -123,6 +123,16 @@ async function items(tok, listeId, champs) {
   return tout;
 }
 
+/* $select UNIQUE de « Paramètres clients » — SOURCE UNIQUE, comme
+   SELECT_SALARIES. Le cache items() est indexé par LISTE, pas par
+   champs : un lecteur au $select étroit qui remplit le cache le premier
+   appauvrit tous les suivants pendant 60 s (constaté le 23/08 : quatre
+   lecteurs divergents, dont admin.donnees sans Options — un client se
+   connectant dans la minute suivant une consultation gestionnaire
+   voyait toutes ses tuiles grisées, puis « ça se réparait tout seul »).
+   Toute nouvelle colonne lue s'ajoute ICI (et dans creer_site_rh.py). */
+const SELECT_CLIENTS = "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options,CodeUrssaf,CodeApe,VilleEntreprise,CodePostalEntreprise,TelephoneEntreprise,SanteTravail,DateSouscription,TarifMensuel";
+
 /** email vérifié → { codeClient, entreprise… } ou lève 403. */
 async function resoudreClient(email) {
   const tok = await tokenGraph();
@@ -132,8 +142,7 @@ async function resoudreClient(email) {
   const u = utilisateurs.find((x) => (x.Email || "").toLowerCase() === email && x.Actif !== false);
   if (!u || !u.CodeClient) throw { status: 403, erreur: "Compte non rattaché à un client — contactez votre gestionnaire Osmose RH." };
 
-  const clients = await items(tok, ids["Paramètres clients"],
-    "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const c = clients.find((x) => x.CodeClient === u.CodeClient && x.Actif !== false);
   if (!c) throw { status: 403, erreur: "Client inactif ou inconnu — contactez votre gestionnaire Osmose RH." };
 
@@ -440,7 +449,7 @@ async function majCyclePaie(codeClient, mois, statutCible) {
   if (!rl.ok) return;
   const existante = (await rl.json()).value.find((x) => x.fields.CodeClient === codeClient && x.fields.Mois === mois);
 
-  const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale");
+  const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
   const raisonSociale = clients.find((c) => c.CodeClient === codeClient)?.RaisonSociale || codeClient;
 
   const corps = {
@@ -520,4 +529,4 @@ async function deposerFichier(codeClient, nomBrut, contentType, contenu) {
   return nomFinal;
 }
 
-module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems, SELECT_SALARIES };
+module.exports = { verifierJeton, resoudreClient, creerDemandeAcces, creerEmbauche, tokenGraph, idsListes, items, dateParis, listerDocuments, telechargerDocument, creerVariablesPaie, creerFinContrat, deposerFichier, majCyclePaie, viderCacheItems, SELECT_SALARIES, SELECT_CLIENTS };

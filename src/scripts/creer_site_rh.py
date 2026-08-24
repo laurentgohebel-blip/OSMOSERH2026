@@ -67,6 +67,9 @@ LISTES = [
         col("CodeUrssaf", T()), col("CodeApe", T()),
         col("VilleEntreprise", T()), col("CodePostalEntreprise", T()),
         col("TelephoneEntreprise", T()), col("SanteTravail", T()),
+        # Suivi commercial (23/08) : date de souscription et forfait
+        # mensuel négocié (prime sur le catalogue TARIFS_OPTIONS).
+        col("DateSouscription", D()), col("TarifMensuel", N()),
         # + colonne « Options » (choix multiple) À LA MAIN — voir en-tête
     ]),
     ("Utilisateurs portail", [

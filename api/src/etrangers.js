@@ -15,7 +15,7 @@
 // GET ?vue=etrangers (client) et ?vue=admin&onglet=etrangers ;
 // demande.js relaie POST { action: "titreRenouvellement" | "adminEtrangers" }.
 
-const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, viderCacheItems, SELECT_SALARIES } = require("./annuaire");
+const { verifierJeton, resoudreClient, tokenGraph, idsListes, items, dateParis, viderCacheItems, SELECT_SALARIES, SELECT_CLIENTS } = require("./annuaire");
 
 /* ── Référentiels partagés (source unique — le front duplique à l'identique,
       demande.js importe d'ici) ─────────────────────────────────────────── */
@@ -190,7 +190,7 @@ async function donneesAdmin(request, context) {
     const tok = await tokenGraph();
     const ids = await idsListes(tok);
     const aujourdhui = dateParis(new Date());
-    const clients = await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,Actif");
+    const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
     const nomClient = (code) => clients.find((c) => c.CodeClient === code)?.RaisonSociale || code;
     const salaries = (await items(tok, ids["Salariés"], SELECT_SALARIES))
       .filter(estEtranger)

@@ -7,7 +7,7 @@
 // L'API calcule, le flux envoie les e-mails (SMTP) — aucune logique côté flux.
 
 const { app } = require("@azure/functions");
-const { tokenGraph, idsListes, items, listerDocuments, majCyclePaie } = require("../annuaire");
+const { tokenGraph, idsListes, items, listerDocuments, majCyclePaie, SELECT_CLIENTS } = require("../annuaire");
 
 app.http("rappel-variables", {
   methods: ["GET"],
@@ -26,7 +26,7 @@ app.http("rappel-variables", {
 
       const tok = await tokenGraph();
       const ids = await idsListes(tok);
-      const clients = (await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,Actif,Options"))
+      const clients = (await items(tok, ids["Paramètres clients"], SELECT_CLIENTS))
         .filter((c) => c.Actif !== false && Array.isArray(c.Options) && c.Options.includes("paie") && c.CodeClient);
       const utilisateurs = await items(tok, ids["Utilisateurs portail"], "Email,CodeClient,Actif");
       const variables = await items(tok, ids["Variables de paie"], "CodeClient,Mois");

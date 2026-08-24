@@ -17,7 +17,7 @@
 //   passe la demande en « Traitée », vide le cache de lecture (effet
 //   immédiat pour le client qui recharge).
 
-const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems, dateParis, SELECT_SALARIES } = require("./annuaire");
+const { verifierJeton, tokenGraph, idsListes, items, viderCacheItems, dateParis, SELECT_SALARIES, SELECT_CLIENTS } = require("./annuaire");
 
 const OPTIONS_VALIDES = ["embauche", "acompte", "attestation", "paie", "etrangers", "securite"];
 
@@ -67,7 +67,7 @@ async function donnees(request, context) {
       url = j["@odata.nextLink"] || null;
     }
 
-    const clients = (await items(tok, ids["Paramètres clients"], "CodeClient,RaisonSociale,Actif"))
+    const clients = (await items(tok, ids["Paramètres clients"], SELECT_CLIENTS))
       .filter((c) => c.CodeClient && c.Actif !== false)
       .map((c) => ({ codeClient: c.CodeClient, raisonSociale: c.RaisonSociale || "" }))
       .sort((a, b) => a.codeClient.localeCompare(b.codeClient));
@@ -147,7 +147,7 @@ async function activer(request, context, corps) {
       const options = Array.isArray(n.options) ? n.options.filter((o) => OPTIONS_VALIDES.includes(o)) : [];
 
       // Unicité du code : refuser un doublon plutôt que créer un clone
-      const clients = await items(tok, ids["Paramètres clients"], "CodeClient");
+      const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
       if (clients.some((c) => (c.CodeClient || "").toUpperCase() === codeClient))
         return { status: 409, jsonBody: { erreur: `Le code client ${codeClient} existe déjà — choisissez « client existant ».` } };
 
@@ -175,7 +175,7 @@ async function activer(request, context, corps) {
       }
     } else {
       codeClient = String(d.codeClient || "").trim();
-      const clients = await items(tok, ids["Paramètres clients"], "CodeClient,Actif");
+      const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
       if (!clients.some((c) => c.CodeClient === codeClient && c.Actif !== false))
         return { status: 400, jsonBody: { erreur: `Client ${codeClient} introuvable ou inactif.` } };
     }
@@ -266,7 +266,7 @@ async function importerSalaries(request, context, corps) {
     const ids = await idsListes(tok);
     if (!ids["Salariés"]) throw { status: 502, erreur: "Liste « Salariés » introuvable." };
 
-    const clients = await items(tok, ids["Paramètres clients"], "CodeClient,Actif");
+    const clients = await items(tok, ids["Paramètres clients"], SELECT_CLIENTS);
     if (!clients.some((c) => c.CodeClient === codeClient && c.Actif !== false))
       return { status: 400, jsonBody: { erreur: `Client ${codeClient} introuvable ou inactif.` } };
 
@@ -386,8 +386,7 @@ async function dpae(request, context, corps) {
       const f = item.fields || {};
       const codeClient = f.CodeClient || "";
 
-      const params = (await items(tok, ids["Paramètres clients"],
-        "CodeClient,RaisonSociale,AdresseEntreprise,Siret,Representant,FonctionRepresentant,LieuEdition,EmailGestionnaire,Actif,Options,CodeUrssaf,CodeApe,VilleEntreprise,CodePostalEntreprise,TelephoneEntreprise,SanteTravail"))
+      const params = (await items(tok, ids["Paramètres clients"], SELECT_CLIENTS))
         .find((c) => c.CodeClient === codeClient) || {};
 
       // Fiche « Salariés » du même salarié (même $select que personnel.js —

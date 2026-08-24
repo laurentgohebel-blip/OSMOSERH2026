@@ -43,6 +43,17 @@ app.http("me", {
               return { status: 500, jsonBody: { erreur: `Module etrangers inchargeable : ${e.message}` } };
             }
           }
+          // &onglet=abonnements : suivi commercial des options souscrites
+          // (qui a quoi, depuis quand, opportunités détectées).
+          if (request.query.get("onglet") === "abonnements") {
+            try {
+              return await require("../abonnements").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/abonnements :", e);
+              return { status: 500, jsonBody: { erreur: `Module abonnements inchargeable : ${e.message}` } };
+            }
+          }
           // &onglet=echeances : vue « toutes échéances, tous clients » —
           // le plan de charge du gestionnaire, trié par urgence.
           if (request.query.get("onglet") === "echeances") {
@@ -105,7 +116,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-23-type-visite";
+const VERSION_API = "2026-08-24-abonnements";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",

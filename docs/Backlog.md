@@ -14,6 +14,25 @@ synthèse de session et les docs dédiées.
   (docs/DPAE-API.md).
 - **Messagerie « Mon gestionnaire »** : fils de discussion des deux
   côtés (docs/Fil-messagerie-portail.md).
+- **Suivi commercial des options + correction d'un bug de cache**
+  (24/08) : onglet gestionnaire « Abonnements » — qui a souscrit quoi,
+  depuis quand, pour quel effectif suivi, quel forfait mensuel ; totaux
+  (clients actifs, salariés suivis, récurrent mensuel), répartition par
+  option, export CSV. **Détection d'opportunités** : un client dont les
+  données montrent des salariés étrangers ou des habilitations sans
+  l'option correspondante est signalé avec le motif chiffré.
+  Aucun prix n'est inventé : catalogue via la variable SWA
+  `TARIFS_OPTIONS` (JSON, ex. `{"etrangers":15,"securite":20}`), forfait
+  négocié par client via la colonne `TarifMensuel` (prioritaire).
+  **BUG CORRIGÉ au passage** : les six lecteurs de « Paramètres clients »
+  utilisaient des `$select` différents alors que le cache `items()` est
+  indexé par LISTE. Un lecteur étroit (`admin.donnees`, sans `Options`)
+  remplissant le cache le premier appauvrissait `resoudreClient` pendant
+  60 s → un client se connectant dans la minute suivant une consultation
+  gestionnaire voyait **toutes ses tuiles grisées**, puis « ça se
+  réparait tout seul ». Tous alignés sur `SELECT_CLIENTS` exporté par
+  annuaire.js (même doctrine que `SELECT_SALARIES`).
+  **Geste** : relancer creer_site_rh.py (DateSouscription, TarifMensuel).
 - **Visite de reprise après arrêt** (23/08 nuit, art. R.4624-31) : les
   absences DÉJÀ déclarées dans le portail déclenchent l'obligation —
   congé maternité et maladie professionnelle (toute durée), accident du
