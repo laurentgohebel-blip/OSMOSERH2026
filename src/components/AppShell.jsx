@@ -153,6 +153,7 @@ const TUILES = [
   // (onglet Habilitations) ; la tuile-formulaire est hors grille (cache).
   { id: "habilitation", bloc: "cache", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
+  { id: "planning", bloc: "paie", titre: "Planning d'équipe", sous: "Heures, pointage, variables", icone: Clock, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
@@ -860,6 +861,11 @@ export default function AppShell({ user, onLogout }) {
           <VariablesPaie user={user} client={codeClient} onRetour={() => setTuile(null)} />
         )}
 
+        {/* Le planning aussi : une semaine d'équipe ne tient pas en 560 px. */}
+        {vue === "prod" && tuile && tuile.id === "planning" && (
+          <PlanningEquipe user={user} onRetour={() => setTuile(null)} />
+        )}
+
         {/* Le dossier du personnel aussi : liste + fiche en pleine largeur. */}
         {vue === "prod" && tuile && tuile.id === "personnel" && (
           <GestionPersonnel user={user} client={codeClient} onRetour={() => setTuile(null)}
@@ -884,7 +890,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -2831,6 +2837,280 @@ const COLONNES_VARIABLES = [
 ];
 const LIGNE_VIDE = () => Object.fromEntries(COLONNES_VARIABLES.map((c) => [c.k, ""]));
 const MOIS_COURANT = () => new Date().toISOString().slice(0, 7);
+
+/* ================================================================
+   PLANNING D'ÉQUIPE
+   Le planning que le client fait déjà — sur un cahier, un tableau, un
+   tableur — mais qui produit les heures de la paie au lieu d'être
+   recompté à la main. Et qui dit, à la saisie, ce qu'une semaine a
+   d'illégal : c'est le seul moment où corriger coûte encore un simple
+   déplacement de créneau.
+   ================================================================ */
+const JOURS_COURTS = ["lun", "mar", "mer", "jeu", "ven", "sam", "dim"];
+
+function PlanningEquipe({ user, onRetour }) {
+  const lundiCourant = () => {
+    const d = new Date();
+    const decalage = (d.getDay() + 6) % 7;
+    return new Date(d.getTime() - decalage * 86400000).toISOString().slice(0, 10);
+  };
+  const [lundi, setLundi] = useState(lundiCourant());
+  const [etat, setEtat] = useState({ chargement: true });
+  const [saisie, setSaisie] = useState(null);   // { cle, nom, prenom, jour }
+  const [form, setForm] = useState({ debut: "09:00", fin: "17:00", pause: 0 });
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [apercu, setApercu] = useState(null);
+
+  const jours = Array.from({ length: 7 }, (_, i) => new Date(Date.parse(lundi) + i * 86400000).toISOString().slice(0, 10));
+  const dimanche = jours[6];
+
+  const charger = async () => {
+    setEtat({ chargement: true });
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "planning", depuis: lundi, jusqu: dimanche }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEtat(r.ok ? j : { erreur: j.erreur || `Lecture refusée (HTTP ${r.status}).` });
+    } catch { setEtat({ erreur: "API injoignable — réessayez." }); }
+  };
+  useEffect(() => { charger(); }, [lundi]);
+
+  const enregistrer = async () => {
+    if (!saisie) return;
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "planning", mode: "poser", creneaux: [{
+          nom: saisie.nom, prenom: saisie.prenom, jour: saisie.jour,
+          debut: form.debut, fin: form.fin, pause: Number(form.pause) || 0,
+        }] }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ erreur: j.erreur || `Enregistrement refusé (HTTP ${r.status}).` });
+      else { setSaisie(null); await charger(); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const supprimer = async (id) => {
+    try {
+      await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "planning", mode: "supprimer", id }),
+      });
+      await charger();
+    } catch { setMsg({ erreur: "Suppression impossible." }); }
+  };
+
+  const preparerVariables = async (mode) => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "planning", mode, mois: lundi.slice(0, 7) }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ erreur: j.erreur || `Refusé (HTTP ${r.status}).` });
+      else if (mode === "apercu") setApercu(j);
+      else { setApercu(null); setMsg({ ok: `${j.lignes} ligne${j.lignes > 1 ? "s" : ""} transmise${j.lignes > 1 ? "s" : ""} pour ${j.mois}.` }); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const frCourt = (iso) => `${JOURS_COURTS[(new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7]} ${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+  const cell = { border: `1px solid ${T.border}`, padding: "6px 5px", verticalAlign: "top", minWidth: 92 };
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <h1 style={{ margin: 0, fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Planning d'équipe</h1>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
+          <Btn onClick={() => setLundi(new Date(Date.parse(lundi) - 7 * 86400000).toISOString().slice(0, 10))}>← Semaine précédente</Btn>
+          <span style={{ fontSize: 13, color: T.mut, minWidth: 168, textAlign: "center" }}>
+            du {lundi.split("-").reverse().join("/")} au {dimanche.split("-").reverse().join("/")}
+          </span>
+          <Btn onClick={() => setLundi(new Date(Date.parse(lundi) + 7 * 86400000).toISOString().slice(0, 10))}>Semaine suivante →</Btn>
+        </div>
+      </div>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✗ {msg.erreur}</div>}
+      {etat.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>{etat.erreur}</div>}
+      {etat.chargement && <p style={{ fontSize: 13, color: T.mut }}>Chargement…</p>}
+
+      {!etat.chargement && !etat.erreur && (
+        <>
+          {/* Ce que la loi dit de cette semaine — avant qu'elle soit travaillée. */}
+          {(etat.points || []).length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              {etat.points.map((p) => (
+                <div key={p.cle} style={{
+                  background: p.niveau === "bloquant" ? "#FCEBEB" : "#FEF6E7",
+                  border: `1px solid ${p.niveau === "bloquant" ? "#F7C1C1" : "#F6DFB0"}`,
+                  color: p.niveau === "bloquant" ? "#791F1F" : "#7A4E00",
+                  borderRadius: 8, padding: "9px 11px", marginBottom: 7,
+                }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 2 }}>{p.titre}</div>
+                  <div style={{ fontSize: 12, lineHeight: 1.5 }}>{p.detail}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{ overflowX: "auto", background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 12, marginBottom: 14 }}>
+            <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "100%" }}>
+              <thead>
+                <tr>
+                  <th style={{ ...cell, textAlign: "left", minWidth: 170, background: "#FAF9F7" }}>Salarié</th>
+                  {jours.map((j) => (
+                    <th key={j} style={{ ...cell, background: j === dimanche ? "#FAF6F0" : "#FAF9F7", fontWeight: 600 }}>{frCourt(j)}</th>
+                  ))}
+                  <th style={{ ...cell, background: "#FAF9F7", minWidth: 76 }}>Semaine</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(etat.salaries || []).map((s) => {
+                  const sem = (s.semaines || [])[0];
+                  return (
+                    <tr key={s.cle}>
+                      <td style={{ ...cell }}>
+                        <div style={{ fontWeight: 600 }}>{s.nom} {s.prenom}</div>
+                        <div style={{ fontSize: 11, color: T.mut }}>{s.poste || "—"} · {s.hebdoContractuel} h/sem.</div>
+                      </td>
+                      {jours.map((j) => {
+                        const siens = (etat.creneaux || []).filter((c) => c.cle === s.cle && c.jour === j);
+                        return (
+                          <td key={j} style={{ ...cell, background: j === dimanche ? "#FDFBF7" : "#fff" }}>
+                            {siens.map((c) => (
+                              <div key={c.id} style={{
+                                background: c.source === "Pointage" ? "#E8F1FB" : "#EFEDE8",
+                                borderRadius: 6, padding: "3px 5px", marginBottom: 3, display: "flex", alignItems: "center", gap: 4,
+                              }}>
+                                <span style={{ flex: 1 }}>{c.debut}{c.fin ? `–${c.fin}` : " …"}</span>
+                                <button onClick={() => supprimer(c.id)} title="Supprimer"
+                                  style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 13, lineHeight: 1 }}>×</button>
+                              </div>
+                            ))}
+                            <button onClick={() => { setSaisie({ cle: s.cle, nom: s.nom, prenom: s.prenom, jour: j }); setMsg(null); }}
+                              style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 11.5, fontWeight: 600 }}>+ ajouter</button>
+                          </td>
+                        );
+                      })}
+                      <td style={{ ...cell, textAlign: "center", background: "#FAF9F7" }}>
+                        <div style={{ fontWeight: 600 }}>{sem ? `${sem.total} h` : "—"}</div>
+                        {sem?.sup25 > 0 && <div style={{ fontSize: 10.5, color: "#7A4E00" }}>+25 % : {sem.sup25} h</div>}
+                        {sem?.sup50 > 0 && <div style={{ fontSize: 10.5, color: "#791F1F" }}>+50 % : {sem.sup50} h</div>}
+                        {sem?.complementaires > 0 && <div style={{ fontSize: 10.5, color: "#7A4E00" }}>compl. : {sem.complementaires} h</div>}
+                        {sem?.nuit > 0 && <div style={{ fontSize: 10.5, color: T.mut }}>nuit : {sem.nuit} h</div>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {(etat.salaries || []).length === 0 && (
+              <p style={{ fontSize: 13, color: T.mut, margin: "10px 4px" }}>Aucun salarié actif dans votre effectif.</p>
+            )}
+          </div>
+
+          {/* Le pointage : un lien à afficher, rien à installer. */}
+          {etat.pointage?.actif && (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+              <h2 style={{ margin: "0 0 4px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>Pointage sans matériel</h2>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: T.mut, lineHeight: 1.5 }}>
+                Affichez ce lien près de la porte (un QR code suffit) : vos salariés pointent leur arrivée et
+                leur départ depuis leur téléphone, sans compte ni mot de passe. L'heure enregistrée est celle
+                du portail, et vous pouvez toujours la corriger ici.
+              </p>
+              <code style={{ display: "block", background: "#FAF9F7", border: `1px solid ${T.border}`, borderRadius: 8,
+                padding: "8px 10px", fontSize: 11.5, wordBreak: "break-all" }}>
+                {`${window.location.origin}/?pointage=${etat.pointage.jeton}`}
+              </code>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <Btn onClick={() => preparerVariables("apercu")} disabled={envoi}>
+              Voir les heures du mois ({lundi.slice(0, 7).split("-").reverse().join("/")})
+            </Btn>
+            {apercu && (
+              <Btn primary disabled={envoi} onClick={() => preparerVariables("variables")}>
+                {envoi ? "Envoi…" : "Transmettre ces heures à mon gestionnaire"}
+              </Btn>
+            )}
+          </div>
+
+          {apercu && (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginTop: 12, overflowX: "auto" }}>
+              <h2 style={{ margin: "0 0 8px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>
+                Heures calculées pour {apercu.mois.split("-").reverse().join("/")}
+              </h2>
+              <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "100%" }}>
+                <thead>
+                  <tr>
+                    {["Salarié", "Normales", "Compl.", "+25 %", "+50 %", "Nuit", "Dim./fériés"].map((t) => (
+                      <th key={t} style={{ ...cell, background: "#FAF9F7", textAlign: t === "Salarié" ? "left" : "center" }}>{t}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {apercu.lignes.map((l) => (
+                    <tr key={`${l.nom} ${l.prenom}`}>
+                      <td style={cell}>{l.nom} {l.prenom}</td>
+                      {[l.heuresNormales, l.heuresComplementaires, l.heuresSup25, l.heuresSup50, l.heuresNuit, l.heuresDimancheFerie]
+                        .map((v, i) => <td key={i} style={{ ...cell, textAlign: "center" }}>{v || "—"}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ margin: "8px 2px 0", fontSize: 11.5, color: T.mut, lineHeight: 1.5 }}>
+                Les heures de nuit et du dimanche sont déjà comprises dans les colonnes précédentes : elles
+                s'y ajoutent comme majorations, pas comme heures supplémentaires. Les taux appliqués dépendent
+                de votre convention collective — votre gestionnaire les applique.
+              </p>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Saisie d'un créneau — volontairement minuscule : trois champs. */}
+      {saisie && (
+        <div onClick={() => setSaisie(null)} style={{ position: "fixed", inset: 0, background: "rgba(29,27,24,.34)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: T.card, borderRadius: 12, padding: "20px 22px", width: "100%", maxWidth: 380 }}>
+            <h2 style={{ margin: "0 0 3px", fontSize: 16, fontFamily: T.serif, fontWeight: 600 }}>{saisie.nom} {saisie.prenom}</h2>
+            <p style={{ margin: "0 0 14px", fontSize: 12.5, color: T.mut }}>{frCourt(saisie.jour)}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <ChampReq label="Début">
+                <input type="time" style={inputStyle} value={form.debut} onChange={(e) => setForm({ ...form, debut: e.target.value })} />
+              </ChampReq>
+              <ChampReq label="Fin">
+                <input type="time" style={inputStyle} value={form.fin} onChange={(e) => setForm({ ...form, fin: e.target.value })} />
+              </ChampReq>
+              <ChampOpt label="Pause (minutes)" large>
+                <input type="number" min="0" step="5" style={inputStyle} value={form.pause} onChange={(e) => setForm({ ...form, pause: e.target.value })} />
+              </ChampOpt>
+            </div>
+            <p style={{ margin: "8px 0 0", fontSize: 11.5, color: T.mut }}>
+              Une fin avant le début passe minuit — un service de soirée se saisit 18:00 → 02:00.
+            </p>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
+              <Btn onClick={() => setSaisie(null)}>Annuler</Btn>
+              <Btn primary disabled={envoi} onClick={enregistrer}>{envoi ? "Enregistrement…" : "Ajouter"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 function VariablesPaie({ user, client, onRetour }) {
   const [mois, setMois] = useState(MOIS_COURANT());

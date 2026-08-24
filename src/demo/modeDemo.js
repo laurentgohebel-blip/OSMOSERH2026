@@ -361,6 +361,48 @@ function traiterDemande(e, options) {
   try { d = JSON.parse(options.body); } catch { return json(400, { erreur: "JSON attendu" }); }
   const p = e.personnel;
 
+  /* Planning d'équipe — VERSION DÉMO. Le calcul qui fait foi vit dans
+     api/src/temps.js ; ici on montre le geste avec une arithmétique
+     simplifiée (semaine unique, temps plein). */
+  if (d.action === "planning") {
+    e.planning ??= [];
+    const heures = (c) => {
+      const m = (x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5));
+      let f = m(c.fin); if (f <= m(c.debut)) f += 1440;
+      return Math.max(0, f - m(c.debut) - (Number(c.pause) || 0)) / 60;
+    };
+    if (d.mode === "poser") {
+      for (const c of d.creneaux || []) e.planning.push({ id: `demo-tps-${e.planning.length + 1}`, ...c, cle: cleNomPrenom(c.nom, c.prenom), source: "Planning" });
+      return json(201, { enregistres: (d.creneaux || []).length, points: [] });
+    }
+    if (d.mode === "supprimer") { e.planning = e.planning.filter((c) => c.id !== d.id); return json(200, { ok: true }); }
+    if (d.mode === "apercu" || d.mode === "variables") {
+      const parSal = new Map();
+      for (const c of e.planning) parSal.set(c.cle, (parSal.get(c.cle) || 0) + heures(c));
+      const lignes = [...parSal].map(([cle, t]) => {
+        const s = (p.salaries || []).find((x) => x.cle === cle) || {};
+        return { nom: s.nom || cle, prenom: s.prenom || "", matricule: s.matricule || "",
+          heuresNormales: Math.min(t, 35), ...(t > 35 ? { heuresSup25: Math.round((t - 35) * 100) / 100 } : {}) };
+      });
+      if (!lignes.length) return json(400, { erreur: "Aucun temps de travail saisi pour ce mois." });
+      return d.mode === "apercu" ? json(200, { mois: d.mois, lignes }) : json(202, { mois: d.mois, lignes: lignes.length });
+    }
+    const dans = (c) => (!d.depuis || c.jour >= d.depuis) && (!d.jusqu || c.jour <= d.jusqu);
+    const creneaux = e.planning.filter(dans);
+    return json(200, {
+      depuis: d.depuis, jusqu: d.jusqu, creneaux,
+      salaries: (p.salaries || []).filter((s) => s.statut !== "Sorti").map((s) => {
+        const siens = creneaux.filter((c) => c.cle === s.cle);
+        const total = Math.round(siens.reduce((t, c) => t + heures(c), 0) * 100) / 100;
+        return { ...s, hebdoContractuel: 35,
+          semaines: [{ lundi: d.depuis, total, normales: Math.min(total, 35), complementaires: 0,
+            sup25: Math.max(0, Math.min(total - 35, 8)), sup50: Math.max(0, total - 43), nuit: 0, dimancheFerie: 0 }] };
+      }),
+      points: [],
+      pointage: { actif: true, jeton: "demo0000000000000000000000000000" },
+    });
+  }
+
   // Réembauche, écran de contrôle : dossier repris + points de vigilance.
   if (d.action === "reembaucheControles") {
     const a = (p.salaries || []).find((s) => memeSalarie(s, d.reprise));

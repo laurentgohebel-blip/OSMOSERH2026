@@ -71,6 +71,20 @@ app.http("demande", {
       }
     }
 
+    // 1 bis-4. Pointage : page publique atteinte par un QR code affiché
+    // près de la porte. Aucun compte — un salarié n'a pas d'accès au
+    // portail. Le jeton du lien est DÉRIVÉ du code client par HMAC : il
+    // n'ouvre que le pointage de cet employeur, et rien d'autre.
+    if (d.action === "pointage") {
+      try {
+        return await require("../planning").pointage(d, context);
+      } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+        context.error("demande/pointage :", e);
+        return { status: 502, jsonBody: { erreur: "Pointage indisponible — prévenez votre responsable." } };
+      }
+    }
+
     // 1 ter. Détour gestionnaire : même contournement — l'activation des
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
@@ -133,6 +147,24 @@ app.http("demande", {
       // action cliente sur la route historique (doctrine du 21/08).
       // Verrous : jeton + client résolus ci-dessus, option embauche,
       // et propriété de l'élément vérifiée AVANT toute écriture.
+      // Planning d'équipe et temps de travail. L'option « paie » ouvre
+      // la brique : ce que le planning produit, ce sont des variables.
+      if (d.action === "planning") {
+        if (!clientInfo.options.includes("paie"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          const planning = require("../planning");
+          if (d.mode === "poser") return await planning.poser(clientInfo, d);
+          if (d.mode === "supprimer") { await planning.supprimer(clientInfo.codeClient, d.id); return { status: 200, jsonBody: { ok: true } }; }
+          if (d.mode === "variables" || d.mode === "apercu") return await planning.versVariables(clientInfo, email, d);
+          return await planning.lire(clientInfo, d);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/planning :", e);
+          return { status: 502, jsonBody: { erreur: "Planning indisponible — réessayez." } };
+        }
+      }
+
       // Réembauche, écran de contrôle : le client choisit un ancien
       // salarié et un projet de contrat, et voit AVANT de valider ce que
       // le dossier reprend et ce que la loi impose (carence, titre,
