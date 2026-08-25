@@ -6,6 +6,20 @@ Laurent). Une idée dictée = une ligne ici ; développée = déplacée dans
 synthèse de session et les docs dédiées.
 
 ## En ligne récemment (rien à faire)
+- **Brique Procédures** (24/08, voir docs/Procedures.md) : licenciement
+  pour motif personnel, sanction disciplinaire, inaptitude, rupture
+  conventionnelle. Le portail tient l'horloge — délais légaux, ordre des
+  étapes, documents obligatoires, trames de courrier pré-remplies de
+  l'en-tête du client. Il signale ce qui a déjà mal tourné (étape faite
+  trop tôt ou trop tard), accepte les étapes « sans objet » (pas de CSE)
+  et la correction d'une date erronée. Il tient la FORME et le dit :
+  le fond et la convention collective restent au gestionnaire.
+  Module `delais.js` dédié à l'arithmétique (ouvrables ≠ ouvrés ≠
+  calendaires ; le samedi est ouvrable ; report des échéances tombant un
+  dimanche ou un férié).
+  **Geste** : relancer creer_site_rh.py (liste « Procédures »), et
+  **passer le flux d'échéances en QUOTIDIEN** — ces délais se comptent
+  en jours, un flux hebdomadaire les manquerait.
 - **Planning d'équipe + pointage sans matériel** (24/08, voir
   docs/Planning-et-pointage.md) : le planning que le client fait déjà
   devient la source des heures de paie. Grille salariés × jours,

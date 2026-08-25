@@ -707,10 +707,31 @@ async function modeAlertes(context) {
     }).catch(() => {});
   }
 
+  // Procédures en cours (24/08) : délais dépassés ou imminents.
+  // ATTENTION AU RYTHME : ces délais se comptent en jours, parfois deux.
+  // Un flux HEBDOMADAIRE les manquera — ces alertes appellent un flux
+  // quotidien. Le portail, lui, les affiche en direct. Lecture
+  // conditionnelle tant que la liste n'existe pas.
+  const alertesProc = [];
+  try {
+    const proc = require("../procedures");
+    const brutes = await proc.alertesProcedures(tok, ids, items, clients);
+    for (const a of brutes) {
+      if (a.email) alertesProc.push({ email: a.email, salarie: a.salarie, raisonSociale: a.raisonSociale,
+        palier: a.niveau, type: "procedure", objet: a.objet, corps: a.corps });
+      await fetch(`https://graph.microsoft.com/v1.0/sites/${process.env.RH_SITE_ID}/lists/${ids["Procédures"]}/items/${a.id}/fields`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${tok}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ AlerteProcedure: a.palier }),
+      }).catch(() => {});
+    }
+  } catch (e) { context.log("Procédures : alertes indisponibles —", e?.erreur || e?.message || e); }
+
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
-  // titres de séjour, périodes d'essai, visites médicales et habilitations.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesReprises, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations];
+  // titres de séjour, périodes d'essai, visites médicales, habilitations
+  // et procédures.
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesReprises, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations, ...alertesProc];
   context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${reprisesAAlerter.length} reprise(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s), ${invitationsAAlerter.length} invitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }

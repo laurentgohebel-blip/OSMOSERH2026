@@ -153,6 +153,7 @@ const TUILES = [
   // (onglet Habilitations) ; la tuile-formulaire est hors grille (cache).
   { id: "habilitation", bloc: "cache", titre: "Habilitations", sous: "CACES, électrique, SST…", icone: GraduationCap, cablee: true },
   { id: "attestation", bloc: "salaries", titre: "Attestation", sous: "Attestation employeur", icone: Award, cablee: true },
+  { id: "procedures", bloc: "salaries", titre: "Procédures", sous: "Licenciement, sanction, inaptitude, rupture", icone: ShieldCheck, cablee: true },
   { id: "planning", bloc: "paie", titre: "Planning d'équipe", sous: "Heures, pointage, variables", icone: Clock, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
@@ -866,6 +867,11 @@ export default function AppShell({ user, onLogout }) {
           <PlanningEquipe user={user} onRetour={() => setTuile(null)} />
         )}
 
+        {/* Les procédures : la frise des étapes demande de la largeur. */}
+        {vue === "prod" && tuile && tuile.id === "procedures" && (
+          <Procedures user={user} salaries={refSal} onRetour={() => setTuile(null)} />
+        )}
+
         {/* Le dossier du personnel aussi : liste + fiche en pleine largeur. */}
         {vue === "prod" && tuile && tuile.id === "personnel" && (
           <GestionPersonnel user={user} client={codeClient} onRetour={() => setTuile(null)}
@@ -890,7 +896,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "procedures" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -2837,6 +2843,283 @@ const COLONNES_VARIABLES = [
 ];
 const LIGNE_VIDE = () => Object.fromEntries(COLONNES_VARIABLES.map((c) => [c.k, ""]));
 const MOIS_COURANT = () => new Date().toISOString().slice(0, 7);
+
+/* ================================================================
+   PROCÉDURES
+   Une procédure RH est une horloge. Cet écran la montre : les étapes
+   dans l'ordre, la date de chacune, la fenêtre dans laquelle elle doit
+   tomber, et ce qu'il ne faut pas manquer. Le portail tient la FORME —
+   les délais, l'ordre, les documents. Le fond reste au gestionnaire.
+   ================================================================ */
+const COULEUR_ETAPE = {
+  faite: { bg: "#E1F5EE", bd: "#B7E4D4", fg: "#085041" },
+  "hors-delai": { bg: "#FCEBEB", bd: "#F7C1C1", fg: "#791F1F" },
+  "a-faire": { bg: "#FEF6E7", bd: "#F6DFB0", fg: "#7A4E00" },
+  attente: { bg: "#EEF2F8", bd: "#D6DFEC", fg: "#33465E" },
+  "a-venir": { bg: "#FAF9F7", bd: "#E3E0DA", fg: "#6B6560" },
+  "sans-objet": { bg: "#FAF9F7", bd: "#E3E0DA", fg: "#9A948E" },
+};
+const MOT_STATUT = {
+  faite: "Faite", "hors-delai": "Délai dépassé", "a-faire": "À faire",
+  attente: "Délai en cours", "a-venir": "À venir", "sans-objet": "Sans objet",
+};
+const frD = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).split("-").reverse().join("/") : "");
+
+function Procedures({ user, salaries, onRetour }) {
+  const [etat, setEtat] = useState({ chargement: true });
+  const [ouverte, setOuverte] = useState(null);   // procédure dépliée
+  const [nouvelle, setNouvelle] = useState(null); // { type }
+  const [form, setForm] = useState({ salarie: "", depart: "" });
+  const [doc, setDoc] = useState(null);
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const charger = async () => {
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "procedure" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setEtat(r.ok ? j : { erreur: j.erreur || `Lecture refusée (HTTP ${r.status}).` });
+    } catch { setEtat({ erreur: "API injoignable — réessayez." }); }
+  };
+  useEffect(() => { charger(); }, []);
+
+  // La date qui arme l'horloge dépend de la procédure : les faits connus
+  // pour une sanction, l'avis du médecin pour une inaptitude.
+  const DEPART = {
+    "sanction-disciplinaire": { cle: "faits", label: "Date à laquelle vous avez eu connaissance des faits",
+      aide: "Deux mois pour engager les poursuites à compter de cette date (L.1332-4)." },
+    "inaptitude": { cle: "avis", label: "Date de l'examen médical (avis d'inaptitude)",
+      aide: "Un mois pour reclasser ou licencier, sinon le salaire doit être repris (L.1226-4)." },
+    "licenciement-personnel": { cle: "", label: "", aide: "" },
+    "rupture-conventionnelle": { cle: "", label: "", aide: "" },
+  };
+
+  const ouvrir = async () => {
+    const d = DEPART[nouvelle.type] || {};
+    if (!form.salarie.trim()) { setMsg({ erreur: "Choisissez le salarié concerné." }); return; }
+    if (d.cle && !form.depart) { setMsg({ erreur: "Cette date est indispensable : elle déclenche le délai." }); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "procedure", mode: "ouvrir", type: nouvelle.type,
+          nom: form.salarie.trim(), ...(d.cle && form.depart ? { faites: { [d.cle]: form.depart } } : {}) }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ erreur: j.erreur || `Refusé (HTTP ${r.status}).` });
+      else { setNouvelle(null); setForm({ salarie: "", depart: "" }); await charger(); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const majEtape = async (id, etape, valeur) => {
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "procedure", mode: "etape", id, etape, valeur }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ erreur: j.erreur || "Enregistrement refusé." });
+      else await charger();
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+  };
+
+  const voirDocument = async (id, etape) => {
+    setDoc({ chargement: true });
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "procedure", mode: "document", id, etape }),
+      });
+      const j = await r.json().catch(() => ({}));
+      setDoc(r.ok ? j : { erreur: j.erreur || "Document indisponible." });
+    } catch { setDoc({ erreur: "API injoignable." }); }
+  };
+
+  const enCours = (etat.procedures || []).filter((p) => p.statut === "En cours");
+  const closes = (etat.procedures || []).filter((p) => p.statut !== "En cours");
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+      <h1 style={{ margin: "0 0 4px", fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Procédures</h1>
+      <p style={{ margin: "0 0 16px", fontSize: 12.5, color: T.mut, maxWidth: 720, lineHeight: 1.55 }}>
+        Le portail tient les délais, l'ordre des étapes et les documents obligatoires — la forme, là où
+        les erreurs coûtent le plus cher. Le fond, lui, relève de votre gestionnaire : la cause réelle et
+        sérieuse, la proportionnalité d'une sanction, le sérieux d'une recherche de reclassement ne se
+        calculent pas.
+      </p>
+
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✗ {msg.erreur}</div>}
+      {etat.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>{etat.erreur}</div>}
+      {etat.chargement && <p style={{ fontSize: 13, color: T.mut }}>Chargement…</p>}
+
+      {!etat.chargement && !etat.erreur && (
+        <>
+          {/* Ouvrir une procédure */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(232px, 1fr))", gap: 10, marginBottom: 20 }}>
+            {(etat.catalogue || []).map((c) => (
+              <button key={c.cle} onClick={() => { setNouvelle({ type: c.cle }); setForm({ salarie: "", depart: "" }); setMsg(null); }}
+                style={{ all: "unset", boxSizing: "border-box", cursor: "pointer", background: T.card,
+                  border: `1px solid ${T.border}`, borderRadius: 10, padding: "13px 14px", fontFamily: T.sans }}
+                onMouseEnter={(e) => (e.currentTarget.style.borderColor = T.accent)}
+                onMouseLeave={(e) => (e.currentTarget.style.borderColor = T.border)}>
+                <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, marginBottom: 3 }}>{c.libelle}</span>
+                <span style={{ display: "block", fontSize: 11.5, color: T.mut, lineHeight: 1.45 }}>{c.resume}</span>
+              </button>
+            ))}
+          </div>
+
+          {enCours.length === 0 && closes.length === 0 && (
+            <p style={{ fontSize: 13, color: T.mut }}>Aucune procédure ouverte. Choisissez-en une ci-dessus pour commencer.</p>
+          )}
+
+          {[["En cours", enCours], ["Terminées et abandonnées", closes]].map(([titre, liste]) => liste.length > 0 && (
+            <div key={titre} style={{ marginBottom: 18 }}>
+              <h2 style={{ margin: "0 0 8px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>{titre}</h2>
+              {liste.map((p) => {
+                const deplie = ouverte === p.id;
+                const grave = (p.alertes || [])[0];
+                return (
+                  <div key={p.id} style={{ background: T.card, border: `1px solid ${grave?.niveau === "depasse" ? "#F7C1C1" : T.border}`, borderRadius: 10, marginBottom: 8, overflow: "hidden" }}>
+                    <button onClick={() => { setOuverte(deplie ? null : p.id); setDoc(null); }}
+                      style={{ all: "unset", boxSizing: "border-box", cursor: "pointer", display: "block", width: "100%", padding: "12px 14px", fontFamily: T.sans }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600 }}>{p.nom} {p.prenom}</span>
+                        <span style={{ fontSize: 12.5, color: T.mut }}>{p.libelle}</span>
+                        <span style={{ marginLeft: "auto", fontSize: 12, color: T.mut }}>{deplie ? "▾" : "▸"}</span>
+                      </div>
+                      {grave && (
+                        <div style={{ marginTop: 6, fontSize: 12, lineHeight: 1.5,
+                          color: grave.niveau === "depasse" ? "#791F1F" : grave.niveau === "urgent" ? "#7A4E00" : T.mut }}>
+                          <strong>{grave.titre}</strong> — {grave.detail}
+                        </div>
+                      )}
+                      {!grave && p.echeance && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: T.mut }}>Prochaine limite : {frD(p.echeance)}</div>
+                      )}
+                    </button>
+
+                    {deplie && (
+                      <div style={{ borderTop: `1px solid ${T.border}`, padding: "12px 14px" }}>
+                        {p.etapes.map((e) => {
+                          const c = COULEUR_ETAPE[e.statut] || COULEUR_ETAPE["a-venir"];
+                          return (
+                            <div key={e.cle} style={{ background: c.bg, border: `1px solid ${c.bd}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                              <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                <span style={{ fontSize: 13, fontWeight: 600, color: c.fg }}>{e.libelle}</span>
+                                {e.obligatoire && <span style={{ fontSize: 10.5, color: c.fg, opacity: 0.75 }}>obligatoire</span>}
+                                <span style={{ marginLeft: "auto", fontSize: 11.5, color: c.fg, fontWeight: 600 }}>{MOT_STATUT[e.statut]}</span>
+                              </div>
+
+                              <div style={{ fontSize: 11.5, color: c.fg, marginBottom: 6 }}>
+                                {e.auPlusTot && !e.date && <>Au plus tôt le <strong>{frD(e.auPlusTot)}</strong>. </>}
+                                {e.auPlusTard && !e.date && <>Au plus tard le <strong>{frD(e.auPlusTard)}</strong>. </>}
+                                {e.date && <>Réalisée le <strong>{frD(e.date)}</strong>. </>}
+                              </div>
+
+                              {e.irregularites.map((i, n) => (
+                                <div key={n} style={{ fontSize: 11.5, color: "#791F1F", background: "#FCEBEB", border: "1px solid #F7C1C1", borderRadius: 6, padding: "6px 8px", marginBottom: 6 }}>⚠ {i}</div>
+                              ))}
+
+                              {e.aide && <div style={{ fontSize: 11.5, color: c.fg, opacity: 0.9, lineHeight: 1.5, marginBottom: 8 }}>{e.aide}</div>}
+
+                              {p.statut === "En cours" && (
+                                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                  <input type="date" value={e.date || ""} onChange={(ev) => majEtape(p.id, e.cle, ev.target.value)}
+                                    style={{ ...inputStyle, width: "auto", padding: "5px 8px", fontSize: 12.5 }} />
+                                  {e.date && <Btn small onClick={() => majEtape(p.id, e.cle, "")}>Effacer</Btn>}
+                                  {!e.obligatoire && e.statut !== "sans-objet" && !e.date && (
+                                    <Btn small onClick={() => majEtape(p.id, e.cle, "sans-objet")}>Sans objet</Btn>
+                                  )}
+                                  {e.statut === "sans-objet" && <Btn small onClick={() => majEtape(p.id, e.cle, "")}>Rétablir</Btn>}
+                                  {e.document && <Btn small onClick={() => voirDocument(p.id, e.cle)}>Voir la trame du courrier</Btn>}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p style={{ fontSize: 11.5, color: T.mut, margin: "4px 2px 0", lineHeight: 1.5 }}>
+                          Les délais affichés sont ceux de la loi. Votre convention collective peut les allonger
+                          ou ajouter des étapes — vérifiez ce point avec votre gestionnaire.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </>
+      )}
+
+      {/* Ouverture d'une procédure */}
+      {nouvelle && (
+        <div onClick={() => setNouvelle(null)} style={{ position: "fixed", inset: 0, background: "rgba(29,27,24,.34)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: T.card, borderRadius: 12, padding: "22px 24px", width: "100%", maxWidth: 460 }}>
+            <h2 style={{ margin: "0 0 14px", fontSize: 17, fontFamily: T.serif, fontWeight: 600 }}>
+              {(etat.catalogue || []).find((c) => c.cle === nouvelle.type)?.libelle}
+            </h2>
+            <ChampReq label="Salarié concerné">
+              <input list="osrh-salaries-proc" type="text" style={inputStyle} value={form.salarie}
+                onChange={(e) => setForm({ ...form, salarie: e.target.value })} placeholder="NOM Prénom" />
+              <datalist id="osrh-salaries-proc">
+                {(salaries || []).filter((s) => s.statut !== "Sorti").map((s) => (
+                  <option key={s.cle || `${s.nom} ${s.prenom}`} value={`${s.nom} ${s.prenom}`} />
+                ))}
+              </datalist>
+            </ChampReq>
+            {DEPART[nouvelle.type]?.cle && (
+              <div style={{ marginTop: 12 }}>
+                <ChampReq label={DEPART[nouvelle.type].label}>
+                  <input type="date" style={inputStyle} value={form.depart} onChange={(e) => setForm({ ...form, depart: e.target.value })} />
+                </ChampReq>
+                <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut, lineHeight: 1.5 }}>{DEPART[nouvelle.type].aide}</p>
+              </div>
+            )}
+            {msg?.erreur && <p style={{ margin: "10px 0 0", fontSize: 12, color: T.err }}>{msg.erreur}</p>}
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 18 }}>
+              <Btn onClick={() => setNouvelle(null)}>Annuler</Btn>
+              <Btn primary disabled={envoi} onClick={ouvrir}>{envoi ? "Ouverture…" : "Ouvrir la procédure"}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trame de courrier */}
+      {doc && (
+        <div onClick={() => setDoc(null)} style={{ position: "fixed", inset: 0, background: "rgba(29,27,24,.34)", display: "flex", alignItems: "center", justifyContent: "center", padding: 18, zIndex: 50 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: T.card, borderRadius: 12, padding: "20px 22px", width: "100%", maxWidth: 640, maxHeight: "86vh", overflowY: "auto" }}>
+            {doc.chargement && <p style={{ fontSize: 13, color: T.mut }}>Préparation…</p>}
+            {doc.erreur && <p style={{ fontSize: 13, color: T.err }}>{doc.erreur}</p>}
+            {doc.corps && (
+              <>
+                <h2 style={{ margin: "0 0 4px", fontSize: 16, fontFamily: T.serif, fontWeight: 600 }}>{doc.objet}</h2>
+                <p style={{ margin: "0 0 12px", fontSize: 11.5, color: T.mut, lineHeight: 1.5 }}>
+                  Trame pré-remplie de votre dossier. <strong>À relire et à adapter</strong> : les passages entre
+                  crochets attendent votre rédaction, et un courrier envoyé sans être lu est un risque, pas un gain de temps.
+                </p>
+                <pre style={{ background: "#FAF9F7", border: `1px solid ${T.border}`, borderRadius: 8, padding: "12px 14px",
+                  fontSize: 12.5, lineHeight: 1.6, whiteSpace: "pre-wrap", fontFamily: T.sans, margin: 0 }}>{doc.corps}</pre>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
+                  <Btn onClick={() => setDoc(null)}>Fermer</Btn>
+                  <Btn primary onClick={() => { navigator.clipboard?.writeText(doc.corps); setDoc({ ...doc, copie: true }); }}>
+                    {doc.copie ? "Copié" : "Copier le texte"}
+                  </Btn>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
 
 /* ================================================================
    PLANNING D'ÉQUIPE
