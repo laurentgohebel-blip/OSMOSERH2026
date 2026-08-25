@@ -85,6 +85,20 @@ app.http("demande", {
       }
     }
 
+    // 1 bis-5. Notes de frais, dépôt par le salarié : même famille que le
+    // pointage — un lien public, un jeton dérivé du code client, aucun
+    // compte. Le salarié photographie son ticket et le dépose ; rien
+    // n'est remboursé sans validation explicite de l'employeur.
+    if (d.action === "fraisDepot") {
+      try {
+        return await require("../notesdefrais").depot(d, context);
+      } catch (e) {
+        if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+        context.error("demande/fraisDepot :", e);
+        return { status: 502, jsonBody: { erreur: "Dépôt indisponible — prévenez votre responsable." } };
+      }
+    }
+
     // 1 ter. Détour gestionnaire : même contournement — l'activation des
     // demandes d'accès et l'import d'effectif passent par cette route.
     // Le module admin re-vérifie lui-même le jeton ET la liste
@@ -184,6 +198,25 @@ app.http("demande", {
           if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
           context.error("demande/planning :", e);
           return { status: 502, jsonBody: { erreur: "Planning indisponible — réessayez." } };
+        }
+      }
+
+      // Notes de frais. Rattachées à l'option « paie » : ce que la
+      // brique produit, ce sont des variables — un remboursement net et,
+      // quand le plafond d'exonération est dépassé, du brut soumis.
+      if (d.action === "frais") {
+        if (!clientInfo.options.includes("paie"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          const ndf = require("../notesdefrais");
+          if (d.mode === "saisir") return await ndf.saisir(clientInfo, email, d);
+          if (d.mode === "statuer") return await ndf.statuer(clientInfo, d);
+          if (d.mode === "variables" || d.mode === "apercu") return await ndf.versVariables(clientInfo, email, d);
+          return await ndf.lister(clientInfo, d);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/frais :", e);
+          return { status: 502, jsonBody: { erreur: "Notes de frais indisponibles — réessayez." } };
         }
       }
 

@@ -727,11 +727,20 @@ async function modeAlertes(context) {
     }
   } catch (e) { context.log("Procédures : alertes indisponibles —", e?.erreur || e?.message || e); }
 
+  // Notes de frais oubliées (25/08) : une seule alerte par client, pas
+  // une par note. Ce délai-là se compte en semaines — le flux
+  // hebdomadaire suffit. Lecture conditionnelle tant que la liste
+  // n'existe pas chez le client.
+  const alertesFrais = [];
+  try {
+    alertesFrais.push(...await require("../notesdefrais").alertesFrais(tok, ids, items, clients));
+  } catch (e) { context.log("Notes de frais : alertes indisponibles —", e?.erreur || e?.message || e); }
+
   // UN SEUL tableau pour le flux : « Pour chaque notifications » →
   // Envoyer un e-mail (À = email, Objet = objet, Corps = corps). Couvre
-  // titres de séjour, périodes d'essai, visites médicales, habilitations
-  // et procédures.
-  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesReprises, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations, ...alertesProc];
+  // titres de séjour, périodes d'essai, visites médicales, habilitations,
+  // procédures et notes de frais.
+  const notifications = [...alertesTitres, ...alertesEssai, ...alertesVisites, ...alertesReprises, ...alertesEntretiens, ...alertesHabilitations, ...alertesInvitations, ...alertesProc, ...alertesFrais];
   context.log(`Échéances : ${aAlerter.length} CDD (${alertes.length} dest.), ${titresAAlerter.length} titre(s), ${essaisAAlerter.length} essai(s), ${visitesAAlerter.length} visite(s), ${reprisesAAlerter.length} reprise(s), ${entretiensAAlerter.length} entretien(s), ${habilitationsAAlerter.length} habilitation(s), ${invitationsAAlerter.length} invitation(s) — ${notifications.length} notification(s).`);
   return { status: 200, jsonBody: { alertes, notifications } };
 }

@@ -29,7 +29,14 @@ const MODELES = {
   rib: "prebuilt-read",
   vitale: "prebuilt-read",
   arret: "prebuilt-read",
+  frais: "prebuilt-receipt",
 };
+/* Modèles STRUCTURÉS : ils rendent des champs typés, pas seulement du
+   texte. Un OCR_MODELE posé dans la Static Web App pour affiner la
+   lecture des documents libres ne doit jamais les remplacer — lire un
+   ticket de caisse avec prebuilt-read, c'est perdre le total au profit
+   d'une soupe de chiffres. */
+const STRUCTURES = new Set(["identite", "frais"]);
 const typeValide = (t) => Object.prototype.hasOwnProperty.call(MODELES, String(t || ""));
 
 /* ── Appel Document Intelligence : POST puis attente du résultat ────── */
@@ -231,6 +238,39 @@ function extraire(type, resultat) {
     const m = motifArret(texte); if (m) champs.motif = m;
     return champs;
   }
+  if (type === "frais") {
+    // prebuilt-receipt rend le ticket structuré : enseigne, date, total,
+    // TVA. On ne retient QUE ce qui est typé par le service — un total
+    // deviné dans le texte brut d'un ticket froissé finit en écart de
+    // caisse. Ce qui manque reste à saisir : trois champs pré-remplis
+    // sur quatre, c'est déjà la photo qui remplace la saisie.
+    const doc = (resultat.documents || [])[0] || {};
+    const f = doc.fields || {};
+    const champs = {};
+    const montant = (nom) => {
+      const c = f[nom];
+      if (!c) return null;
+      const v = c.valueCurrency?.amount ?? c.valueNumber;
+      return typeof v === "number" && Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : null;
+    };
+    const enseigne = String(f.MerchantName?.valueString || "").trim();
+    if (enseigne) champs.commercant = enseigne.slice(0, 120);
+    const date = f.TransactionDate?.valueDate || "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      // Un ticket daté du futur, c'est une date mal lue (le service
+      // interprète parfois JJ/MM en MM/JJ) : on préfère ne rien proposer.
+      if (date <= new Date().toISOString().slice(0, 10)) champs.date = date;
+    }
+    const total = montant("Total");
+    if (total !== null && total > 0) champs.montant = total;
+    const tva = montant("TotalTax");
+    if (tva !== null && tva > 0 && (total === null || tva < total)) champs.tva = tva;
+    // La monnaie n'est pas un détail : un ticket en francs suisses ne se
+    // rembourse pas au montant imprimé.
+    const devise = String(f.Total?.valueCurrency?.currencyCode || "").toUpperCase();
+    if (devise && devise !== "EUR") champs.devise = devise;
+    return champs;
+  }
   if (type === "identite") {
     // prebuilt-idDocument rend des champs structurés — bien plus fiable
     // qu'une expression régulière sur le texte brut.
@@ -265,8 +305,8 @@ async function analyser(type, contenu, contentType, context) {
   if (!contenu || contenu.byteLength === 0) return { erreur: "fichier vide" };
   if (contenu.byteLength > TAILLE_MAX) return { erreur: "fichier trop volumineux pour l'analyse" };
   try {
-    const resultat = await analyserDocument(contenu, contentType, process.env.OCR_MODELE && type !== "identite"
-      ? process.env.OCR_MODELE : MODELES[type]);
+    const resultat = await analyserDocument(contenu, contentType,
+      process.env.OCR_MODELE && !STRUCTURES.has(type) ? process.env.OCR_MODELE : MODELES[type]);
     const champs = extraire(type, resultat);
     return Object.keys(champs).length ? { champs } : { erreur: "aucun champ reconnu" };
   } catch (e) {

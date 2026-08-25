@@ -63,6 +63,22 @@ function FatalError({ error }) {
     return;
   }
 
+  // Notes de frais : lien public ?frais=<jeton>. Même famille que le
+  // pointage — le salarié photographie son ticket depuis son téléphone,
+  // sans compte, donc avant toute initialisation MSAL.
+  const jetonFrais = new URLSearchParams(window.location.search).get("frais");
+  if (jetonFrais) {
+    const { default: FraisSalarie } = await import("./components/FraisSalarie.jsx");
+    root.render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <FraisSalarie jeton={jetonFrais} />
+        </ErrorBoundary>
+      </React.StrictMode>
+    );
+    return;
+  }
+
   root.render(<Splash />);
 
   try {

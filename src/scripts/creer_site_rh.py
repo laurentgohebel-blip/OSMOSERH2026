@@ -238,6 +238,27 @@ LISTES = [
         col("DateOuverture", D()), col("DateEcheance", D()),
         col("AlerteProcedure", T()),  # dernier palier notifié (anti-doublon)
     ]),
+    # Notes de frais (25/08) : une ligne = UN FRAIS. Le montant stocké est
+    # celui qui est DEMANDÉ ; la part exonérée et la part réintégrée en
+    # salaire sont recalculées à chaque lecture par api/src/frais.js — un
+    # barème change, les notes anciennes gardent le leur par leur date,
+    # et rien n'est figé dans la liste. Quantite sert aux forfaits
+    # (nombre de repas, de nuitées, de jours de télétravail).
+    ("Notes de frais", SOCLE_PERSONNEL + [
+        col("Categorie", CH(
+            ["repas-restaurant", "repas-hors-locaux", "repas-panier",
+             "logement-paris", "logement-province", "teletravail", "km",
+             "hebergement", "transport", "carburant", "fournitures", "autre"],
+            "autre")),
+        col("DateFrais", D()), col("Montant", N()), col("Quantite", N()),
+        col("TVA", N()), col("Km", N()), col("PuissanceFiscale", N()),
+        col("Commercant", T()), col("Motif", TL()),
+        col("Justificatif", T()),  # nom du fichier déposé dans la GED
+        col("Statut", CH(["Nouvelle", "Validée", "Refusée", "En paie"], "Nouvelle")),
+        col("MotifRefus", TL()),
+        col("Source", CH(["Salarié", "Employeur"], "Salarié")),
+        col("MoisPaie", T()),
+    ]),
 ]
 
 BIBLIOTHEQUE = "Documents clients"  # documentLibrary — un dossier par CodeClient
