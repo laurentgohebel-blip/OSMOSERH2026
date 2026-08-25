@@ -147,6 +147,28 @@ app.http("demande", {
       // action cliente sur la route historique (doctrine du 21/08).
       // Verrous : jeton + client résolus ci-dessus, option embauche,
       // et propriété de l'élément vérifiée AVANT toute écriture.
+      // Procédures : licenciement, sanction, inaptitude, rupture
+      // conventionnelle. Le portail tient les délais et l'ordre des
+      // étapes — la forme, là où les petites entreprises se font
+      // condamner. Rattaché à l'option « embauche », qui couvre déjà la
+      // vie du contrat de son début à sa fin.
+      if (d.action === "procedure") {
+        if (!clientInfo.options.includes("embauche"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          const proc = require("../procedures");
+          if (d.mode === "ouvrir") return await proc.ouvrir(clientInfo, email, d);
+          if (d.mode === "etape") return await proc.majEtape(clientInfo, d);
+          if (d.mode === "abandonner") return await proc.abandonner(clientInfo, d);
+          if (d.mode === "document") return await proc.document(clientInfo, d);
+          return await proc.lister(clientInfo);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/procedure :", e);
+          return { status: 502, jsonBody: { erreur: "Procédures indisponibles — réessayez." } };
+        }
+      }
+
       // Planning d'équipe et temps de travail. L'option « paie » ouvre
       // la brique : ce que le planning produit, ce sont des variables.
       if (d.action === "planning") {

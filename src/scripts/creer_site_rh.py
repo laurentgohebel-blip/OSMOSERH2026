@@ -225,6 +225,19 @@ LISTES = [
         col("Statut", CH(["Prévu", "Réalisé", "Validé"], "Prévu")),
         col("Commentaire", TL()), col("Reference", T()),
     ]),
+    # Procédures (24/08) : licenciement, sanction, inaptitude, rupture
+    # conventionnelle. Les étapes franchies et le contexte du dossier
+    # sont stockés en JSON — la forme d'une procédure évolue avec le
+    # droit, une colonne par étape figerait le modèle.
+    ("Procédures", SOCLE_PERSONNEL + [
+        col("TypeProcedure", CH(
+            ["licenciement-personnel", "sanction-disciplinaire", "inaptitude", "rupture-conventionnelle"],
+            "licenciement-personnel")),
+        col("Etapes", TL()), col("Contexte", TL()),
+        col("Statut", CH(["En cours", "Terminée", "Abandonnée"], "En cours")),
+        col("DateOuverture", D()), col("DateEcheance", D()),
+        col("AlerteProcedure", T()),  # dernier palier notifié (anti-doublon)
+    ]),
 ]
 
 BIBLIOTHEQUE = "Documents clients"  # documentLibrary — un dossier par CodeClient

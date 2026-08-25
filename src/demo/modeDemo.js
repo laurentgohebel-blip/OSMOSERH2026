@@ -361,6 +361,73 @@ function traiterDemande(e, options) {
   try { d = JSON.parse(options.body); } catch { return json(400, { erreur: "JSON attendu" }); }
   const p = e.personnel;
 
+  /* Procédures — VERSION DÉMO. Les délais qui font foi sont calculés
+     par api/src/procedures.js ; la démo montre une inaptitude en cours
+     avec son compte à rebours, parce que c'est le cas qui parle. */
+  if (d.action === "procedure") {
+    e.procedures ??= [{
+      id: "demo-proc-1", reference: "PROC-DEMO01", nom: "MOREAU", prenom: "Julien",
+      type: "inaptitude", libelle: "Inaptitude constatée par le médecin du travail",
+      statut: "En cours", ouverture: dansNJours(-22), echeance: dansNJours(8),
+      etapes: [
+        { cle: "avis", libelle: "Avis d'inaptitude du médecin du travail", statut: "faite", date: dansNJours(-22),
+          obligatoire: true, irregularites: [], document: null, auPlusTot: "", auPlusTard: "",
+          aide: "La date de l'examen médical fait courir le délai d'un mois." },
+        { cle: "recherche-reclassement", libelle: "Recherche de reclassement", statut: "faite", date: dansNJours(-14),
+          obligatoire: false, irregularites: [], document: "recherche-reclassement", auPlusTot: "", auPlusTard: "",
+          aide: "Obligation de moyens, à consigner PAR ÉCRIT : son absence suffit à priver le licenciement de cause réelle et sérieuse." },
+        { cle: "consultation-cse", libelle: "Consultation du CSE sur le reclassement", statut: "sans-objet", date: "",
+          obligatoire: false, irregularites: [], document: null, auPlusTot: "", auPlusTard: "",
+          aide: "Sans objet dans les entreprises sans CSE." },
+        { cle: "proposition-ou-impossibilite", libelle: "Notification de l'impossibilité de reclasser", statut: "a-faire", date: "",
+          obligatoire: false, irregularites: [], document: "impossibilite-reclassement", auPlusTot: "", auPlusTard: "" },
+        { cle: "convocation", libelle: "Envoi de la convocation à l'entretien préalable", statut: "a-faire", date: "",
+          obligatoire: false, irregularites: [], document: "convocation-entretien", auPlusTot: "", auPlusTard: "" },
+        { cle: "presentation", libelle: "Présentation de la convocation au salarié", statut: "a-venir", date: "",
+          obligatoire: false, irregularites: [], document: null, auPlusTot: "", auPlusTard: "" },
+        { cle: "entretien", libelle: "Entretien préalable", statut: "a-venir", date: "",
+          obligatoire: false, irregularites: [], document: null, auPlusTot: "", auPlusTard: "" },
+        { cle: "notification", libelle: "Notification du licenciement pour inaptitude", statut: "a-faire", date: "",
+          obligatoire: true, irregularites: [], document: "notification-inaptitude",
+          auPlusTot: "", auPlusTard: dansNJours(8),
+          aide: "À défaut de reclassement ou de licenciement dans le mois de l'examen médical, l'employeur reprend le versement du salaire (L.1226-4)." },
+        { cle: "documents", libelle: "Remise des documents de fin de contrat", statut: "a-venir", date: "",
+          obligatoire: true, irregularites: [], document: "documents-fin-contrat", auPlusTot: "", auPlusTard: "" },
+      ],
+      alertes: [{ niveau: "proche", etape: "notification", titre: "Notification du licenciement pour inaptitude — 8 jours",
+        detail: "Passé ce délai, le versement du salaire doit reprendre tant que le salarié n'est ni reclassé ni licencié (L.1226-4)." }],
+    }];
+    if (d.mode === "ouvrir") {
+      const libelles = { "licenciement-personnel": "Licenciement pour motif personnel", "sanction-disciplinaire": "Sanction disciplinaire",
+        "inaptitude": "Inaptitude constatée par le médecin du travail", "rupture-conventionnelle": "Rupture conventionnelle individuelle" };
+      const mots = String(d.nom || "").trim().split(/\s+/);
+      e.procedures.unshift({ id: `demo-proc-${e.procedures.length + 1}`, reference: referenceDemo("PROC"),
+        nom: (mots[0] || "").toUpperCase(), prenom: mots.slice(1).join(" "), type: d.type, libelle: libelles[d.type] || d.type,
+        statut: "En cours", ouverture: dansNJours(0), echeance: "", etapes: [], alertes: [] });
+      return json(201, { reference: e.procedures[0].reference });
+    }
+    if (d.mode === "etape") {
+      const p = e.procedures.find((x) => x.id === d.id);
+      const et = p?.etapes.find((x) => x.cle === d.etape);
+      if (et) { et.date = d.valeur === "sans-objet" ? "" : d.valeur; et.statut = d.valeur === "sans-objet" ? "sans-objet" : d.valeur ? "faite" : "a-faire"; }
+      return json(200, { ok: true });
+    }
+    if (d.mode === "document") {
+      return json(200, { objet: "Convocation à un entretien préalable", etape: d.etape,
+        corps: "Boulangerie Demo\n12 rue de la République, 83000 Toulon\n\nMOREAU Julien\n\nToulon, le " + dansNJours(0).split("-").reverse().join("/") +
+          "\nLettre recommandée avec accusé de réception\n\nObjet : convocation à un entretien préalable\n\nMadame, Monsieur,\n\nNous sommes conduits à envisager à votre égard une mesure de licenciement.\n\nNous vous convoquons à un entretien préalable qui se tiendra le …… à ……, au siège de l'entreprise.\n\nVous pouvez vous faire assister par une personne de votre choix appartenant au personnel de l'entreprise. En l'absence de représentant du personnel, vous pouvez vous faire assister par un conseiller de votre choix inscrit sur une liste dressée par le préfet.\n\nNous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.\n\nPour Boulangerie Demo,\nMarie Delaunay\nGérante" });
+    }
+    return json(200, {
+      procedures: e.procedures,
+      catalogue: [
+        { cle: "licenciement-personnel", libelle: "Licenciement pour motif personnel", resume: "Convocation, entretien préalable, notification, préavis." },
+        { cle: "sanction-disciplinaire", libelle: "Sanction disciplinaire", resume: "Des faits connus à la sanction notifiée, deux délais à ne pas manquer." },
+        { cle: "inaptitude", libelle: "Inaptitude constatée par le médecin du travail", resume: "Un mois pour reclasser ou licencier, sinon le salaire repart." },
+        { cle: "rupture-conventionnelle", libelle: "Rupture conventionnelle individuelle", resume: "Entretien, signature, quinze jours de rétractation, homologation." },
+      ],
+    });
+  }
+
   /* Planning d'équipe — VERSION DÉMO. Le calcul qui fait foi vit dans
      api/src/temps.js ; ici on montre le geste avec une arithmétique
      simplifiée (semaine unique, temps plein). */

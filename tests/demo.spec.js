@@ -142,6 +142,32 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("procédures : l'inaptitude affiche son compte à rebours et sa trame", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Procédures", { exact: true }).first().click();
+
+    // Les quatre procédures sont proposées.
+    await expect(page.getByText("Licenciement pour motif personnel").first()).toBeVisible();
+    await expect(page.getByText("Sanction disciplinaire").first()).toBeVisible();
+    await expect(page.getByText("Rupture conventionnelle individuelle").first()).toBeVisible();
+
+    // Le dossier en cours porte l'alerte qui compte.
+    await expect(page.getByText(/versement du salaire doit reprendre/)).toBeVisible();
+
+    // Déplier montre la frise des étapes, dont celle marquée sans objet.
+    await page.getByText("MOREAU Julien").first().click();
+    await expect(page.getByText("Avis d'inaptitude du médecin du travail")).toBeVisible();
+    await expect(page.getByText("Sans objet").first()).toBeVisible();
+    await expect(page.getByText(/Obligation de moyens/)).toBeVisible();
+
+    // La trame de courrier s'ouvre, avec son avertissement.
+    await page.getByRole("button", { name: "Voir la trame du courrier" }).first().click();
+    await expect(page.getByText(/À relire et à adapter/)).toBeVisible();
+    await expect(page.getByText(/liste dressée par le préfet/)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("les documents fictifs sont listés", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Documents" }).click();
