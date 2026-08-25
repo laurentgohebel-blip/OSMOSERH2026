@@ -17,12 +17,23 @@ app.http("depot", {
       // le fichier atterrit dans le dossier Dépôts du client, préfixé du
       // nom du salarié (le gestionnaire le retrouve d'un coup d'œil).
       const invitation = request.query.get("invitation");
+      // Note de frais : le salarié photographie son ticket depuis le lien
+      // public. Le jeton n'ouvre que le dossier de dépôt de SON
+      // employeur, et le fichier est préfixé du nom pour que la pile de
+      // fin de mois reste lisible.
+      const frais = request.query.get("frais");
       let codeClient, auteur, prefixe = "";
       if (invitation) {
         const inv = await require("../onboarding").clientDeInvitation(invitation);
         codeClient = inv.codeClient;
         auteur = `onboarding ${inv.nom} ${inv.prenom}`;
         prefixe = `Onboarding_${inv.nom}_${inv.prenom}_`.replace(/\s+/g, "-");
+      } else if (frais) {
+        const c = await require("../notesdefrais").clientDeJeton(frais);
+        codeClient = c.codeClient;
+        const qui = String(request.query.get("salarie") || "").replace(/[^\p{L}\p{N} -]/gu, "").slice(0, 60).trim();
+        auteur = `note de frais ${qui || "—"}`;
+        prefixe = `Frais_${qui || "salarie"}_`.replace(/\s+/g, "-");
       } else {
         const { email } = await verifierJeton(request);
         codeClient = (await resoudreClient(email)).codeClient;

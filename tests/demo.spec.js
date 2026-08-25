@@ -168,6 +168,35 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("notes de frais : la part exonérée, la part soumise, et la note bloquée", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Notes de frais", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Notes de frais" })).toBeVisible();
+
+    // Le lien à envoyer à l'équipe : c'est lui qui remplace l'enveloppe.
+    await expect(page.getByText(/\?frais=/)).toBeVisible();
+
+    // Les trois notes de la pile, et le motif qui bloque la troisième.
+    await expect(page.getByText("Le Bistrot du Port")).toBeVisible();
+    await expect(page.getByText(/Dépassement de 6\.90 €/)).toBeVisible();
+    await expect(page.getByText(/Justificatif manquant/)).toBeVisible();
+
+    // Valider en lot ne prend QUE ce qui est validable ; la note sans
+    // ticket est écartée, avec son motif.
+    await page.getByRole("button", { name: /Tout sélectionner/ }).click();
+    await page.getByRole("button", { name: /^Valider/ }).click();
+    await expect(page.getByText(/2 notes validées/)).toBeVisible();
+
+    // Le récapitulatif sépare le remboursement net du brut soumis.
+    await page.getByRole("button", { name: /Voir le récapitulatif/ }).click();
+    await expect(page.getByText(/Ce qui partira en paie/)).toBeVisible();
+    await expect(page.getByText(/Frais au-delà du plafond \(soumis\)/)).toBeVisible();
+    await page.getByRole("button", { name: /Transmettre à mon gestionnaire/ }).click();
+    await expect(page.getByText(/transmise/)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("les documents fictifs sont listés", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Documents" }).click();

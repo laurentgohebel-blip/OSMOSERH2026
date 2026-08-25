@@ -11,7 +11,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChartBar, FileText, Folder, Send, Download, Eye, Upload,
   Users, Clock, ShieldCheck, ArrowLeft, LogOut, Award, Banknote,
-  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, UserPlus, Globe
+  GraduationCap, AlertCircle, Check, CalendarDays, Plus, Copy, X, UserMinus, UserPlus, Globe, Receipt
 } from "lucide-react";
 import { apiFetch } from "../apiClient";
 import AdminActivation from "./AdminActivation";
@@ -127,7 +127,11 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
    ================================================================ */
 /* Option contractuelle requise par tuile (opt-in) — les tuiles sans entrée
    (démos formation/sécurité) restent librement accessibles. */
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite" };
+// Miroir des verrous d'option posés côté API (demande.js). Les deux
+// doivent rester d'accord : le serveur refuse pour de bon, cette table ne
+// fait que griser la tuile — un client sans l'option doit le voir avant
+// de cliquer, pas récolter un 403. Planning et Procédures y manquaient.
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite", planning: "paie", procedures: "embauche", frais: "paie" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -156,6 +160,7 @@ const TUILES = [
   { id: "procedures", bloc: "salaries", titre: "Procédures", sous: "Licenciement, sanction, inaptitude, rupture", icone: ShieldCheck, cablee: true },
   { id: "planning", bloc: "paie", titre: "Planning d'équipe", sous: "Heures, pointage, variables", icone: Clock, cablee: true },
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
+  { id: "frais", bloc: "paie", titre: "Notes de frais", sous: "Ticket photographié, validation, paie", icone: Receipt, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
@@ -872,6 +877,11 @@ export default function AppShell({ user, onLogout }) {
           <Procedures user={user} salaries={refSal} onRetour={() => setTuile(null)} />
         )}
 
+        {/* Les notes de frais : une pile se traite en tableau, pas en fiche. */}
+        {vue === "prod" && tuile && tuile.id === "frais" && (
+          <NotesDeFrais user={user} salaries={refSal} onRetour={() => setTuile(null)} />
+        )}
+
         {/* Le dossier du personnel aussi : liste + fiche en pleine largeur. */}
         {vue === "prod" && tuile && tuile.id === "personnel" && (
           <GestionPersonnel user={user} client={codeClient} onRetour={() => setTuile(null)}
@@ -896,7 +906,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "procedures" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "procedures" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && tuile.id !== "frais" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -2864,6 +2874,360 @@ const MOT_STATUT = {
   attente: "Délai en cours", "a-venir": "À venir", "sans-objet": "Sans objet",
 };
 const frD = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).split("-").reverse().join("/") : "");
+
+/* ================================================================
+   NOTES DE FRAIS
+   L'écran de celui qui paie. Il n'a qu'une question : qu'est-ce que je
+   rembourse, et qu'est-ce que ça me coûte vraiment ? Les deux colonnes
+   « Remboursé » et « En salaire » répondent à la seconde — c'est là que
+   se joue la différence entre une note de frais et un redressement.
+   ================================================================ */
+function NotesDeFrais({ user, salaries, onRetour }) {
+  const [etat, setEtat] = useState({ chargement: true });
+  const [choix, setChoix] = useState([]);        // ids sélectionnés
+  const [apercu, setApercu] = useState(null);
+  const [saisie, setSaisie] = useState(null);    // formulaire employeur
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const mois = new Date().toISOString().slice(0, 7);
+
+  const appel = async (corps) => {
+    const r = await apiFetch("/api/demande", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "frais", ...corps }),
+    });
+    return [r, await r.json().catch(() => ({}))];
+  };
+
+  const charger = async () => {
+    try {
+      const [r, j] = await appel({});
+      setEtat(r.ok ? j : { erreur: j.erreur || `Lecture refusée (HTTP ${r.status}).` });
+      setChoix([]);
+    } catch { setEtat({ erreur: "API injoignable — réessayez." }); }
+  };
+  useEffect(() => { charger(); }, []);
+
+  const statuer = async (statut) => {
+    if (!choix.length) { setMsg({ erreur: "Sélectionnez au moins une note." }); return; }
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode: "statuer", statut, ids: choix });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Décision refusée." });
+      else {
+        setMsg({ ok: `${j.traitees} note${j.traitees > 1 ? "s" : ""} ${statut === "Validée" ? "validée" : "refusée"}${j.traitees > 1 ? "s" : ""}.`,
+          refusees: j.refusees || [] });
+        setApercu(null);
+        await charger();
+      }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const preparer = async (mode) => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode, mois });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Préparation impossible." });
+      else if (mode === "apercu") setApercu(j);
+      else { setApercu(null); setMsg({ ok: `${j.lignes} ligne${j.lignes > 1 ? "s" : ""} transmise${j.lignes > 1 ? "s" : ""} à votre gestionnaire.` }); await charger(); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const enregistrerSaisie = async () => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode: "saisir", ...saisie });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Enregistrement refusé." });
+      else { setSaisie(null); await charger(); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const notes = etat.notes || [];
+  const enAttente = notes.filter((n) => n.statut === "Nouvelle");
+  const validees = notes.filter((n) => n.statut === "Validée");
+  const closes = notes.filter((n) => n.statut === "Refusée" || n.statut === "En paie");
+  const euros = (v) => `${Number(v || 0).toFixed(2).replace(".", ",")} €`;
+  const basculer = (id) => setChoix((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+  const cat = (cle) => (etat.categories || []).find((c) => c.cle === cle)?.libelle || cle;
+
+  const th = { textAlign: "left", padding: "7px 8px", fontSize: 11.5, color: T.mut, fontWeight: 600, borderBottom: `1px solid ${T.border}`, whiteSpace: "nowrap" };
+  const td = { padding: "7px 8px", fontSize: 12.5, borderBottom: `1px solid ${T.border}`, verticalAlign: "top" };
+  const champ = { width: "100%", boxSizing: "border-box", padding: "8px 10px", fontSize: 13,
+    border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: T.sans, marginBottom: 8 };
+
+  const tableau = (liste, avecCases) => (
+    <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 12, marginBottom: 14, overflowX: "auto" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 720 }}>
+        <thead>
+          <tr>
+            {avecCases && <th style={{ ...th, width: 28 }}></th>}
+            <th style={th}>Salarié</th>
+            <th style={th}>Date</th>
+            <th style={th}>Nature</th>
+            <th style={th}>Demandé</th>
+            <th style={th}>Remboursé</th>
+            <th style={th}>En salaire</th>
+            <th style={th}>Points de vigilance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {liste.map((n) => (
+            <tr key={n.id} style={{ background: avecCases && choix.includes(n.id) ? "#F1F7F5" : "transparent" }}>
+              {avecCases && (
+                <td style={td}>
+                  <input type="checkbox" checked={choix.includes(n.id)} onChange={() => basculer(n.id)} />
+                </td>
+              )}
+              <td style={td}>{n.prenom} {n.nom}</td>
+              <td style={{ ...td, whiteSpace: "nowrap" }}>{(n.date || "").split("-").reverse().join("/")}</td>
+              <td style={td}>
+                {cat(n.categorie)}
+                {n.commercant && <span style={{ display: "block", color: T.mut, fontSize: 11.5 }}>{n.commercant}</span>}
+                {n.categorie === "km" && <span style={{ display: "block", color: T.mut, fontSize: 11.5 }}>{n.km} km · {n.qualification.detail?.puissance} CV</span>}
+                {n.justificatif && <span style={{ display: "block", color: T.mut, fontSize: 11 }}>📎 {n.justificatif}</span>}
+              </td>
+              <td style={{ ...td, whiteSpace: "nowrap" }}>{euros(n.qualification.demande)}</td>
+              <td style={{ ...td, whiteSpace: "nowrap", fontWeight: 600 }}>{euros(n.qualification.exonere)}</td>
+              <td style={{ ...td, whiteSpace: "nowrap", color: n.qualification.reintegre > 0 ? "#B45309" : T.mut }}>
+                {n.qualification.reintegre > 0 ? euros(n.qualification.reintegre) : "—"}
+              </td>
+              <td style={{ ...td, maxWidth: 320 }}>
+                {(n.points || []).length === 0 && <span style={{ color: T.mut }}>—</span>}
+                {(n.points || []).map((p, i) => (
+                  <div key={i} style={{ fontSize: 11.5, lineHeight: 1.45, marginBottom: 2,
+                    color: p.niveau === "bloquant" ? "#791F1F" : p.niveau === "vigilance" ? "#7A4A05" : T.mut }}>
+                    {p.niveau === "bloquant" ? "✗ " : p.niveau === "vigilance" ? "⚠ " : "· "}{p.texte}
+                  </div>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+      <h1 style={{ margin: "0 0 4px", fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Notes de frais</h1>
+      <p style={{ margin: "0 0 16px", fontSize: 12.5, color: T.mut, maxWidth: 760, lineHeight: 1.55 }}>
+        Le salarié photographie son ticket, le portail le lit et le qualifie. Ce qui reste sous le
+        plafond d'exonération part en remboursement net ; ce qui le dépasse est du salaire, et part en
+        brut soumis. Les deux colonnes sont séparées ici comme elles le seront sur le bulletin.
+      </p>
+
+      {msg?.ok && (
+        <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+          ✓ {msg.ok}
+          {(msg.refusees || []).map((r, i) => (
+            <div key={i} style={{ fontSize: 12, color: "#7A4A05", marginTop: 4 }}>Non validée ({r.reference || r.id}) : {r.motif}</div>
+          ))}
+        </div>
+      )}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✗ {msg.erreur}</div>}
+      {etat.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>{etat.erreur}</div>}
+      {etat.chargement && <p style={{ fontSize: 13, color: T.mut }}>Chargement…</p>}
+
+      {!etat.chargement && !etat.erreur && (
+        <>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+            <Kpi label="En attente de validation" val={etat.resume?.enAttente ?? 0} icon={Receipt} />
+            <Kpi label="Incomplètes" val={etat.resume?.bloquees ?? 0} warn={(etat.resume?.bloquees ?? 0) > 0} icon={AlertCircle} />
+            <Kpi label="À rembourser (validé)" val={euros(etat.resume?.aRembourser)} icon={Banknote} />
+            <Kpi label="Dont à passer en salaire" val={euros(etat.resume?.aReintegrer)} warn={(etat.resume?.aReintegrer ?? 0) > 0} icon={AlertCircle} />
+          </div>
+
+          {etat.bareme?.aVerifier && (
+            <div style={{ background: "#FAEEDA", color: "#7A4A05", border: "1px solid #EFD9B0", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>
+              ⚠ Les plafonds d'exonération appliqués sont ceux du barème {etat.bareme.annee}, faute de
+              millésime plus récent enregistré. Les montants restent justes pour les frais de cette
+              année-là ; pour l'année en cours, faites confirmer les plafonds par votre gestionnaire
+              avant de transmettre en paie.
+            </div>
+          )}
+
+          {/* Le lien public : c'est lui qui fait disparaître l'enveloppe. */}
+          {etat.lien?.actif && (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 14 }}>
+              <h2 style={{ margin: "0 0 4px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>Le lien à envoyer à votre équipe</h2>
+              <p style={{ margin: "0 0 8px", fontSize: 12, color: T.mut, lineHeight: 1.5 }}>
+                Un SMS, un QR code affiché au vestiaire : vos salariés photographient leur ticket et la
+                note arrive ici. Aucun compte, aucune application. Rien n'est remboursé sans votre
+                validation, note par note.
+              </p>
+              <code style={{ display: "block", background: "#FAF9F7", border: `1px solid ${T.border}`, borderRadius: 8,
+                padding: "8px 10px", fontSize: 11.5, wordBreak: "break-all" }}>
+                {`${window.location.origin}/?frais=${etat.lien.jeton}`}
+              </code>
+            </div>
+          )}
+
+          {/* Saisie par l'employeur : tout le monde n'a pas de smartphone. */}
+          <div style={{ marginBottom: 14 }}>
+            {!saisie ? (
+              <Btn onClick={() => setSaisie({ cle: "", categorie: "", date: new Date().toISOString().slice(0, 10), montant: "", quantite: 1, km: "", cv: "", commercant: "", motif: "" })}>
+                <Plus size={14} /> Saisir une note pour un salarié
+              </Btn>
+            ) : (
+              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14 }}>
+                <h2 style={{ margin: "0 0 10px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>Nouvelle note</h2>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11.5, color: T.mut }}>Salarié</label>
+                    <select value={saisie.cle} onChange={(e) => setSaisie({ ...saisie, cle: e.target.value })} style={champ}>
+                      <option value="">— choisir —</option>
+                      {(salaries || []).map((s) => {
+                        const cle = `${String(s.nom || "").toUpperCase()} ${String(s.prenom || "").toUpperCase()}`.trim();
+                        return <option key={cle} value={cle}>{s.nom} {s.prenom}</option>;
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, color: T.mut }}>Nature</label>
+                    <select value={saisie.categorie} onChange={(e) => setSaisie({ ...saisie, categorie: e.target.value })} style={champ}>
+                      <option value="">— choisir —</option>
+                      {(etat.categories || []).map((c) => <option key={c.cle} value={c.cle}>{c.libelle}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11.5, color: T.mut }}>Date</label>
+                    <input type="date" value={saisie.date} onChange={(e) => setSaisie({ ...saisie, date: e.target.value })} style={champ} />
+                  </div>
+                  {saisie.categorie === "km" ? (
+                    <>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Kilomètres</label>
+                        <input type="number" value={saisie.km} onChange={(e) => setSaisie({ ...saisie, km: e.target.value })} style={champ} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Puissance (CV)</label>
+                        <input type="number" value={saisie.cv} onChange={(e) => setSaisie({ ...saisie, cv: e.target.value })} style={champ} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Objet du déplacement</label>
+                        <input value={saisie.motif} onChange={(e) => setSaisie({ ...saisie, motif: e.target.value })} style={champ} />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Montant (€)</label>
+                        <input type="number" step="0.01" value={saisie.montant} onChange={(e) => setSaisie({ ...saisie, montant: e.target.value })} style={champ} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Commerçant</label>
+                        <input value={saisie.commercant} onChange={(e) => setSaisie({ ...saisie, commercant: e.target.value })} style={champ} />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 11.5, color: T.mut }}>Nombre d'unités</label>
+                        <input type="number" min="1" value={saisie.quantite} onChange={(e) => setSaisie({ ...saisie, quantite: e.target.value })} style={champ} />
+                      </div>
+                    </>
+                  )}
+                </div>
+                <p style={{ fontSize: 11.5, color: T.mut, margin: "0 0 10px", lineHeight: 1.5 }}>
+                  Le justificatif se joint depuis l'onglet Documents, ou par le lien salarié.
+                  Sans pièce, un frais au réel restera bloqué à la validation.
+                </p>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn primary onClick={enregistrerSaisie} disabled={envoi}>{envoi ? "Enregistrement…" : "Enregistrer"}</Btn>
+                  <Btn onClick={() => setSaisie(null)}>Annuler</Btn>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* En attente : le geste du mois. */}
+          <h2 style={{ margin: "0 0 8px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>
+            En attente de validation {enAttente.length > 0 && `(${enAttente.length})`}
+          </h2>
+          {enAttente.length === 0
+            ? <p style={{ fontSize: 13, color: T.mut, marginBottom: 16 }}>Aucune note en attente.</p>
+            : (
+              <>
+                {tableau(enAttente, true)}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                  <Btn onClick={() => setChoix(enAttente.filter((n) => n.validable).map((n) => n.id))}>
+                    Tout sélectionner (validables)
+                  </Btn>
+                  <Btn primary disabled={envoi || !choix.length} onClick={() => statuer("Validée")}>
+                    {envoi ? "…" : `Valider ${choix.length || ""}`.trim()}
+                  </Btn>
+                  <Btn disabled={envoi || !choix.length} onClick={() => statuer("Refusée")}>Refuser la sélection</Btn>
+                </div>
+                <p style={{ fontSize: 11.5, color: T.mut, marginBottom: 18, lineHeight: 1.5 }}>
+                  Une note marquée ✗ ne peut pas être validée en l'état : il lui manque un justificatif,
+                  une date ou une qualification. Elle peut en revanche toujours être refusée.
+                </p>
+              </>
+            )}
+
+          {/* Validées : prêtes pour la paie. */}
+          {validees.length > 0 && (
+            <>
+              <h2 style={{ margin: "0 0 8px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>Validées, à transmettre ({validees.length})</h2>
+              {tableau(validees, false)}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                <Btn onClick={() => preparer("apercu")} disabled={envoi}>
+                  Voir le récapitulatif de {mois.split("-").reverse().join("/")}
+                </Btn>
+                {apercu && (
+                  <Btn primary disabled={envoi} onClick={() => preparer("variables")}>
+                    {envoi ? "Envoi…" : "Transmettre à mon gestionnaire"}
+                  </Btn>
+                )}
+              </div>
+            </>
+          )}
+
+          {apercu && (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginBottom: 16, overflowX: "auto" }}>
+              <h2 style={{ margin: "0 0 8px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>
+                Ce qui partira en paie pour {apercu.mois.split("-").reverse().join("/")}
+              </h2>
+              <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: "100%", minWidth: 560 }}>
+                <thead>
+                  <tr><th style={th}>Salarié</th><th style={th}>Frais remboursés (net)</th><th style={th}>Réintégré en brut</th><th style={th}>Détail</th></tr>
+                </thead>
+                <tbody>
+                  {apercu.lignes.map((l, i) => (
+                    <tr key={i}>
+                      <td style={td}>{l.nom} {l.prenom}</td>
+                      <td style={td}>{euros(l.fraisPro)}</td>
+                      <td style={{ ...td, color: l.primeMontant ? "#B45309" : T.mut }}>
+                        {l.primeMontant ? `${euros(l.primeMontant)} — ${l.primeLibelle}` : "—"}
+                      </td>
+                      <td style={{ ...td, color: T.mut, fontSize: 11.5 }}>{l.commentaire}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p style={{ fontSize: 11.5, color: T.mut, margin: "10px 0 0", lineHeight: 1.5 }}>
+                Après transmission, ces notes passent au statut « En paie » et n'apparaîtront plus dans
+                les listes à traiter.
+              </p>
+            </div>
+          )}
+
+          {closes.length > 0 && (
+            <details style={{ marginBottom: 20 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: T.mut, marginBottom: 8 }}>
+                Historique — refusées et déjà en paie ({closes.length})
+              </summary>
+              {tableau(closes, false)}
+            </details>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 function Procedures({ user, salaries, onRetour }) {
   const [etat, setEtat] = useState({ chargement: true });

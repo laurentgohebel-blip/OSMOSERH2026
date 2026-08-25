@@ -428,6 +428,109 @@ function traiterDemande(e, options) {
     });
   }
 
+  /* Notes de frais — VERSION DÉMO. La qualification qui fait foi vit
+     dans api/src/frais.js (barèmes URSSAF, part exonérée, part
+     réintégrée) ; ici les montants sont posés à la main pour montrer les
+     trois cas qui parlent : une note nette, une note qui dépasse le
+     plafond et bascule en salaire, une note bloquée faute de ticket. */
+  if (d.action === "frais") {
+    const CATS = [
+      { cle: "repas-restaurant", libelle: "Repas au restaurant (déplacement)", regime: "forfait", unite: "repas", aide: "Le salarié est en déplacement et déjeune au restaurant." },
+      { cle: "repas-hors-locaux", libelle: "Repas hors des locaux, sans restaurant", regime: "forfait", unite: "repas", aide: "Chantier, tournée, véhicule : le salarié ne peut ni rentrer ni aller au restaurant." },
+      { cle: "km", libelle: "Indemnité kilométrique (véhicule personnel)", regime: "bareme", unite: "km", aide: "Le montant est calculé par le barème : ni le carburant ni l'entretien ne se remboursent en plus." },
+      { cle: "transport", libelle: "Transport (train, avion, taxi, péage, parking)", regime: "reel", unite: null, aide: "Au réel, sur justificatif." },
+      { cle: "hebergement", libelle: "Hôtel (au réel)", regime: "reel", unite: null, aide: "Facture au nom de l'entreprise ou du salarié." },
+      { cle: "fournitures", libelle: "Achat pour l'entreprise", regime: "reel", unite: null, aide: "Le salarié avance un achat professionnel." },
+      { cle: "autre", libelle: "Autre frais professionnel", regime: "reel", unite: null, aide: "À qualifier par le gestionnaire." },
+    ];
+    const qual = (libelle, demande, exonere, extra = {}) => ({
+      libelle, demande, exonere, reintegre: Math.round((demande - exonere) * 100) / 100,
+      limite: null, quantite: 1, unite: "", justificatifRequis: false,
+      baremeAnnee: 2025, baremeAVerifier: true, motifRequis: false, ...extra,
+    });
+    e.frais ??= [
+      { id: "demo-frais-1", reference: "FRAIS-DEMO1", cle: "MARTIN PAUL", nom: "MARTIN", prenom: "Paul",
+        categorie: "repas-restaurant", date: dansNJours(-5), montant: 28, commercant: "Le Bistrot du Port",
+        justificatif: "Frais_MARTIN-Paul_ticket.jpg", statut: "Nouvelle", source: "Salarié",
+        qualification: qual("Repas au restaurant (déplacement)", 28, 21.10, { limite: 21.10, quantite: 1, unite: "repas", justificatifRequis: true }),
+        points: [{ niveau: "vigilance", texte: "Dépassement de 6.90 € au-delà de la limite d'exonération (21.10 € pour 1 repas). Cette part est du salaire : elle partira en brut soumis, pas en frais." }],
+        bloquants: 0, validable: true },
+      { id: "demo-frais-2", reference: "FRAIS-DEMO2", cle: "DUPONT MARIE", nom: "DUPONT", prenom: "Marie",
+        categorie: "km", date: dansNJours(-4), km: 140, cv: 5, motif: "Client Durand, Hyères",
+        montant: 89.04, justificatif: "", statut: "Nouvelle", source: "Employeur",
+        qualification: qual("Indemnité kilométrique (véhicule personnel)", 89.04, 89.04, { quantite: 140, unite: "km", motifRequis: true, detail: { puissance: 5 } }),
+        points: [], bloquants: 0, validable: true },
+      { id: "demo-frais-3", reference: "FRAIS-DEMO3", cle: "MARTIN PAUL", nom: "MARTIN", prenom: "Paul",
+        categorie: "transport", date: dansNJours(-3), montant: 42.60, commercant: "SNCF",
+        justificatif: "", statut: "Nouvelle", source: "Salarié",
+        qualification: qual("Transport (train, avion, taxi, péage, parking)", 42.60, 42.60, { justificatifRequis: true }),
+        points: [{ niveau: "bloquant", texte: "Justificatif manquant. Sans pièce, le remboursement est un avantage soumis à cotisations." }],
+        bloquants: 1, validable: false },
+    ];
+
+    if (d.mode === "saisir") {
+      const s = (p.salaries || []).find((x) => x.cle === d.cle) || {};
+      const c = CATS.find((x) => x.cle === d.categorie) || CATS[CATS.length - 1];
+      const montant = c.regime === "bareme" ? Math.round((Number(d.km) || 0) * 0.636 * 100) / 100 : Number(String(d.montant).replace(",", ".")) || 0;
+      e.frais.unshift({ id: `demo-frais-${e.frais.length + 1}`, reference: referenceDemo("FRAIS"),
+        cle: d.cle, nom: s.nom || d.cle, prenom: s.prenom || "", categorie: c.cle, date: d.date,
+        montant, km: Number(d.km) || 0, cv: Number(d.cv) || 0, motif: d.motif || "", commercant: d.commercant || "",
+        justificatif: "", statut: "Nouvelle", source: "Employeur",
+        qualification: qual(c.libelle, montant, montant, { justificatifRequis: c.regime === "reel", detail: { puissance: Number(d.cv) || 5 } }),
+        points: c.regime === "reel"
+          ? [{ niveau: "bloquant", texte: "Justificatif manquant. Sans pièce, le remboursement est un avantage soumis à cotisations." }]
+          : [],
+        bloquants: c.regime === "reel" ? 1 : 0, validable: c.regime !== "reel" });
+      return json(201, { reference: e.frais[0].reference });
+    }
+    if (d.mode === "statuer") {
+      const ids = Array.isArray(d.ids) ? d.ids : [d.id];
+      let traitees = 0; const refusees = [];
+      for (const id of ids) {
+        const n = e.frais.find((x) => x.id === id);
+        if (!n) continue;
+        if (d.statut === "Validée" && !n.validable) { refusees.push({ id, reference: n.reference, motif: n.points[0]?.texte || "Note incomplète." }); continue; }
+        n.statut = d.statut; traitees++;
+      }
+      return json(200, { traitees, refusees });
+    }
+    if (d.mode === "apercu" || d.mode === "variables") {
+      const parSal = new Map();
+      for (const n of e.frais.filter((x) => x.statut === "Validée")) {
+        const cur = parSal.get(n.cle) || { nom: n.nom, prenom: n.prenom, matricule: "", fraisPro: 0, reintegre: 0, detail: [] };
+        cur.fraisPro += n.qualification.exonere;
+        cur.reintegre += n.qualification.reintegre;
+        cur.detail.push(`${n.date} ${n.qualification.libelle} ${n.qualification.demande.toFixed(2)} €`);
+        parSal.set(n.cle, cur);
+      }
+      const lignes = [...parSal.values()].map((l) => ({
+        nom: l.nom, prenom: l.prenom, matricule: l.matricule,
+        fraisPro: Math.round(l.fraisPro * 100) / 100,
+        ...(l.reintegre > 0 ? { primeLibelle: "Frais au-delà du plafond (soumis)", primeMontant: Math.round(l.reintegre * 100) / 100 } : {}),
+        commentaire: `${l.detail.length} note${l.detail.length > 1 ? "s" : ""} de frais — ${l.detail.join(" · ")}`,
+      }));
+      if (!lignes.length) return json(400, { erreur: "Aucune note validée à transmettre pour ce mois." });
+      if (d.mode === "variables") { e.frais.forEach((n) => { if (n.statut === "Validée") n.statut = "En paie"; }); return json(202, { mois: d.mois, lignes: lignes.length }); }
+      return json(200, { mois: d.mois, lignes });
+    }
+
+    const enAttente = e.frais.filter((n) => n.statut === "Nouvelle");
+    const validees = e.frais.filter((n) => n.statut === "Validée");
+    const somme = (liste, champ) => Math.round(liste.reduce((s, n) => s + n.qualification[champ], 0) * 100) / 100;
+    return json(200, {
+      notes: e.frais, categories: CATS,
+      bareme: { annee: 2025, aVerifier: true },
+      resume: {
+        enAttente: enAttente.length,
+        bloquees: enAttente.filter((n) => !n.validable).length,
+        aRembourser: somme(validees, "exonere"),
+        aReintegrer: somme(validees, "reintegre"),
+        enAttenteMontant: somme(enAttente, "demande"),
+      },
+      lien: { actif: true, jeton: "demo0000000000000000000000000000" },
+    });
+  }
+
   /* Planning d'équipe — VERSION DÉMO. Le calcul qui fait foi vit dans
      api/src/temps.js ; ici on montre le geste avec une arithmétique
      simplifiée (semaine unique, temps plein). */
