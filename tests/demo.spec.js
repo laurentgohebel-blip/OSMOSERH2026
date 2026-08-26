@@ -235,6 +235,34 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("saisie sur salaire : la quotité détaillée et la transmission", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Saisie sur salaire", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Saisie sur salaire" })).toBeVisible();
+
+    // Le dossier en cours : la retenue, le reste au salarié, l'échéancier.
+    await expect(page.getByText("MARTIN — Saisie des rémunérations", { exact: false })).toBeVisible();
+    await expect(page.getByText("236,94 €").first()).toBeVisible();
+    await expect(page.getByText("1263,06 €")).toBeVisible();
+    await expect(page.getByText(/en ~9 mois/)).toBeVisible();
+
+    // Le détail par tranches se déplie, vérifiable au centime.
+    await page.getByText(/Voir le calcul, tranche par tranche/).click();
+    await expect(page.getByText("1/20")).toBeVisible();
+    await expect(page.getByText(/646,52 € restent au salarié/)).toBeVisible();
+
+    // La confidentialité et l'interdiction de sanctionner sont dites.
+    await expect(page.getByText(/strictement confidentielle/)).toBeVisible();
+    await expect(page.getByText(/Ne sanctionnez jamais/)).toBeVisible();
+
+    // Transmettre la retenue du mois — puis refus du doublon.
+    await page.getByRole("button", { name: /Transmettre la retenue/ }).click();
+    await expect(page.getByText(/transmise en variables de paie/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /déjà transmise/ })).toBeDisabled();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("les documents fictifs sont listés", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Documents" }).click();

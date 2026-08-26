@@ -213,6 +213,7 @@ LISTES = [
         col("AbsenceType", T()), col("AbsenceDu", T()), col("AbsenceAu", T()),
         col("PrimeLibelle", T()), col("PrimeMontant", N()), col("Acompte", N()),
         col("TitresResto", N()), col("FraisPro", N()), col("AvantagesNature", N()),
+        col("SaisieArret", N()),  # retenue mensuelle de saisie sur salaire (26/08)
         col("Commentaire", TL()),
         col("Statut", CH(["Nouvelle", "Intégrée"], "Nouvelle")),
     ]),
@@ -268,6 +269,22 @@ LISTES = [
         col("MotifRefus", TL()),
         col("Source", CH(["Salarié", "Employeur"], "Salarié")),
         col("MoisPaie", T()),
+    ]),
+    # Saisies sur salaire (26/08) : un dossier = UNE saisie (ou une
+    # pension alimentaire en paiement direct). La quotité n'est jamais
+    # stockée : elle se recalcule à chaque lecture par api/src/saisie.js
+    # (barème daté, plancher RSA). DejaRetenu avance à chaque
+    # transmission en variables ; DernierMoisTransmis évite le doublon.
+    # Donnée CONFIDENTIELLE : cloisonnée par CodeClient, nulle part
+    # ailleurs dans le portail.
+    ("Saisies sur salaire", SOCLE_PERSONNEL + [
+        col("TypeSaisie", CH(["saisie", "pension"], "saisie")),
+        col("Creancier", T()),
+        col("MontantDette", N()), col("Mensualite", N()),
+        col("NetMensuel", N()), col("PersonnesACharge", N()),
+        col("DejaRetenu", N()), col("DateReception", D()),
+        col("Statut", CH(["En cours", "Soldée", "Clôturée"], "En cours")),
+        col("DernierMoisTransmis", T()),
     ]),
 ]
 

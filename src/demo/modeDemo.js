@@ -428,6 +428,53 @@ function traiterDemande(e, options) {
     });
   }
 
+  /* Saisie sur salaire — VERSION DÉMO. Le calcul qui fait foi (quotité
+     par tranches, plancher RSA) vit dans api/src/saisie.js ; la démo
+     montre un dossier en cours avec un calcul posé à la main. */
+  if (d.action === "saisie") {
+    e.saisies ??= [{
+      id: "demo-sai-1", reference: "SAI-DEMO1", cle: "MARTIN PAUL", nom: "MARTIN", prenom: "Paul",
+      type: "saisie", creancier: "SCP Demo & associés, dossier 2026-117",
+      montantDette: 2400, mensualite: 0, netMensuel: 1500, personnesACharge: 0,
+      dejaRetenu: 473.88, dateReception: dansNJours(-40), statut: "En cours", dernierMoisTransmis: "",
+      calcul: {
+        type: "saisie", netMensuel: 1500, personnesACharge: 0, majorationMensuelle: 0,
+        detail: [
+          { de: 0, a: 370, fraction: "1/20", assiette: 370, part: 18.5 },
+          { de: 370, a: 721.67, fraction: "1/10", assiette: 351.67, part: 35.17 },
+          { de: 721.67, a: 1074.17, fraction: "1/5", assiette: 352.5, part: 70.5 },
+          { de: 1074.17, a: 1424.17, fraction: "1/4", assiette: 350, part: 87.5 },
+          { de: 1424.17, a: 1775, fraction: "1/3", assiette: 75.83, part: 25.27 },
+        ],
+        quotiteBareme: 236.94, rsaMensuel: 646.52, plafonneParRsa: false,
+        retenueMax: 236.94, resteAuSalarie: 1263.06,
+        restantDu: 1926.12, retenueDuMois: 236.94,
+        echeancier: { restantDu: 1926.12, retenueMensuelle: 236.94, mois: 9, dernierMois: 30.6 },
+        baremeAnnee: 2025, baremeAVerifier: true,
+      },
+      obligations: {
+        reponse: { limite: dansNJours(-25), enRetard: false,
+          texte: "La réponse au commissaire de justice a été adressée dans le délai de 15 jours (existence du contrat, rémunération, absence d'autre saisie)." },
+        gestes: [], discretion: "Information strictement confidentielle.",
+      },
+    }];
+    if (d.mode === "declarer") {
+      return json(201, { reference: referenceDemo("SAI") });
+    }
+    if (d.mode === "transmettre") {
+      const s = e.saisies.find((x) => x.id === d.id);
+      if (s && s.dernierMoisTransmis === d.mois) return json(409, { erreur: "Déjà transmise ce mois-ci." });
+      if (s) { s.dernierMoisTransmis = d.mois; s.dejaRetenu = Math.round((s.dejaRetenu + s.calcul.retenueDuMois) * 100) / 100; }
+      return json(202, { mois: d.mois, retenue: s ? s.calcul.retenueDuMois : 0, soldee: false, restantDu: s ? Math.round((s.montantDette - s.dejaRetenu) * 100) / 100 : 0 });
+    }
+    if (d.mode === "cloturer") {
+      const s = e.saisies.find((x) => x.id === d.id);
+      if (s) s.statut = "Clôturée";
+      return json(200, { ok: true });
+    }
+    return json(200, { saisies: e.saisies, bareme: { annee: 2025, aVerifier: true } });
+  }
+
   /* Notes de frais — VERSION DÉMO. La qualification qui fait foi vit
      dans api/src/frais.js (barèmes URSSAF, part exonérée, part
      réintégrée) ; ici les montants sont posés à la main pour montrer les
