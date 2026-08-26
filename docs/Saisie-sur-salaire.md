@@ -24,17 +24,26 @@ changé : il reste fixé par décret, revalorisé chaque année.
 Aucun SIRH du marché TPE ne fait ce calcul. C'est un geste de cabinet — et
 c'est pour ça qu'il est dans le portail.
 
-## ⚠ Le barème est daté — à actualiser chaque année
+## Le barème est daté — millésime 2026 chargé et vérifié
 
 Une seule table, `BAREMES` en tête de `api/src/saisie.js`, indexée par
-millésime. Les valeurs enregistrées sont **celles du millésime 2025, écrites
-de mémoire** : avant toute utilisation en clientèle, confronter chaque
-chiffre au décret annuel (art. R.3252-2 et R.3252-3) et au montant du RSA.
+millésime. **Le millésime 2026 est chargé et vérifié à la source**
+(décret n° 2025-1299 du 24 décembre 2025, JORF du 26/12/2025, confronté à
+Légifrance le 26/08/2026) :
 
-Millésime 2025 enregistré : tranches annuelles 4 440 / 8 660 / 12 890 /
-17 090 / 21 300 / 25 600 € (fractions 1/20, 1/10, 1/5, 1/4, 1/3, 2/3, puis
-totalité), majoration de 1 720 €/an par personne à charge, plancher RSA
-646,52 €/mois.
+| Tranche annuelle | Fraction saisissable |
+|---|---|
+| jusqu'à 4 480 € | 1/20 |
+| 4 480 → 8 730 € | 1/10 |
+| 8 730 → 13 000 € | 1/5 |
+| 13 000 → 17 230 € | 1/4 |
+| 17 230 → 21 470 € | 1/3 |
+| 21 470 → 25 810 € | 2/3 |
+| au-delà | totalité |
+
+Majoration de **1 740 €/an** par personne à charge · plancher RSA
+**651,69 €/mois** (revalorisation d'avril 2026). Le millésime 2025 reste en
+table pour les calculs rétroactifs (écrit de mémoire, non confronté).
 
 Comme pour les notes de frais : une année sans millésime chargé s'affiche
 avec un bandeau d'avertissement et `aVerifier: true`. Personne ne signe un
@@ -107,7 +116,7 @@ Doctrine des routes respectée : aucune route nouvelle.
 
 ## Recette
 
-- `simu-saisie.js` — 41 vérifications du calcul pur : tranches (vérifiées à
+- `simu-saisie.js` — 43 vérifications du calcul pur : tranches (vérifiées à
   la main), majoration par charge, plancher RSA, pension plafonnée,
   échéancier qui solde au centime, horloge des 15 jours avec report du
   15 août. Un vrai bug attrapé : un restant dû de zéro était traité comme

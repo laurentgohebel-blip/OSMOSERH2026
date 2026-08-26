@@ -243,14 +243,14 @@ test.describe("Mode démonstration", () => {
 
     // Le dossier en cours : la retenue, le reste au salarié, l'échéancier.
     await expect(page.getByText("MARTIN — Saisie des rémunérations", { exact: false })).toBeVisible();
-    await expect(page.getByText("236,94 €").first()).toBeVisible();
-    await expect(page.getByText("1263,06 €")).toBeVisible();
+    await expect(page.getByText("234,78 €").first()).toBeVisible();
+    await expect(page.getByText("1265,22 €")).toBeVisible();
     await expect(page.getByText(/en ~9 mois/)).toBeVisible();
 
     // Le détail par tranches se déplie, vérifiable au centime.
     await page.getByText(/Voir le calcul, tranche par tranche/).click();
     await expect(page.getByText("1/20")).toBeVisible();
-    await expect(page.getByText(/646,52 € restent au salarié/)).toBeVisible();
+    await expect(page.getByText(/651,69 € restent au salarié/)).toBeVisible();
 
     // La confidentialité et l'interdiction de sanctionner sont dites.
     await expect(page.getByText(/strictement confidentielle/)).toBeVisible();

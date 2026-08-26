@@ -437,20 +437,22 @@ function traiterDemande(e, options) {
       type: "saisie", creancier: "SCP Demo & associés, dossier 2026-117",
       montantDette: 2400, mensualite: 0, netMensuel: 1500, personnesACharge: 0,
       dejaRetenu: 473.88, dateReception: dansNJours(-40), statut: "En cours", dernierMoisTransmis: "",
+      // Valeurs produites par api/src/saisie.js, barème 2026 (décret
+      // n° 2025-1299) — régénérer d'un `node -e` si le millésime change.
       calcul: {
         type: "saisie", netMensuel: 1500, personnesACharge: 0, majorationMensuelle: 0,
         detail: [
-          { de: 0, a: 370, fraction: "1/20", assiette: 370, part: 18.5 },
-          { de: 370, a: 721.67, fraction: "1/10", assiette: 351.67, part: 35.17 },
-          { de: 721.67, a: 1074.17, fraction: "1/5", assiette: 352.5, part: 70.5 },
-          { de: 1074.17, a: 1424.17, fraction: "1/4", assiette: 350, part: 87.5 },
-          { de: 1424.17, a: 1775, fraction: "1/3", assiette: 75.83, part: 25.27 },
+          { de: 0, a: 373.33, fraction: "1/20", assiette: 373.33, part: 18.67 },
+          { de: 373.33, a: 727.5, fraction: "1/10", assiette: 354.17, part: 35.42 },
+          { de: 727.5, a: 1083.33, fraction: "1/5", assiette: 355.83, part: 71.17 },
+          { de: 1083.33, a: 1435.83, fraction: "1/4", assiette: 352.5, part: 88.13 },
+          { de: 1435.83, a: 1789.17, fraction: "1/3", assiette: 64.17, part: 21.39 },
         ],
-        quotiteBareme: 236.94, rsaMensuel: 646.52, plafonneParRsa: false,
-        retenueMax: 236.94, resteAuSalarie: 1263.06,
-        restantDu: 1926.12, retenueDuMois: 236.94,
-        echeancier: { restantDu: 1926.12, retenueMensuelle: 236.94, mois: 9, dernierMois: 30.6 },
-        baremeAnnee: 2025, baremeAVerifier: true,
+        quotiteBareme: 234.78, rsaMensuel: 651.69, plafonneParRsa: false,
+        retenueMax: 234.78, resteAuSalarie: 1265.22,
+        restantDu: 1926.12, retenueDuMois: 234.78,
+        echeancier: { restantDu: 1926.12, retenueMensuelle: 234.78, mois: 9, dernierMois: 47.88 },
+        baremeAnnee: 2026, baremeAVerifier: false,
       },
       obligations: {
         reponse: { limite: dansNJours(-25), enRetard: false,
@@ -472,7 +474,7 @@ function traiterDemande(e, options) {
       if (s) s.statut = "Clôturée";
       return json(200, { ok: true });
     }
-    return json(200, { saisies: e.saisies, bareme: { annee: 2025, aVerifier: true } });
+    return json(200, { saisies: e.saisies, bareme: { annee: 2026, aVerifier: false } });
   }
 
   /* Notes de frais — VERSION DÉMO. La qualification qui fait foi vit

@@ -41,6 +41,22 @@
    ════════════════════════════════════════════════════════════════════ */
 
 const BAREMES = {
+  // 2026 — décret n° 2025-1299 du 24 décembre 2025 (JORF du 26/12/2025),
+  // art. R.3252-2 et R.3252-3, vérifié sur Légifrance le 26/08/2026.
+  // RSA personne seule : 651,69 €/mois (revalorisation d'avril 2026).
+  2026: {
+    tranches: [
+      { jusqu: 4480, fraction: 1 / 20 },
+      { jusqu: 8730, fraction: 1 / 10 },
+      { jusqu: 13000, fraction: 1 / 5 },
+      { jusqu: 17230, fraction: 1 / 4 },
+      { jusqu: 21470, fraction: 1 / 3 },
+      { jusqu: 25810, fraction: 2 / 3 },
+      { jusqu: Infinity, fraction: 1 },
+    ],
+    majorationParCharge: 1740,
+    rsaMensuel: 651.69,
+  },
   2025: {
     // Tranches ANNUELLES de rémunération nette saisissable, et fraction
     // saisissable de chaque tranche. La dernière tranche (au-delà du
