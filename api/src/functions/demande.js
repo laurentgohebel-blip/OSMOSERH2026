@@ -519,6 +519,22 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Motif d'absence invalide — choisissez un motif de la liste." } };
         if (MOTIFS_ABSENCE[d.motif] && !String(d.justificatifUrl || "").trim())
           return { status: 400, jsonBody: { erreur: "Justificatif requis pour ce motif (arrêt de travail, certificat…)." } };
+
+        // Accident du travail ou de trajet (25/08) : le volet accident
+        // devient obligatoire — lieu, heure, circonstances, ce qui
+        // s'oublie en six mois et que la DAT exigera mot pour mot. Les
+        // deux horloges s'arment (48 h pour déclarer, 10 jours francs
+        // pour les réserves) et le gestionnaire est prévenu DANS LA
+        // MINUTE par le fil « Mon gestionnaire » : sur ce délai-là, le
+        // flux d'échéances arriverait après la bataille.
+        let accident = null;
+        if (require("../accident").estAccident(d.motif)) {
+          const A = require("../accident");
+          const erreurs = A.valider(d);
+          if (erreurs.length) return { status: 400, jsonBody: { erreur: erreurs[0] } };
+          accident = { A, dos: A.dossier(d) };
+        }
+
         const reference = `ABS-${Date.now().toString(36).toUpperCase()}`;
         await creerElementPersonnel("Absences", email, clientInfo, d, reference, {
           DateDebut: d.dateDebut,
@@ -526,7 +542,20 @@ app.http("demande", {
           Motif: d.motif,
           JustificatifUrl: String(d.justificatifUrl || "").trim().slice(0, 500),
           Statut: "Nouvelle",
+          ...(accident ? accident.A.champs(d, accident.dos) : {}),
         });
+
+        if (accident) {
+          const salarie = String(d.salarie).trim();
+          // Le message peut échouer sans faire échouer la déclaration :
+          // la ligne est écrite, l'écran affiche les échéances — mais un
+          // signal urgent perdu doit se voir dans les journaux.
+          try {
+            await creerMessageGestionnaire(email, clientInfo,
+              accident.A.messageGestionnaire(d, accident.dos, salarie), reference);
+          } catch (e) { context.error("absence/accident : message gestionnaire non envoyé —", e?.erreur || e?.message || e); }
+          return { status: 202, jsonBody: { reference, accident: accident.dos } };
+        }
         return { status: 202, jsonBody: { reference } };
       }
 

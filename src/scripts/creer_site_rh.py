@@ -125,6 +125,16 @@ LISTES = [
         # Visite de reprise (23/08, R.4624-31) : dernier palier d'alerte
         # (REPRISE / RETARD) — l'arrêt déclaré déclenche l'obligation.
         col("AlerteReprise", T()),
+        # Volet accident du travail / de trajet (25/08) : les faits
+        # captés À CHAUD — la DAT (48 h, R.441-3) les reprend mot pour
+        # mot, et les réserves motivées (10 jours francs, R.441-6) se
+        # fondent dessus. DatEcheance = date limite de déclaration.
+        col("AccidentDate", D()), col("AccidentHeure", T()),
+        col("AccidentLieu", T()), col("AccidentCirconstances", TL()),
+        col("AccidentLesions", TL()), col("AccidentTemoins", TL()),
+        col("AccidentTiers", TL()),
+        col("ConnaissanceDate", D()), col("ConnaissanceHeure", T()),
+        col("DatEcheance", D()),
     ]),
     ("Visites médicales", SOCLE_PERSONNEL + [
         col("DateVisite", D()),

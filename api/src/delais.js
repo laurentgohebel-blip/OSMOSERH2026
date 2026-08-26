@@ -89,4 +89,5 @@ function ajouterMois(depart, n) {
 
 const fr = (d) => (estDate(d) ? d.split("-").reverse().join("/") : String(d || ""));
 
-module.exports = { ajouter, ajouterMois, compter, reporterSiNonOuvrable, estOuvrable, estOuvre, jourPlus, jourSemaine, estDate, fr };
+module.exports = { ajouter, ajouterMois, compter, reporterSiNonOuvrable, estOuvrable, estOuvre, jourPlus, jourSemaine, estDate, fr,
+  estFerie, estDimanche: (d) => jourSemaine(d) === 7 };
