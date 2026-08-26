@@ -282,6 +282,16 @@ python3 creer_site_rh.py
   sont déjà toutes dans /api/personnel.)
 
 ## Idées / suites déjà actées
+- **Application mobile** (étude du 26/08, voir
+  docs/Application-mobile.md) : conclusion = PWA, pas de magasin
+  d'applications. Le portail est déjà responsive ; ce qui manque, c'est
+  l'icône sur l'écran d'accueil et la notification poussée. Étape 0 =
+  manifeste + icônes + service worker (≈ 1 j), revue mobile écran par
+  écran, MSAL en `localStorage` pour ne plus reconnecter à chaque fois.
+  Étape 1 = Web Push sur DEUX événements seulement (réponse du
+  gestionnaire, échéance qui approche), l'e-mail restant la doublure.
+  Capacitor gardé en réserve. **Rien pour les salariés** : le lien à
+  jeton sans compte est un avantage, pas un pis-aller.
 - OCR v2 : pré-remplissage du dossier depuis les PJ (Azure Document
   Intelligence) — après le lancement.
 - Alerte délai DPAE (fenêtre légale : 8 jours avant l'embauche).
