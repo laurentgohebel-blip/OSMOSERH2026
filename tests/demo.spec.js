@@ -235,6 +235,45 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("avance sur salaire : l'échéancier du dixième s'affiche", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Acompte", { exact: true }).first().click();
+
+    // La bascule acompte / avance et sa pédagogie.
+    await page.getByRole("button", { name: /Avance — prêt/ }).click();
+    await expect(page.getByText(/un dixième du salaire par paie/)).toBeVisible();
+
+    // Remplir : 1 000 € d'avance, 1 800 € net → 180 €/mois, 6 mois.
+    await page.locator("input").nth(0).fill("patron@demo.fr");
+    await page.locator("input").nth(1).fill("MOREAU");
+    await page.locator("input").nth(2).fill("Julien");
+    await page.locator("input").nth(3).fill("600200");
+    await page.getByPlaceholder("Ex. 150").fill("1000");
+    await page.getByPlaceholder(/dernier bulletin/).fill("1800");
+    await expect(page.getByText(/180,00 € par mois \(1\/10e du net\)/)).toBeVisible();
+    await expect(page.getByText(/soit 6 mois/)).toBeVisible();
+
+    await page.locator('input[type="date"]').fill(dansNJours(3));
+    await page.getByRole("button", { name: /Envoyer/ }).click();
+
+    // La confirmation porte l'échéancier complet.
+    await expect(page.getByText("Demande transmise")).toBeVisible();
+    await expect(page.getByText(/Échéancier de remboursement/)).toBeVisible();
+    await expect(page.getByText(/L\.3251-3/)).toBeVisible();
+    await expect(page.getByText(/100,00 €/)).toBeVisible(); // le dernier mois solde
+    expect(appelsApi).toHaveLength(0);
+  });
+
+  test("procédures : les six sont au catalogue", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Procédures", { exact: true }).first().click();
+    await expect(page.getByText("Rupture de la période d'essai").first()).toBeVisible();
+    await expect(page.getByText("Abandon de poste (présomption de démission)").first()).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("saisie sur salaire : la quotité détaillée et la transmission", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Production" }).click();

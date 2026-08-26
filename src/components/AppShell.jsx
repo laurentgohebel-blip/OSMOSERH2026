@@ -1607,6 +1607,10 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
   const [f, setF] = useState({
     email: user?.email || "",
     nom: "", prenom: "", matricule: "", montant: "", dateVersement: "",
+    // Acompte ou avance : deux gestes que tout le monde confond. Acompte
+    // = travail déjà fait, déduit en une fois. Avance = un PRÊT sur du
+    // travail à venir, remboursé au 1/10e du salaire par paie (L.3251-3).
+    typeVersement: "acompte", netMensuel: "",
   });
   const [err, setErr] = useState({});
   const [errbar, setErrbar] = useState("");
@@ -1623,6 +1627,8 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       matricule: !/^\d{1,10}$/.test(f.matricule.trim()),
       montant: !/^\d{1,5}([.,]\d{1,2})?$/.test(f.montant.trim()) || parseFloat(f.montant.trim().replace(",", ".")) <= 0,
       dateVersement: !/^\d{4}-\d{2}-\d{2}$/.test(f.dateVersement) || f.dateVersement < new Date().toISOString().slice(0, 10),
+      netMensuel: f.typeVersement === "avance"
+        && (!/^\d{1,6}([.,]\d{1,2})?$/.test(f.netMensuel.trim()) || parseFloat(f.netMensuel.trim().replace(",", ".")) <= 0),
     };
     setErr(e);
     return !Object.values(e).some(Boolean);
@@ -1645,6 +1651,10 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       matricule: Number(f.matricule.trim()),  // colonne Matricule : nombre JSON attendu par le déclencheur du flux
       montant: Number(f.montant.trim().replace(",", ".")), // colonne Montant demandé : nombre JSON attendu par le déclencheur du flux
       dateVersement: f.dateVersement, // AAAA-MM-JJ — colonne Date de versement côté flux
+      ...(f.typeVersement === "avance" ? {
+        typeVersement: "avance",
+        netMensuel: Number(f.netMensuel.trim().replace(",", ".")),
+      } : {}),
       xq_note: "", // honeypot : doit rester vide
     };
 
@@ -1665,6 +1675,7 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
       }
       const j = await r.json().catch(() => ({}));
       ref = j.reference || null;
+      if (j.avance) { setFini({ ref, demo, avance: j.avance }); return; }
     } catch (_) {
       demo = true;
     }
@@ -1685,8 +1696,21 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
           </div>
           <h1 style={{ margin: "0 0 10px", fontSize: 20, fontFamily: T.serif, fontWeight: 600 }}>Demande transmise</h1>
           <p style={{ margin: "0 0 6px", fontSize: 13.5 }}>
-            Demande d'acompte de <strong>{f.montant.trim().replace(".", ",")} €</strong> pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong> (matricule {f.matricule.trim()}).
+            Demande {fini.avance ? "d'avance" : "d'acompte"} de <strong>{f.montant.trim().replace(".", ",")} €</strong> pour <strong>{f.nom.trim().toUpperCase()} {f.prenom.trim()}</strong> (matricule {f.matricule.trim()}).
           </p>
+          {fini.avance && (
+            <div style={{ textAlign: "left", background: "#EEF4FB", border: "1px solid #CFE3F5", borderRadius: 10, padding: "10px 14px", margin: "0 0 12px" }}>
+              <p style={{ margin: "0 0 6px", fontSize: 12.5, fontWeight: 600, color: "#0B5583" }}>Échéancier de remboursement (1/10e du salaire, L.3251-3)</p>
+              {fini.avance.lignes.map((l) => (
+                <p key={l.mois} style={{ margin: "0 0 2px", fontSize: 12.5 }}>
+                  {l.mois.split("-").reverse().join("/")} : {l.retenue.toFixed(2).replace(".", ",")} €
+                </p>
+              ))}
+              <p style={{ margin: "6px 0 0", fontSize: 11.5, color: "#0B5583", lineHeight: 1.5 }}>
+                En cas de départ avant la fin, le solde se retient sur le solde de tout compte.
+              </p>
+            </div>
+          )}
           <p style={{ margin: "0 0 14px", fontSize: 13.5 }}>
             Elle sera traitée par votre gestionnaire ; un accusé sera adressé à <strong>{f.email.trim()}</strong>.
           </p>
@@ -1747,9 +1771,49 @@ function DemandeAcompte({ user, client, salaries, onRetour }) {
             <input inputMode="numeric" style={err.matricule ? inputInvalid : inputStyle} placeholder="Ex. 600138" value={f.matricule} onChange={(e) => maj("matricule", e.target.value)} />
           </ChampReq>
 
+          {/* Acompte ou avance : la distinction que la paie ne pardonne
+              pas. L'avance déplie le net mensuel et montre l'échéancier
+              du 1/10e AVANT l'envoi. */}
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Nature du versement *</label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {[["acompte", "Acompte — travail déjà effectué"], ["avance", "Avance — prêt sur travail à venir"]].map(([v, lib]) => (
+                <button key={v} onClick={() => maj("typeVersement", v)}
+                  style={{ all: "unset", boxSizing: "border-box", cursor: "pointer", padding: "10px 14px", borderRadius: 10,
+                    border: `1px solid ${f.typeVersement === v ? T.accent : T.border}`,
+                    background: f.typeVersement === v ? "#F1F7F5" : T.card,
+                    fontSize: 12.5, fontWeight: f.typeVersement === v ? 600 : 400 }}>
+                  {lib}
+                </button>
+              ))}
+            </div>
+            <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut, lineHeight: 1.5 }}>
+              {f.typeVersement === "acompte"
+                ? "L'acompte paie des heures déjà travaillées : il se déduit en une fois de la paie du mois."
+                : "L'avance est un prêt : elle ne peut se rembourser que par retenues plafonnées à un dixième du salaire par paie (L.3251-3) — même si le salarié est d'accord pour plus."}
+            </p>
+          </div>
+
           <ChampReq label="Montant demandé (€)" erreur={err.montant && "Montant invalide (ex. 150 ou 113,35)."}>
             <input inputMode="decimal" style={err.montant ? inputInvalid : inputStyle} placeholder="Ex. 150" value={f.montant} onChange={(e) => maj("montant", e.target.value)} />
           </ChampReq>
+
+          {f.typeVersement === "avance" && (
+            <ChampReq label="Salaire net mensuel du salarié (€)" erreur={err.netMensuel && "Net mensuel requis — il fixe le plafond de retenue."}>
+              <input inputMode="decimal" style={err.netMensuel ? inputInvalid : inputStyle} placeholder="Sur le dernier bulletin" value={f.netMensuel} onChange={(e) => maj("netMensuel", e.target.value)} />
+            </ChampReq>
+          )}
+
+          {f.typeVersement === "avance" && parseFloat(f.montant.replace(",", ".")) > 0 && parseFloat(f.netMensuel.replace(",", ".")) > 0 && (() => {
+            const m = parseFloat(f.montant.replace(",", ".")), plaf = Math.round((parseFloat(f.netMensuel.replace(",", ".")) / 10) * 100) / 100;
+            const nb = Math.ceil(m / plaf);
+            return (
+              <p style={{ gridColumn: "1 / -1", margin: 0, fontSize: 12, background: "#EEF4FB", color: "#0B5583", border: "1px solid #CFE3F5", borderRadius: 8, padding: "9px 12px", lineHeight: 1.5 }}>
+                Remboursement : au plus {plaf.toFixed(2).replace(".", ",")} € par mois (1/10e du net) —
+                soit {nb} mois. L'échéancier précis sera joint à la demande.
+              </p>
+            );
+          })()}
 
           <ChampReq label="Date de versement souhaitée" erreur={err.dateVersement && "Date requise (aujourd'hui ou à venir)."}>
             <input type="date" min={new Date().toISOString().slice(0, 10)} style={err.dateVersement ? inputInvalid : inputStyle} value={f.dateVersement} onChange={(e) => maj("dateVersement", e.target.value)} />
@@ -3555,6 +3619,10 @@ function Procedures({ user, salaries, onRetour }) {
       aide: "Un mois pour reclasser ou licencier, sinon le salaire doit être repris (L.1226-4)." },
     "licenciement-personnel": { cle: "", label: "", aide: "" },
     "rupture-conventionnelle": { cle: "", label: "", aide: "" },
+    "rupture-essai": { cle: "entree", label: "Date d'entrée du salarié",
+      aide: "La durée de présence détermine le délai de prévenance : 24 h, 48 h, deux semaines ou un mois (L.1221-25)." },
+    "abandon-poste": { cle: "constat", label: "Premier jour d'absence injustifiée",
+      aide: "Vérifiez d'abord qu'aucun justificatif n'est en route — un arrêt maladie suspend tout." },
   };
 
   const ouvrir = async () => {

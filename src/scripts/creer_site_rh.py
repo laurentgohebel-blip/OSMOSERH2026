@@ -242,7 +242,8 @@ LISTES = [
     # droit, une colonne par étape figerait le modèle.
     ("Procédures", SOCLE_PERSONNEL + [
         col("TypeProcedure", CH(
-            ["licenciement-personnel", "sanction-disciplinaire", "inaptitude", "rupture-conventionnelle"],
+            ["licenciement-personnel", "sanction-disciplinaire", "inaptitude",
+             "rupture-conventionnelle", "rupture-essai", "abandon-poste"],
             "licenciement-personnel")),
         col("Etapes", TL()), col("Contexte", TL()),
         col("Statut", CH(["En cours", "Terminée", "Abandonnée"], "En cours")),
