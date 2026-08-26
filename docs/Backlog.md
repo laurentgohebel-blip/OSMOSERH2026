@@ -292,6 +292,17 @@ python3 creer_site_rh.py
   gestionnaire, échéance qui approche), l'e-mail restant la doublure.
   Capacitor gardé en réserve. **Rien pour les salariés** : le lien à
   jeton sans compte est un avantage, pas un pis-aller.
+  **Application réservée aux clients** (question du 26/08, § 3 bis) :
+  intérêt réel mais conditionnel, et pas avant le lancement — l'usage
+  d'un dirigeant de TPE, c'est 2 à 6 ouvertures par mois sans l'option
+  Planning, en dessous du seuil où une icône garde sa place. Ce qui le
+  ramène, c'est la notification, pas le magasin. À faire d'abord :
+  l'écran mobile « ce qui vous attend » (file d'attente + 3 gestes) au
+  lieu des 17 tuiles. Question à reposer si la moitié des clients
+  ouvrent le portail chaque semaine, ou si Planning dépasse la moitié
+  du parc, ou si l'installation PWA sur iPhone reste trop rare pour que
+  le push atteigne sa cible — et la réponse serait alors Capacitor,
+  pas du natif.
 - OCR v2 : pré-remplissage du dossier depuis les PJ (Azure Document
   Intelligence) — après le lancement.
 - Alerte délai DPAE (fenêtre légale : 8 jours avant l'embauche).

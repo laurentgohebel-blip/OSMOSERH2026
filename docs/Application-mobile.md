@@ -11,7 +11,11 @@ produit à maintenir pour un gain marginal, et casserait la promesse qui
 fait vendre la brique salarié : *rien à installer*.
 
 Le détail ci-dessous, population par population, puis le chiffrage des
-trois voies possibles et l'ordre des gestes.
+trois voies possibles et l'ordre des gestes. Le **§ 3 bis** traite à
+part la question posée ensuite — *une application réservée aux clients,
+aurait-elle un intérêt ?* : intérêt réel, mais conditionné à une
+fréquence d'usage qu'on ne peut pas encore mesurer, avec un test de
+décision à reposer trois mois après le lancement.
 
 ---
 
@@ -112,9 +116,16 @@ native.**
 
 ### Le code n'est pas portable
 
-Le front, c'est 14 300 lignes de React, dont 5 850 pour le seul
-`AppShell.jsx`, écrites en **styles inline** avec des media queries
-`!important` par-dessus. Aucune de ces lignes ne survit à un passage en
+Le front vivant — celui que `main.jsx` atteint réellement — c'est
+6 200 lignes de React côté client (`AppShell.jsx` à lui seul en pèse
+5 850), plus 1 500 pour l'écran gestionnaire et 620 pour les trois pages
+salarié. (Les 5 700 lignes restantes du dossier `components/` — le
+sous-arbre `Adminrh.jsx` : `FormBuilder`, `ValidationConges`,
+`Onboarding`, `ATraiter`, `Workflows`, `Conges`, `Documents`,
+`Formations`, `Production`, `Home`, `Dashboard`, `Login` — ne sont plus
+importées par personne : code mort d'une version antérieure, à retirer
+un jour de calme.) Le tout est écrit en **styles inline** avec des media
+queries `!important` par-dessus. Aucune de ces lignes ne survit à un passage en
 React Native : ni les `<div>`, ni les `style={{}}` CSS, ni les
 `<input type="file">`, ni les media queries, ni le rendu HTML des
 courriers. Ce ne serait pas un portage, ce serait **une réécriture
@@ -159,6 +170,142 @@ disparaît.
 À comparer à l'infrastructure actuelle, qui tourne à 40-50 €/mois et
 vise 20 (`Infra-couts.md`). Ce serait le poste le plus cher de la
 plateforme, pour la fonctionnalité la moins différenciante.
+
+---
+
+## 3 bis. Le cas particulier de l'application client
+
+Question posée séparément le 26/08 : *et une application réservée aux
+clients, elle aurait un intérêt ?*
+
+Intérêt réel, mais **conditionnel — et pas maintenant**. Quatre raisons,
+dans l'ordre de poids.
+
+### a) La fréquence d'usage décide de tout, et elle est faible
+
+Une application vit ou meurt sur la fréquence. Voici, geste par geste,
+ce qu'un dirigeant de TPE fait réellement dans le portail :
+
+| Geste | Cadence réelle | Forme mobile ? |
+|---|---|---|
+| Planning d'équipe, pointage | **Hebdomadaire** | Oui |
+| Variables de paie | Mensuelle (autour de la clôture) | Moyen (saisie longue) |
+| Notes de frais à valider | Mensuelle à hebdomadaire | **Oui** |
+| Déclarer une absence (photo de l'arrêt) | Quelques-unes par mois | **Oui** |
+| Fil « Mon gestionnaire » | Réactive | **Oui** |
+| Échéances | Consultation — devrait être poussée, pas tirée | **Oui** |
+| Embauche, avenant, fin de contrat, DPAE | Quelques fois par an | Non (formulaire long) |
+| Acompte, attestation, visite médicale, mutuelle | Épisodique | Moyen |
+
+Sans l'option Planning, cela fait **deux à six ouvertures par mois**.
+C'est en dessous du seuil où une icône gagne sa place sur un écran
+d'accueil : une application ouverte deux fois par mois est oubliée, puis
+désinstallée quand le téléphone manque de place. Avec Planning +
+pointage + notes de frais, on passe à un usage hebdomadaire — et là,
+la question devient légitime.
+
+**Donc : l'intérêt d'une application client dépend d'une seule variable,
+le taux de souscription à l'option Planning.** C'est mesurable —
+l'onglet Abonnements le donne déjà — mais pas avant d'avoir des clients.
+
+Et surtout : ce qui ramène quelqu'un dans un outil ouvert deux fois par
+mois, ce n'est pas l'icône, c'est **la notification**. Qui ne réclame
+pas de magasin d'applications.
+
+### b) Ce que le client voudrait sur son téléphone n'est pas le portail
+
+Le portail client, c'est 17 tuiles réparties en 4 blocs, plus un tableau
+de bord, une page Production, une page Échéances et une GED. Porter cela
+sur un écran de cinq pouces produirait un moins bon portail.
+
+Ce qu'un dirigeant veut sur son téléphone tient en une file d'attente et
+trois gestes : **ce qui vous attend** (à valider, à signer, échéance qui
+approche), **déclarer une absence en photo**, **répondre au
+gestionnaire**. Le reste — embaucher, faire un avenant, saisir les
+variables du mois — se fait au bureau, et c'est très bien ainsi.
+
+Autrement dit, la vraie valeur n'est pas « le portail dans une
+application », c'est **un écran d'accueil mobile réduit**. C'est une
+décision de conception, pas de technologie : elle se construit dans
+l'application web existante, en quelques jours, et elle profite aussi à
+ceux qui ouvrent le portail dans leur navigateur.
+
+### c) Ce que le natif ajouterait pour un client, une fois la PWA faite
+
+- **Face ID / empreinte** à la reconnexion : le seul apport franc, et il
+  est réel — c'est aujourd'hui l'irritant n° 1 (`sessionStorage`). Mais
+  `localStorage` + une PWA installée en règlent l'essentiel.
+- **Hors ligne** : marginal ici. Les gestes mobiles du client passent
+  presque tous par une photo qui doit monter au serveur pour être lue
+  (OCR) et rangée dans la GED. Sans réseau, il n'y a pas grand-chose à
+  faire de plus qu'une file d'envoi différé — que la PWA sait aussi
+  tenir.
+- **La vitrine des magasins** : voir ci-dessous.
+
+Rien d'autre. La photo, les notifications, l'icône, le plein écran : le
+web les fait déjà.
+
+### d) L'argument commercial, à son juste prix
+
+Il est le plus sérieux des arguments en faveur, et il faut le regarder
+en face : face à un confrère qui envoie un tableur par courriel, « nos
+clients ont une application » se dit bien en rendez-vous. Un dirigeant
+de six salariés juge le sérieux d'un cabinet à ces signaux-là.
+
+Deux réserves, cependant :
+
+1. **Une PWA installée est visuellement indiscernable d'une
+   application** : icône sur l'écran d'accueil, écran de démarrage,
+   plein écran, aucune barre de navigateur. En démonstration, l'effet
+   est le même — et on peut la faire installer devant le client en dix
+   secondes, sans magasin, sans compte Apple, sans mise à jour à
+   attendre. L'argument de vente s'obtient donc à 95 % sans le magasin.
+2. **Une fiche vide dessert.** Une application à trente téléchargements
+   et deux avis, dont la dernière mise à jour date de huit mois, dit
+   l'inverse de ce qu'on voulait dire.
+
+À noter aussi, factuellement : Apple refuse au titre de la règle 4.2
+(*minimum functionality*) les applications qui ne sont qu'un site web
+emballé. Une enveloppe Capacitor passe généralement **si** elle apporte
+du natif visible — notifications, appareil photo, biométrie. « On a
+emballé le portail » est le motif de rejet classique. Ce n'est pas
+rédhibitoire, c'est une contrainte de conception à connaître avant de
+s'engager.
+
+### e) Le calendrier : la plateforme n'est pas encore lancée
+
+C'est l'argument qui tranche. Le reste-à-faire de la synthèse de session
+porte encore « Communication clients + reprise des clients réels », le
+bêta-test n'a qu'un testeur, et l'annexe RGPD des contrats clients reste
+à rédiger — explicitement « prioritaire avant les clients réels ».
+
+Construire une application de magasin avant d'avoir des clients qui
+utilisent le portail web, c'est inverser l'ordre : une application est
+un **outil de rétention**, et la rétention suppose des utilisateurs.
+Pire, cela dépenserait des semaines sur la seule question qu'on ne peut
+pas encore trancher — la fréquence d'usage réelle — alors que trois mois
+d'exploitation la répondront gratuitement.
+
+### f) Le test de décision, à reposer plus tard
+
+Rouvrir la question le jour où **l'une** de ces trois conditions est
+vérifiée :
+
+1. la moitié des clients actifs ouvrent le portail au moins une fois par
+   semaine sur un mois glissant ;
+2. l'option Planning/pointage dépasse la moitié du parc — c'est le seul
+   geste hebdomadaire, donc le seul qui justifie une icône ;
+3. les notifications PWA n'atteignent pas leur cible sur iPhone (mesuré,
+   pas supposé : part des clients iOS ayant réellement ajouté le portail
+   à leur écran d'accueil).
+
+Dans ce cas, la réponse ne serait de toute façon pas « une application
+native » mais **l'enveloppe Capacitor** : même code, même rythme de
+correctifs, la vitrine des magasins en plus.
+
+En attendant : la PWA, l'écran « ce qui vous attend », et deux
+notifications bien choisies. C'est 90 % du bénéfice pour 1 % du coût, et
+cela ne ferme aucune porte.
 
 ---
 
@@ -256,6 +403,17 @@ effort/bénéfice de toute cette note, et ça ne dépend d'aucune décision.
 Passer MSAL de `sessionStorage` à `localStorage` (avec la contrepartie
 de sécurité à peser : poste partagé). Sur mobile, c'est ce qui
 transforme « je dois me reconnecter à chaque fois » en « ça s'ouvre ».
+
+**Étape 0 quater — l'écran « ce qui vous attend » (≈ 2-3 jours).**
+Une page d'accueil mobile réduite à la file d'attente du client : ce
+qu'il doit valider ou signer, l'échéance qui approche, le dernier
+message du gestionnaire, et trois boutons — déclarer une absence en
+photo, valider les notes de frais, écrire au gestionnaire. Le reste du
+portail continue d'exister, on ne le retire pas ; on cesse simplement
+d'obliger un dirigeant à traverser 17 tuiles sur un écran de cinq
+pouces pour faire le geste de deux minutes qui l'amenait. C'est ce
+qu'une application client apporterait vraiment — et cela se construit
+dans l'application web existante (voir § 3 bis b).
 
 **Étape 1 — les notifications (≈ 3-5 jours).**
 VAPID, liste d'abonnements, module d'envoi, opt-in explicite côté
