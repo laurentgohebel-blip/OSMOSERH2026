@@ -131,7 +131,7 @@ const BARRES = { CDI: "#378ADD", CDD: "#5DCAA5", Alternance: "#AFA9EC", Stage: "
 // doivent rester d'accord : le serveur refuse pour de bon, cette table ne
 // fait que griser la tuile — un client sans l'option doit le voir avant
 // de cliquer, pas récolter un 403. Planning et Procédures y manquaient.
-const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite", planning: "paie", procedures: "embauche", frais: "paie" };
+const OPTION_TUILE = { attestation: "attestation", acompte: "acompte", embauche: "embauche", variables: "paie", fin: "embauche", personnel: "embauche", absences: "embauche", visite: "embauche", mutuelle: "embauche", avenant: "embauche", habilitation: "securite", securite: "securite", planning: "paie", procedures: "embauche", frais: "paie", saisie: "paie" };
 
 /* Tuiles groupées par bloc métier (miroir de la page services) — le bloc
    « bientot » est affiché grisé, non cliquable (feuille de route visible). */
@@ -162,6 +162,7 @@ const TUILES = [
   { id: "variables", bloc: "paie", titre: "Variables de paie", sous: "Éléments du mois", icone: CalendarDays, cablee: true },
   { id: "frais", bloc: "paie", titre: "Notes de frais", sous: "Ticket photographié, validation, paie", icone: Receipt, cablee: true },
   { id: "acompte", bloc: "paie", titre: "Acompte", sous: "Demande d'acompte", icone: Banknote, cablee: true },
+  { id: "saisie", bloc: "paie", titre: "Saisie sur salaire", sous: "Quotité, échéancier, obligations", icone: Banknote, cablee: true },
   { id: "contact", bloc: "echanges", titre: "Mon gestionnaire", sous: "Écrire et suivre vos échanges", icone: Send, cablee: true },
   { id: "formation", bloc: "bientot", titre: "Formation", sous: "Demandes et plan de formation", icone: GraduationCap },
   { id: "securite", bloc: "bientot", titre: "Sécurité", sous: "Habilitations, DUERP, registres", icone: ShieldCheck, cablee: true },
@@ -882,6 +883,11 @@ export default function AppShell({ user, onLogout }) {
           <NotesDeFrais user={user} salaries={refSal} onRetour={() => setTuile(null)} />
         )}
 
+        {/* La saisie sur salaire : le détail par tranches veut de la place. */}
+        {vue === "prod" && tuile && tuile.id === "saisie" && (
+          <SaisieSalaire user={user} salaries={refSal} onRetour={() => setTuile(null)} />
+        )}
+
         {/* Le dossier du personnel aussi : liste + fiche en pleine largeur. */}
         {vue === "prod" && tuile && tuile.id === "personnel" && (
           <GestionPersonnel user={user} client={codeClient} onRetour={() => setTuile(null)}
@@ -906,7 +912,7 @@ export default function AppShell({ user, onLogout }) {
 
         {/* Formulaires : largeur volontairement contenue (~560 px, un champ
             trop large se lit mal) mais CENTRÉE dans la zone de contenu. */}
-        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "procedures" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && tuile.id !== "frais" && (
+        {vue === "prod" && tuile && tuile.id !== "variables" && tuile.id !== "planning" && tuile.id !== "procedures" && tuile.id !== "personnel" && tuile.id !== "contact" && tuile.id !== "securite" && tuile.id !== "frais" && tuile.id !== "saisie" && (
           <div style={{ maxWidth: 560, margin: "0 auto" }}>
             {tuile.id === "attestation" && (
               <AttestationEmployeur user={user} client={codeClient} salaries={refSal} onRetour={() => setTuile(null)} />
@@ -2874,6 +2880,296 @@ const MOT_STATUT = {
   attente: "Délai en cours", "a-venir": "À venir", "sans-objet": "Sans objet",
 };
 const frD = (iso) => (/^\d{4}-\d{2}-\d{2}$/.test(String(iso)) ? String(iso).split("-").reverse().join("/") : "");
+
+/* ================================================================
+   SAISIE SUR SALAIRE
+   Le courrier d'huissier que personne ne sait traiter. L'écran fait
+   trois choses : la déclaration (et le gestionnaire prévenu dans la
+   minute pour la réponse des 15 jours), le calcul de la quotité
+   DÉTAILLÉ tranche par tranche — un patron doit pouvoir vérifier au
+   centime —, et la transmission mensuelle en variables de paie.
+   ================================================================ */
+function SaisieSalaire({ user, salaries, onRetour }) {
+  const [etat, setEtat] = useState({ chargement: true });
+  const [form, setForm] = useState(null);   // formulaire de déclaration
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const mois = new Date().toISOString().slice(0, 7);
+  const euros = (v) => `${Number(v || 0).toFixed(2).replace(".", ",")} €`;
+
+  const appel = async (corps) => {
+    const r = await apiFetch("/api/demande", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "saisie", ...corps }),
+    });
+    return [r, await r.json().catch(() => ({}))];
+  };
+  const charger = async () => {
+    try {
+      const [r, j] = await appel({});
+      setEtat(r.ok ? j : { erreur: j.erreur || `Lecture refusée (HTTP ${r.status}).` });
+    } catch { setEtat({ erreur: "API injoignable — réessayez." }); }
+  };
+  useEffect(() => { charger(); }, []);
+
+  const declarer = async () => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode: "declarer", ...form });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Déclaration refusée." });
+      else {
+        setMsg({ ok: `Saisie déclarée — réf. ${j.reference}. Votre gestionnaire vient d'être prévenu : il prépare la réponse au commissaire de justice.` });
+        setForm(null); await charger();
+      }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const transmettre = async (id) => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode: "transmettre", id, mois });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Transmission refusée." });
+      else {
+        setMsg({ ok: j.soldee
+          ? `Retenue de ${euros(j.retenue)} transmise — la dette est SOLDÉE. Le dossier est terminé.`
+          : `Retenue de ${euros(j.retenue)} transmise en variables de paie${j.restantDu != null ? ` — restant dû : ${euros(j.restantDu)}` : ""}.` });
+        await charger();
+      }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const cloturer = async (id) => {
+    setEnvoi(true); setMsg(null);
+    try {
+      const [r, j] = await appel({ mode: "cloturer", id });
+      if (!r.ok) setMsg({ erreur: j.erreur || "Clôture refusée." });
+      else { setMsg({ ok: "Dossier clôturé." }); await charger(); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+
+  const champ = { width: "100%", boxSizing: "border-box", padding: "9px 10px", fontSize: 13,
+    border: `1px solid ${T.border}`, borderRadius: 8, fontFamily: T.sans };
+  const lab = { display: "block", fontSize: 11.5, color: T.mut, marginBottom: 4, fontWeight: 600 };
+  const enCours = (etat.saisies || []).filter((s) => s.statut === "En cours");
+  const closes = (etat.saisies || []).filter((s) => s.statut !== "En cours");
+
+  return (
+    <>
+      <button onClick={onRetour} style={{ all: "unset", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.mut, marginBottom: 16, fontFamily: T.sans }}>
+        <ArrowLeft size={15} /> Retour aux tuiles
+      </button>
+      <h1 style={{ margin: "0 0 4px", fontSize: 19, fontFamily: T.serif, fontWeight: 600 }}>Saisie sur salaire</h1>
+      <p style={{ margin: "0 0 6px", fontSize: 12.5, color: T.mut, maxWidth: 760, lineHeight: 1.55 }}>
+        Vous avez reçu un procès-verbal de saisie ou une notification de paiement direct pour un de vos
+        salariés. Le portail calcule la retenue exacte — ni plus, ni moins —, tient l'échéancier, et
+        votre gestionnaire prépare la réponse obligatoire des 15 jours.
+      </p>
+      <p style={{ margin: "0 0 16px", fontSize: 11.5, color: "#7A4A05", maxWidth: 760, lineHeight: 1.5 }}>
+        ⚠ Information strictement confidentielle : elle ne regarde que les personnes qui traitent la
+        paie. Ne sanctionnez jamais un salarié en raison d'une saisie — c'est interdit.
+      </p>
+
+      {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✓ {msg.ok}</div>}
+      {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>✗ {msg.erreur}</div>}
+      {etat.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>{etat.erreur}</div>}
+      {etat.chargement && <p style={{ fontSize: 13, color: T.mut }}>Chargement…</p>}
+
+      {!etat.chargement && !etat.erreur && (
+        <>
+          {etat.bareme?.aVerifier && (
+            <div style={{ background: "#FAEEDA", color: "#7A4A05", border: "1px solid #EFD9B0", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 14, lineHeight: 1.5 }}>
+              ⚠ Le barème appliqué est celui de {etat.bareme.annee}, faute de millésime plus récent
+              enregistré. Les seuils de saisie sont revalorisés chaque année par décret : faites
+              confirmer le calcul par votre gestionnaire avant la première retenue.
+            </div>
+          )}
+
+          {!form ? (
+            <div style={{ marginBottom: 16 }}>
+              <Btn primary onClick={() => setForm({ cle: "", type: "saisie", montantDette: "", mensualite: "",
+                netMensuel: "", personnesACharge: 0, creancier: "", dateReception: new Date().toISOString().slice(0, 10) })}>
+                <Plus size={14} /> Déclarer une saisie reçue
+              </Btn>
+            </div>
+          ) : (
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 14, marginBottom: 16 }}>
+              <h2 style={{ margin: "0 0 10px", fontSize: 14, fontFamily: T.serif, fontWeight: 600 }}>Le procès-verbal reçu</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label style={lab}>Salarié concerné</label>
+                  <select value={form.cle} onChange={(e) => setForm({ ...form, cle: e.target.value })} style={champ}>
+                    <option value="">— choisir —</option>
+                    {(salaries || []).map((s) => {
+                      const cle = `${String(s.nom || "").toUpperCase()} ${String(s.prenom || "").toUpperCase()}`.trim();
+                      return <option key={cle} value={cle}>{s.nom} {s.prenom}</option>;
+                    })}
+                  </select>
+                </div>
+                <div>
+                  <label style={lab}>Nature</label>
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={champ}>
+                    <option value="saisie">Saisie des rémunérations (dette)</option>
+                    <option value="pension">Pension alimentaire (paiement direct)</option>
+                  </select>
+                </div>
+                {form.type === "saisie" ? (
+                  <div>
+                    <label style={lab}>Montant total de la dette (€)</label>
+                    <input type="number" step="0.01" value={form.montantDette} onChange={(e) => setForm({ ...form, montantDette: e.target.value })} style={champ} />
+                  </div>
+                ) : (
+                  <div>
+                    <label style={lab}>Mensualité due (€)</label>
+                    <input type="number" step="0.01" value={form.mensualite} onChange={(e) => setForm({ ...form, mensualite: e.target.value })} style={champ} />
+                  </div>
+                )}
+                <div>
+                  <label style={lab}>Salaire net mensuel du salarié (€)</label>
+                  <input type="number" step="0.01" placeholder="Sur le dernier bulletin" value={form.netMensuel} onChange={(e) => setForm({ ...form, netMensuel: e.target.value })} style={champ} />
+                </div>
+                <div>
+                  <label style={lab}>Personnes à charge</label>
+                  <input type="number" min="0" value={form.personnesACharge} onChange={(e) => setForm({ ...form, personnesACharge: e.target.value })} style={champ} />
+                </div>
+                <div>
+                  <label style={lab}>Reçu le</label>
+                  <input type="date" value={form.dateReception} onChange={(e) => setForm({ ...form, dateReception: e.target.value })} style={champ} />
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={lab}>Commissaire de justice / référence du dossier</label>
+                  <input value={form.creancier} onChange={(e) => setForm({ ...form, creancier: e.target.value })} placeholder="SCP …, dossier n° …" style={champ} />
+                </div>
+              </div>
+              <p style={{ fontSize: 11.5, color: T.mut, margin: "0 0 10px", lineHeight: 1.5 }}>
+                Les personnes à charge relèvent les seuils du barème : conjoint aux ressources
+                faibles, enfants à charge — au sens du décret, votre gestionnaire confirme.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Btn primary onClick={declarer} disabled={envoi}>{envoi ? "Enregistrement…" : "Déclarer"}</Btn>
+                <Btn onClick={() => setForm(null)}>Annuler</Btn>
+              </div>
+            </div>
+          )}
+
+          {enCours.length === 0 && closes.length === 0 && (
+            <p style={{ fontSize: 13, color: T.mut }}>Aucune saisie en cours.</p>
+          )}
+
+          {enCours.map((s) => (
+            <div key={s.id} style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                <h2 style={{ margin: 0, fontSize: 15, fontFamily: T.serif, fontWeight: 600 }}>
+                  {s.prenom} {s.nom} — {s.type === "pension" ? "Pension alimentaire (paiement direct)" : "Saisie des rémunérations"}
+                </h2>
+                <span style={{ fontSize: 11.5, color: T.mut }}>{s.reference}{s.creancier ? ` · ${s.creancier}` : ""}</span>
+              </div>
+
+              {/* L'horloge des 15 jours d'abord : c'est elle qui presse. */}
+              <div style={{ background: s.obligations.reponse.enRetard ? "#FCEBEB" : "#FFF7ED",
+                border: `1px solid ${s.obligations.reponse.enRetard ? "#F7C1C1" : "#FDBA74"}`,
+                borderRadius: 10, padding: "10px 12px", margin: "10px 0", fontSize: 12.5,
+                color: s.obligations.reponse.enRetard ? "#791F1F" : "#7C2D12", lineHeight: 1.5 }}>
+                {s.obligations.reponse.texte}
+              </div>
+
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", margin: "12px 0" }}>
+                <div>
+                  <div style={{ fontSize: 11.5, color: T.mut }}>Retenue de {mois.split("-").reverse().join("/")}</div>
+                  <div style={{ fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>{euros(s.calcul.retenueDuMois)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 11.5, color: T.mut }}>Reste au salarié</div>
+                  <div style={{ fontSize: 24, fontFamily: T.serif, fontWeight: 600, color: T.accent }}>{euros(s.calcul.resteAuSalarie)}</div>
+                </div>
+                {s.type === "saisie" && s.calcul.echeancier && (
+                  <div>
+                    <div style={{ fontSize: 11.5, color: T.mut }}>Restant dû → extinction</div>
+                    <div style={{ fontSize: 24, fontFamily: T.serif, fontWeight: 600 }}>
+                      {euros(s.calcul.restantDu)} <span style={{ fontSize: 13, color: T.mut, fontWeight: 400 }}>en ~{s.calcul.echeancier.mois} mois</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Le détail par tranches : vérifiable au centime. */}
+              {s.type === "saisie" && (
+                <details style={{ marginBottom: 10 }}>
+                  <summary style={{ cursor: "pointer", fontSize: 12.5, color: T.accent, fontWeight: 600 }}>
+                    Voir le calcul, tranche par tranche (barème {s.calcul.baremeAnnee})
+                  </summary>
+                  <table style={{ borderCollapse: "collapse", fontSize: 12, marginTop: 8, minWidth: 380 }}>
+                    <thead>
+                      <tr>
+                        {["Tranche mensuelle", "Fraction", "Assiette", "Part saisie"].map((h) => (
+                          <th key={h} style={{ textAlign: "left", padding: "5px 10px 5px 0", color: T.mut, fontWeight: 600, borderBottom: `1px solid ${T.border}` }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.calcul.detail.map((t, i) => (
+                        <tr key={i}>
+                          <td style={{ padding: "5px 10px 5px 0", borderBottom: `1px solid ${T.border}` }}>
+                            {euros(t.de)} {t.a != null ? `→ ${euros(t.a)}` : "et au-delà"}
+                          </td>
+                          <td style={{ padding: "5px 10px 5px 0", borderBottom: `1px solid ${T.border}` }}>{t.fraction}</td>
+                          <td style={{ padding: "5px 10px 5px 0", borderBottom: `1px solid ${T.border}` }}>{euros(t.assiette)}</td>
+                          <td style={{ padding: "5px 10px 5px 0", borderBottom: `1px solid ${T.border}`, fontWeight: 600 }}>{euros(t.part)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <p style={{ fontSize: 11.5, color: T.mut, margin: "8px 0 0", lineHeight: 1.5 }}>
+                    Net retenu pour le calcul : {euros(s.calcul.netMensuel)}
+                    {s.calcul.personnesACharge > 0 && ` · seuils majorés pour ${s.calcul.personnesACharge} personne${s.calcul.personnesACharge > 1 ? "s" : ""} à charge`}.
+                    Quoi qu'il arrive, {euros(s.calcul.rsaMensuel)} restent au salarié (montant du RSA).
+                    {s.calcul.plafonneParRsa && " Ce plancher plafonne la retenue ce mois-ci."}
+                  </p>
+                </details>
+              )}
+              {s.type === "pension" && s.calcul.insuffisant && (
+                <p style={{ fontSize: 12, color: "#7A4A05", margin: "0 0 10px", lineHeight: 1.5 }}>
+                  ⚠ Le salaire ne couvre pas toute la mensualité : seul {euros(s.calcul.retenue)} peut
+                  être prélevé (le RSA reste au salarié). Signalez-le au commissaire de justice.
+                </p>
+              )}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <Btn primary disabled={envoi || s.dernierMoisTransmis === mois} onClick={() => transmettre(s.id)}>
+                  {s.dernierMoisTransmis === mois
+                    ? `Retenue de ${mois.split("-").reverse().join("/")} déjà transmise`
+                    : envoi ? "Envoi…" : `Transmettre la retenue de ${mois.split("-").reverse().join("/")}`}
+                </Btn>
+                <Btn disabled={envoi} onClick={() => cloturer(s.id)}>Clore (mainlevée, départ…)</Btn>
+              </div>
+              {s.dejaRetenu > 0 && s.type === "saisie" && (
+                <p style={{ fontSize: 11.5, color: T.mut, margin: "8px 0 0" }}>
+                  Déjà retenu : {euros(s.dejaRetenu)} sur {euros(s.montantDette)}.
+                </p>
+              )}
+            </div>
+          ))}
+
+          {closes.length > 0 && (
+            <details style={{ marginBottom: 20 }}>
+              <summary style={{ cursor: "pointer", fontSize: 13, color: T.mut }}>
+                Dossiers terminés ({closes.length})
+              </summary>
+              {closes.map((s) => (
+                <p key={s.id} style={{ fontSize: 12.5, color: T.mut, margin: "8px 0" }}>
+                  {s.prenom} {s.nom} — {s.type === "pension" ? "pension alimentaire" : "saisie"} · {s.statut}
+                  {s.type === "saisie" && ` · ${euros(s.dejaRetenu)} retenus`} · {s.reference}
+                </p>
+              ))}
+            </details>
+          )}
+        </>
+      )}
+    </>
+  );
+}
 
 /* ================================================================
    NOTES DE FRAIS

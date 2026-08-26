@@ -220,6 +220,26 @@ app.http("demande", {
         }
       }
 
+      // Saisie sur salaire. Option « paie » : ce que la brique produit,
+      // c'est une retenue mensuelle en variables. Le calcul (quotité par
+      // tranches, plancher RSA, pension alimentaire) vit dans saisie.js.
+      if (d.action === "saisie") {
+        if (!clientInfo.options.includes("paie"))
+          return { status: 403, jsonBody: { erreur: "Option non incluse dans votre contrat — contactez votre gestionnaire Osmose RH." } };
+        try {
+          const saisies = require("../saisies");
+          if (d.mode === "declarer") return await saisies.declarer(clientInfo, email, d, context);
+          if (d.mode === "transmettre") return await saisies.transmettre(clientInfo, email, d);
+          if (d.mode === "cloturer") return await saisies.cloturer(clientInfo, d);
+          if (d.mode === "actualiser") return await saisies.actualiser(clientInfo, d);
+          return await saisies.lister(clientInfo);
+        } catch (e) {
+          if (e && e.status) return { status: e.status, jsonBody: { erreur: e.erreur } };
+          context.error("demande/saisie :", e);
+          return { status: 502, jsonBody: { erreur: "Saisies indisponibles — réessayez." } };
+        }
+      }
+
       // Réembauche, écran de contrôle : le client choisit un ancien
       // salarié et un projet de contrat, et voit AVANT de valider ce que
       // le dossier reprend et ce que la loi impose (carence, titre,
@@ -977,3 +997,8 @@ async function creerElementPersonnel(liste, email, clientInfo, d, reference, cha
   }
 }
 
+
+// Le fil « Mon gestionnaire » sert de signal urgent à d'autres modules
+// (saisies.js). Requis à l'exécution seulement — jamais au chargement —,
+// donc sans cycle : ce module est entièrement évalué avant tout appel.
+module.exports = { creerMessageGestionnaire };

@@ -379,6 +379,7 @@ async function creerVariablesPaie(email, clientInfo, mois, lignes) {
       TitresResto: num(l.titresResto),
       FraisPro: num(l.fraisPro),
       AvantagesNature: num(l.avantagesNature),
+      SaisieArret: num(l.saisieArret),
       Commentaire: txt(l.commentaire, 1000),
       Statut: "Nouvelle",
     };
