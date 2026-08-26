@@ -168,6 +168,44 @@ test.describe("Mode démonstration", () => {
     expect(appelsApi).toHaveLength(0);
   });
 
+  test("accident du travail : le volet se déplie et les 48 h s'affichent", async ({ page }) => {
+    await entrerDemo(page);
+    await page.getByRole("button", { name: "Production" }).click();
+    await page.getByText("Absences", { exact: true }).first().click();
+    await expect(page.getByRole("heading", { name: "Déclarer une absence" })).toBeVisible();
+
+    // Un motif ordinaire : pas de volet.
+    await page.locator("select").last().selectOption("Congés payés");
+    await expect(page.getByText("Les faits — pendant qu'ils sont frais")).not.toBeVisible();
+
+    // Accident du travail : le volet se déplie, avec l'avertissement 48 h.
+    await page.locator("select").last().selectOption("Accident du travail");
+    await expect(page.getByText("Les faits — pendant qu'ils sont frais")).toBeVisible();
+    await expect(page.getByText(/48 heures/).first()).toBeVisible();
+
+    // Le remplir et déclarer.
+    const salarie = page.locator("input[list], select").first();
+    await page.getByPlaceholder(/Atelier, chantier/).fill("Atelier menuiserie");
+    await page.getByPlaceholder(/L'activité en cours/).fill("Chute d'un escabeau en rangeant des panneaux en hauteur.");
+    // Champs génériques : salarié, date de début, date d'accident.
+    await page.locator("input[type=date]").first().fill(dansNJours(0));
+    await page.locator("input[type=date]").nth(2).fill(dansNJours(0));
+    // Le salarié via le champ dédié.
+    await page.getByRole("combobox").first().selectOption({ index: 1 }).catch(async () => {
+      await page.locator("input").first().fill("MARTIN Paul");
+    });
+    // Justificatif requis pour ce motif.
+    await page.getByPlaceholder(/collez le lien/).fill("https://exemple/arret.pdf");
+    await page.getByRole("button", { name: "Déclarer l'accident" }).click();
+
+    // Les gestes s'affichent, dans l'ordre : feuille, DAT, réserves.
+    await expect(page.getByText("Ce qu'il faut faire maintenant")).toBeVisible();
+    await expect(page.getByText(/S6201/)).toBeVisible();
+    await expect(page.getByText(/R\.441-3/)).toBeVisible();
+    await expect(page.getByText(/dix jours francs/)).toBeVisible();
+    expect(appelsApi).toHaveLength(0);
+  });
+
   test("notes de frais : la part exonérée, la part soumise, et la note bloquée", async ({ page }) => {
     await entrerDemo(page);
     await page.getByRole("button", { name: "Production" }).click();

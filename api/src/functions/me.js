@@ -116,7 +116,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-25-notes-de-frais";
+const VERSION_API = "2026-08-25-accident-du-travail";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",

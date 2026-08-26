@@ -4181,14 +4181,22 @@ const MOTIFS_ABSENCE = [
   { m: "Autre absence", justif: false },
 ];
 
+// Motifs qui déplient le volet accident — miroir de MOTIFS_ACCIDENT
+// côté serveur (accident.js). La maladie professionnelle n'en fait pas
+// partie : c'est le SALARIÉ qui la déclare à la CPAM, pas l'employeur.
+const MOTIFS_AT = ["Accident du travail", "Accident de trajet"];
+
 function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
-  const VIDE = { salarie: salarieInitial || "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "" };
+  const VIDE = { salarie: salarieInitial || "", dateDebut: "", dateFin: "", motif: "", justificatifUrl: "",
+    accidentDate: "", accidentHeure: "", accidentLieu: "", accidentCirconstances: "",
+    accidentLesions: "", accidentTemoins: "", accidentTiers: "", connaissanceDate: "", connaissanceHeure: "" };
   const [f, setF] = useState(VIDE);
   const [err, setErr] = useState(false);
   const [msg, setMsg] = useState(null); // { ok } | { erreur }
   const [envoi, setEnvoi] = useState(false);
 
   const justifRequis = MOTIFS_ABSENCE.find((x) => x.m === f.motif)?.justif === true;
+  const estAccident = MOTIFS_AT.includes(f.motif);
   // Photo de l'arrêt : dépôt direct + lecture automatique. Les champs
   // reconnus sont PROPOSÉS (jamais imposés) — le client corrige ce qu'il
   // veut avant d'envoyer. Sans OCR configuré, le dépôt marche quand même
@@ -4224,12 +4232,19 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
   };
 
   const envoyer = async () => {
-    if (!f.salarie.trim() || !f.dateDebut || !f.motif || (justifRequis && !f.justificatifUrl.trim())) { setErr(true); return; }
+    const voletIncomplet = estAccident &&
+      (!f.accidentDate || !f.accidentLieu.trim() || f.accidentCirconstances.trim().length < 15);
+    if (!f.salarie.trim() || !f.dateDebut || !f.motif || (justifRequis && !f.justificatifUrl.trim()) || voletIncomplet) { setErr(true); return; }
     setEnvoi(true); setMsg(null);
     try {
       const r = await apiFetch("/api/demande?demarche=absences", { method: "POST", body: JSON.stringify({ demarche: "absences", ...f }) });
       const j = await r.json().catch(() => ({}));
-      if (r.ok) { setMsg({ ok: `Absence déclarée — réf. ${j.reference}. Un accusé de réception vous est adressé ; votre gestionnaire est prévenu.` }); setF(VIDE); setErr(false); }
+      if (r.ok) {
+        setMsg(j.accident
+          ? { ok: `Accident déclaré — réf. ${j.reference}. Votre gestionnaire vient d'être prévenu.`, accident: j.accident }
+          : { ok: `Absence déclarée — réf. ${j.reference}. Un accusé de réception vous est adressé ; votre gestionnaire est prévenu.` });
+        setF(VIDE); setErr(false);
+      }
       else setMsg({ erreur: j.erreur || `Envoi refusé (HTTP ${r.status}).` });
     } catch { setMsg({ erreur: "Envoi impossible — vérifiez votre connexion." }); }
     setEnvoi(false);
@@ -4244,6 +4259,23 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
 
       {msg?.ok && <div style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✓ {msg.ok}</div>}
       {msg?.erreur && <div style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 14 }}>✗ {msg.erreur}</div>}
+
+      {/* Après un accident : les gestes et leurs horloges, dans l'ordre.
+          C'est la réponse du serveur qui parle — la date limite de la
+          DAT est calculée hors dimanches et fériés, pas devinée ici. */}
+      {msg?.accident && (
+        <div style={{ background: "#FFF7ED", border: "1px solid #FDBA74", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+          <p style={{ margin: "0 0 8px", fontSize: 13.5, fontWeight: 600, color: "#7C2D12" }}>
+            Ce qu'il faut faire maintenant
+          </p>
+          {msg.accident.gestes.map((g) => (
+            <div key={g.cle} style={{ marginBottom: 8 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: g.quand.includes("DÉPASSÉ") ? "#B91C1C" : "#9A3412" }}>{g.quand}</span>
+              <p style={{ margin: "2px 0 0", fontSize: 12.5, color: "#431407", lineHeight: 1.5 }}>{g.texte}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="osrh-form" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
         <div style={{ gridColumn: "1 / -1" }}>
@@ -4265,7 +4297,85 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
             <option value="">— Choisir un motif —</option>
             {MOTIFS_ABSENCE.map((x) => <option key={x.m} value={x.m}>{x.m}</option>)}
           </select>
+          {f.motif === "Maladie professionnelle" && (
+            <p style={{ margin: "6px 0 0", fontSize: 11.5, color: T.mut, lineHeight: 1.5 }}>
+              La maladie professionnelle se déclare à la CPAM par le <strong>salarié</strong>, pas par
+              l'employeur — vous n'avez pas de déclaration à faire, seulement cette absence à enregistrer.
+            </p>
+          )}
         </div>
+
+        {/* ── Volet accident ────────────────────────────────────────
+            Se déplie quand le motif est un accident du travail ou de
+            trajet. Il capte les faits À CHAUD : la déclaration (48 h) et
+            les réserves (10 jours) reprendront ces mots-là. Miroir des
+            exigences serveur (accident.js) : date, lieu, circonstances. */}
+        {estAccident && (
+          <div style={{ gridColumn: "1 / -1", background: "#FFF7ED", border: "1px solid #FDBA74", borderRadius: 10, padding: "14px 14px 6px" }}>
+            <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 700, color: "#7C2D12" }}>
+              Les faits — pendant qu'ils sont frais
+            </p>
+            <p style={{ margin: "0 0 12px", fontSize: 11.5, color: "#9A3412", lineHeight: 1.5 }}>
+              Vous avez <strong>48 heures</strong> pour déclarer l'accident à la CPAM (dimanches et jours
+              fériés non comptés). Ce que vous écrivez ici sera repris mot pour mot dans la déclaration —
+              et dans six mois, plus personne ne se souviendra des détails.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Date de l'accident *</label>
+                <input type="date" style={{ ...inputStyle, borderColor: err && !f.accidentDate ? T.err : T.border }}
+                  value={f.accidentDate} onChange={(e) => setF({ ...f, accidentDate: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Heure (si connue)</label>
+                <input type="time" style={inputStyle} value={f.accidentHeure} onChange={(e) => setF({ ...f, accidentHeure: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Lieu précis *</label>
+                <input type="text" style={{ ...inputStyle, borderColor: err && !f.accidentLieu.trim() ? T.err : T.border }}
+                  placeholder="Atelier, chantier de…, trajet domicile-travail…" value={f.accidentLieu}
+                  onChange={(e) => setF({ ...f, accidentLieu: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Circonstances — que s'est-il passé ? *</label>
+                <textarea rows={3} style={{ ...inputStyle, resize: "vertical", borderColor: err && f.accidentCirconstances.trim().length < 15 ? T.err : T.border }}
+                  placeholder="L'activité en cours, ce qui a provoqué l'accident, comment. Une phrase précise vaut mieux qu'un roman."
+                  value={f.accidentCirconstances} onChange={(e) => setF({ ...f, accidentCirconstances: e.target.value })} />
+                {err && f.accidentCirconstances.trim().length < 15 && (
+                  <p style={{ margin: "4px 0 0", fontSize: 11.5, color: T.err }}>Décrivez les circonstances en une phrase au moins.</p>
+                )}
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Siège et nature des lésions</label>
+                <input type="text" style={inputStyle} placeholder="Main droite, coupure profonde…"
+                  value={f.accidentLesions} onChange={(e) => setF({ ...f, accidentLesions: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Témoins (noms)</label>
+                <input type="text" style={inputStyle} placeholder="Ou la première personne avisée"
+                  value={f.accidentTemoins} onChange={(e) => setF({ ...f, accidentTemoins: e.target.value })} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Tiers impliqué (véhicule, autre entreprise…)</label>
+                <input type="text" style={inputStyle} placeholder="Important : un tiers responsable permet un recours qui allège votre taux AT"
+                  value={f.accidentTiers} onChange={(e) => setF({ ...f, accidentTiers: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>Vous l'avez appris le</label>
+                <input type="date" style={inputStyle} value={f.connaissanceDate} onChange={(e) => setF({ ...f, connaissanceDate: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>À</label>
+                <input type="time" style={inputStyle} value={f.connaissanceHeure} onChange={(e) => setF({ ...f, connaissanceHeure: e.target.value })} />
+              </div>
+              <p style={{ gridColumn: "1 / -1", margin: "0 0 8px", fontSize: 11.5, color: "#9A3412", lineHeight: 1.5 }}>
+                C'est ce moment qui fait courir les 48 heures. Laissez vide si vous l'apprenez maintenant.
+                Un doute sur la réalité de l'accident ? Dites-le à votre gestionnaire dès l'envoi : les
+                réserves doivent être émises dans les dix jours, et motivées.
+              </p>
+            </div>
+          </div>
+        )}
         <div style={{ gridColumn: "1 / -1" }}>
           <label style={{ display: "block", fontSize: 12, color: T.mut, marginBottom: 6, fontWeight: 600 }}>
             Justificatif {justifRequis ? <span style={{ color: T.err }}>*</span> : <span style={{ fontWeight: 400 }}>(lien optionnel)</span>}
@@ -4308,7 +4418,7 @@ function DemandeAbsence({ user, client, salaries, salarieInitial, onRetour }) {
 
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
         <Btn onClick={onRetour}>{msg?.ok ? "Retour aux démarches" : "Annuler"}</Btn>
-        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : "Déclarer l'absence"}</Btn>
+        <Btn primary disabled={envoi} onClick={envoyer}>{envoi ? "Envoi…" : estAccident ? "Déclarer l'accident" : "Déclarer l'absence"}</Btn>
       </div>
     </>
   );

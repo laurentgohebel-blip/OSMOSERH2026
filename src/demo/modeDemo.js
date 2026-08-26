@@ -675,6 +675,17 @@ function traiterDemande(e, options) {
         du: d.dateDebut, au: d.dateFin || null, motif: d.motif,
         justificatifUrl: d.justificatifUrl || "", statut: "Nouvelle", reference,
       });
+      // Accident du travail / de trajet : le calcul qui fait foi (48 h
+      // hors dimanches et fériés) vit dans api/src/accident.js — la démo
+      // montre le geste avec un lendemain-de-lendemain simplifié.
+      if (d.motif === "Accident du travail" || d.motif === "Accident de trajet") {
+        const limite = dansNJours(2).split("-").reverse().join("/");
+        return json(202, { reference, accident: { dat: { date: dansNJours(2), enRetard: false }, gestes: [
+          { cle: "feuille", quand: "Tout de suite", texte: "Remettez au salarié la feuille d'accident du travail (formulaire S6201) — elle lui ouvre la gratuité des soins. Sans elle, il avance les frais." },
+          { cle: "dat", quand: `Avant le ${limite}`, texte: "Déclaration d'accident du travail à la CPAM : 48 heures à compter de votre connaissance de l'accident, dimanches et jours fériés non compris (R.441-3). Votre gestionnaire s'en charge : il vient d'être prévenu." },
+          { cle: "reserves", quand: "10 jours francs après la déclaration", texte: "Si vous avez un doute sur la réalité de l'accident ou son lien avec le travail, dites-le à votre gestionnaire MAINTENANT : les réserves doivent être émises dans les dix jours francs suivant la déclaration, et elles doivent être motivées (R.441-6)." },
+        ] } });
+      }
       return json(202, { reference });
     }
 
