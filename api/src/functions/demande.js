@@ -439,7 +439,21 @@ app.http("demande", {
           return { status: 400, jsonBody: { erreur: "Montant invalide." } };
         if (!/^\d{4}-\d{2}-\d{2}$/.test(String(d.dateVersement || "")))
           return { status: 400, jsonBody: { erreur: "Date de versement requise." } };
-        const reference = `ACOMPTE-${Date.now().toString(36).toUpperCase()}`;
+        // Avance sur salaire (26/08) : un PRÊT sur du travail à venir —
+        // distinct de l'acompte (travail déjà fait, déduit en une fois).
+        // Le remboursement est plafonné à un DIXIÈME du salaire par paie
+        // (L.3251-3) : l'échéancier est calculé ici et stocké en clair
+        // pour le gestionnaire de paie.
+        let avance = null;
+        if (d.typeVersement === "avance") {
+          const A = require("../avance");
+          const erreurs = A.valider({ montant, netMensuel: d.netMensuel, premierMois: d.premierMois });
+          if (erreurs.length) return { status: 400, jsonBody: { erreur: erreurs[0] } };
+          avance = A.echeancier({ montant, netMensuel: d.netMensuel,
+            premierMois: d.premierMois || String(d.dateVersement).slice(0, 7) });
+        }
+
+        const reference = `${avance ? "AVANCE" : "ACOMPTE"}-${Date.now().toString(36).toUpperCase()}`;
         await creerElementDemarche("Acompte", {
           Title: nomSalarie,
           CodeClient: clientInfo.codeClient,
@@ -452,8 +466,13 @@ app.http("demande", {
           EmailDemandeur: email,
           EmailGestionnaire: clientInfo.emailGestionnaire || "",
           Statut: "Nouveau",
+          ...(avance ? {
+            TypeVersement: "Avance",
+            NetMensuel: avance.netMensuel,
+            Echeancier: require("../avance").resume(avance),
+          } : {}),
         });
-        return { status: 202, jsonBody: { reference } };
+        return { status: 202, jsonBody: { reference, ...(avance ? { avance } : {}) } };
       }
 
       if (d.demarche === "attestation-employeur" && !process.env.FLOW_URL_ATTESTATION_EMPLOYEUR) {

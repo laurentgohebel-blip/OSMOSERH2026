@@ -46,6 +46,15 @@ LISTES = [
             {"name": "Reference", "text": {}},
             {"name": "EmailDemandeur", "text": {}},
             {"name": "EmailGestionnaire", "text": {}},
+            # Avance sur salaire (26/08) : un PRÊT remboursé par retenues
+            # au 1/10e (L.3251-3) — distinct de l'acompte (travail déjà
+            # fait, déduit en une fois). L'échéancier est stocké en clair
+            # pour le gestionnaire de paie.
+            {"name": "TypeVersement", "choice": {"allowTextEntry": False,
+                "choices": ["Acompte", "Avance"], "displayAs": "dropDownMenu"},
+                "defaultValue": {"value": "Acompte"}},
+            {"name": "NetMensuel", "number": {}},
+            {"name": "Echeancier", "text": {"allowMultipleLines": True, "textType": "plain"}},
         ],
         # Colonnes supplémentaires si la liste est créée de zéro
         # (p. ex. dans le NOUVEAU tenant) :

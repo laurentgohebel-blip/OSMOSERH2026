@@ -167,6 +167,82 @@ const PROCEDURES = {
         document: "documents-fin-contrat", obligatoire: true },
     ],
   },
+
+  /* ─────────────────────────────────────────────────────────────────
+     RUPTURE DE LA PÉRIODE D'ESSAI (à l'initiative de l'employeur)
+     Le geste le plus fréquent en TPE, et le piège est le DÉLAI DE
+     PRÉVENANCE (L.1221-25), qui dépend de la PRÉSENCE du salarié :
+     moins de 8 jours → 24 h ; jusqu'à un mois → 48 h ; après un mois →
+     deux semaines ; après trois mois → un mois. Deux erreurs coûtent :
+     notifier APRÈS la fin de l'essai (ce n'est plus une rupture d'essai,
+     c'est un licenciement sans procédure), et un délai de prévenance qui
+     déborde la fin de l'essai (le contrat s'arrête quand même à la fin
+     de l'essai, le reste se paie en indemnité compensatrice). */
+  "rupture-essai": {
+    libelle: "Rupture de la période d'essai",
+    resume: "Notification pendant l'essai, délai de prévenance selon la présence.",
+    etapes: [
+      { cle: "entree", libelle: "Date d'entrée du salarié",
+        obligatoire: true,
+        aide: "C'est la présence depuis cette date qui détermine le délai de prévenance — pas la date de signature du contrat." },
+      { cle: "fin-essai", libelle: "Fin de la période d'essai (renouvellement compris)",
+        obligatoire: true,
+        aide: "Elle figure au contrat (et sur la fiche du salarié). Un renouvellement n'est valable que si le contrat ou la convention collective le prévoit ET que le salarié l'a accepté par écrit avant l'échéance." },
+      { cle: "notification", libelle: "Notification de la rupture au salarié",
+        document: "rupture-essai", obligatoire: true,
+        auPlusTard: { depuis: "fin-essai", jours: 0, type: "calendaires" },
+        aide: "Aucun motif à donner — et n'en donnez pas : motiver transforme la rupture en terrain disciplinaire ou discriminatoire. Un écrit remis contre décharge ou envoyé en recommandé fait la preuve de la date. Après la fin de l'essai, ce n'est plus une rupture d'essai : c'est un licenciement, avec toute sa procédure." },
+      { cle: "fin-prevenance", libelle: "Fin du délai de prévenance (dernier jour travaillé)",
+        obligatoire: true,
+        // Le délai se calcule depuis la notification, sa DURÉE depuis la
+        // présence (entrée → notification) : c'est la règle-fonction.
+        auPlusTot: { depuis: "notification", type: "calendaires",
+          jours: (dates) => {
+            if (!dates.entree || !dates.notification) return null;
+            const presence = D.compter(dates.entree, dates.notification, "calendaires") + 1;
+            return presence < 8 ? 1 : presence <= 31 ? 2 : presence <= 92 ? 14 : 30;
+          } },
+        auPlusTard: { depuis: "fin-essai", jours: 0, type: "calendaires", avertissement: "indemnite-prevenance" },
+        aide: "24 h de prévenance avant 8 jours de présence, 48 h jusqu'à un mois, deux semaines après un mois, un mois après trois mois (L.1221-25). Si ce délai déborde la fin de l'essai, le contrat s'arrête quand même à la fin de l'essai : le reste du délai se paie en indemnité compensatrice (sauf faute grave)." },
+      { cle: "documents", libelle: "Remise des documents de fin de contrat",
+        document: "documents-fin-contrat", obligatoire: true,
+        aide: "Pas d'indemnité de licenciement pour une rupture d'essai ; l'indemnité compensatrice de congés payés reste due." },
+    ],
+  },
+
+  /* ─────────────────────────────────────────────────────────────────
+     ABANDON DE POSTE — PRÉSOMPTION DE DÉMISSION (L.1237-1-1, R.1237-13)
+     Depuis 2023, le salarié qui abandonne volontairement son poste est
+     PRÉSUMÉ démissionnaire — mais seulement si la forme est tenue :
+     mise en demeure de reprendre le travail ou de justifier l'absence,
+     avec un délai de réponse d'AU MOINS quinze jours à compter de sa
+     présentation. La forme ratée = un licenciement sans cause. */
+  "abandon-poste": {
+    libelle: "Abandon de poste (présomption de démission)",
+    resume: "Mise en demeure, quinze jours au moins, démission présumée.",
+    etapes: [
+      { cle: "constat", libelle: "Premier jour d'absence injustifiée",
+        obligatoire: true,
+        aide: "Avant tout : vérifier qu'aucun justificatif n'est en route (arrêt de travail, hospitalisation, événement familial). Un arrêt maladie qui arrive pendant la procédure la suspend." },
+      { cle: "mise-en-demeure", libelle: "Envoi de la mise en demeure",
+        document: "mise-en-demeure-abandon", obligatoire: true,
+        aide: "Lettre recommandée avec accusé de réception ou remise contre décharge. Sans mise en demeure, AUCUNE présomption : le salarié absent reste salarié. Elle demande de reprendre le poste OU de justifier l'absence, et annonce la présomption de démission à défaut." },
+      { cle: "presentation", libelle: "Première présentation de la mise en demeure",
+        obligatoire: true,
+        aide: "C'est cette date — la présentation par La Poste, pas l'envoi — qui fait courir le délai laissé au salarié." },
+      { cle: "expiration", libelle: "Expiration du délai laissé au salarié",
+        auPlusTot: { depuis: "presentation", jours: 15, type: "calendaires" },
+        obligatoire: true,
+        aide: "Quinze jours calendaires AU MINIMUM après la présentation (R.1237-13) — vous pouvez laisser plus, jamais moins. Si le salarié reprend le travail ou justifie son absence (santé, grève, droit de retrait, refus d'une modification du contrat), la présomption tombe : clore la procédure." },
+      { cle: "demission", libelle: "Constat de la démission présumée",
+        auPlusTot: { depuis: "expiration", jours: 0, type: "calendaires" },
+        obligatoire: true,
+        aide: "À l'expiration du délai sans reprise ni justification, le salarié est présumé démissionnaire — la date de fin du contrat est celle de l'expiration. Il peut saisir les prud'hommes pour contester (affaire portée directement devant le bureau de jugement)." },
+      { cle: "documents", libelle: "Remise des documents de fin de contrat",
+        document: "documents-fin-contrat", obligatoire: true,
+        aide: "Attestation France Travail : le motif est la démission (présomption). Pas d'indemnité de licenciement ; congés payés acquis dus." },
+    ],
+  },
 };
 
 const typeValide = (t) => Object.prototype.hasOwnProperty.call(PROCEDURES, String(t || ""));
@@ -186,9 +262,16 @@ function etat(type, faites = {}, aujourdhui) {
     if (!regle) return "";
     const base = dates[regle.depuis];
     if (!base) return "";
+    // `jours` peut être une FONCTION des dates déjà posées : certains
+    // délais dépendent du dossier lui-même — le délai de prévenance
+    // d'une rupture d'essai se compte selon la PRÉSENCE du salarié.
+    const jours = typeof regle.jours === "function" ? regle.jours(dates) : regle.jours;
+    if (jours === null || jours === undefined) return regle.mois !== undefined
+      ? (regle.report ? D.reporterSiNonOuvrable(D.ajouterMois(base, regle.mois)) : D.ajouterMois(base, regle.mois))
+      : "";
     const brut = regle.mois !== undefined
       ? D.ajouterMois(base, regle.mois)
-      : D.ajouter(base, regle.jours, regle.type || "calendaires");
+      : D.ajouter(base, jours, regle.type || "calendaires");
     return regle.report ? D.reporterSiNonOuvrable(brut) : brut;
   };
 
@@ -248,6 +331,8 @@ function alertes(etapes, jour) {
       out.push({ niveau: "depasse", etape: e.cle, titre: `${e.libelle} — délai dépassé`,
         detail: e.avertissement === "reprise-salaire"
           ? `La limite était le ${D.fr(e.auPlusTard)}. Le versement du salaire doit être repris (L.1226-4) tant que le salarié n'est ni reclassé ni licencié.`
+          : e.avertissement === "indemnite-prevenance"
+          ? `Le délai de prévenance déborde la fin de la période d'essai (${D.fr(e.auPlusTard)}). Le contrat s'arrête à la fin de l'essai ; le reliquat du délai se paie en indemnité compensatrice (sauf faute grave).`
           : `La limite était le ${D.fr(e.auPlusTard)}.` });
     } else if (e.auPlusTard) {
       const reste = D.compter(jour, e.auPlusTard, "calendaires");
@@ -298,6 +383,14 @@ function courrier(cle, ctx = {}) {
     "convention-rupture": {
       objet: "Rupture conventionnelle — points à vérifier avant signature",
       corps: `Rupture conventionnelle de ${s}\n\nÀ vérifier avant de signer :\n\n— Un exemplaire de la convention est REMIS au salarié. À défaut, la rupture est nulle.\n— L'indemnité de rupture est au moins égale à l'indemnité légale de licenciement, et à l'indemnité conventionnelle lorsque celle-ci est plus favorable.\n— La date de rupture envisagée est postérieure au lendemain de l'homologation.\n— Le salarié a été informé de la possibilité de se faire assister lors de l'entretien.\n— Salarié protégé : c'est une autorisation de l'inspection du travail qu'il faut demander, et non une homologation.\n\nDélai de rétractation : quinze jours calendaires à compter du lendemain de la signature, soit jusqu'au ${D.fr(ctx.finRetractation) || "……"} inclus.\nDemande d'homologation à déposer à partir du ${D.fr(ctx.depotHomologation) || "……"}.`,
+    },
+    "rupture-essai": {
+      objet: "Rupture de la période d'essai",
+      corps: `${entete}Objet : rupture de la période d'essai\n\nMadame, Monsieur,\n\nNous vous informons de notre décision de mettre fin à votre période d'essai.\n\nConformément au délai de prévenance prévu à l'article L.1221-25 du code du travail, votre contrat prendra fin le ${D.fr(ctx.finPrevenance) || "……"}.\n\nVotre certificat de travail, votre attestation destinée à France Travail et votre solde de tout compte vous seront remis à cette date.\n\nNous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.${signature}\n\n[NE MOTIVEZ PAS cette lettre : la rupture d'essai est libre, et un motif écrit ouvre un terrain disciplinaire ou discriminatoire. Si la rupture repose sur une faute, c'est la procédure disciplinaire qu'il faut suivre.]`,
+    },
+    "mise-en-demeure-abandon": {
+      objet: "Mise en demeure de reprendre votre poste ou de justifier votre absence",
+      corps: `${entete}Objet : mise en demeure de reprendre votre poste ou de justifier votre absence\n\nMadame, Monsieur,\n\nNous constatons votre absence à votre poste de travail depuis le ${D.fr(ctx.dateConstat) || "……"}, sans justification ni autorisation de notre part.\n\nEn conséquence, nous vous mettons en demeure de reprendre votre poste, ou de justifier votre absence, au plus tard le ${D.fr(ctx.dateLimite) || "…… [au moins quinze jours après la première présentation de cette lettre]"}.\n\nÀ défaut de reprise du travail ou de justification de votre absence dans ce délai, vous serez présumé(e) démissionnaire de votre poste, conformément aux articles L.1237-1-1 et R.1237-13 du code du travail. La date de la rupture sera celle de l'expiration du délai fixé ci-dessus.\n\nNous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.${signature}`,
     },
     "documents-fin-contrat": {
       objet: "Documents de fin de contrat",
@@ -463,6 +556,12 @@ async function document(clientInfo, d) {
     dateAvis: dossier.faites.avis || "",
     finRetractation: e.etapes.find((x) => x.cle === "fin-retractation")?.auPlusTot || "",
     depotHomologation: e.etapes.find((x) => x.cle === "homologation-demande")?.auPlusTot || "",
+    // Rupture d'essai : la date de fin (fin de prévenance) — faite si
+    // elle est posée, sinon la plus proche possible calculée.
+    finPrevenance: dossier.faites["fin-prevenance"] || e.etapes.find((x) => x.cle === "fin-prevenance")?.auPlusTot || "",
+    // Abandon de poste : le constat et la limite laissée au salarié.
+    dateConstat: dossier.faites.constat || "",
+    dateLimite: dossier.faites.expiration || e.etapes.find((x) => x.cle === "expiration")?.auPlusTot || "",
     mesure: dossier.type === "sanction-disciplinaire" ? "sanction disciplinaire" : "licenciement",
     ...dossier.contexte,
   };

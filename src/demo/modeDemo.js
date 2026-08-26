@@ -424,6 +424,8 @@ function traiterDemande(e, options) {
         { cle: "sanction-disciplinaire", libelle: "Sanction disciplinaire", resume: "Des faits connus à la sanction notifiée, deux délais à ne pas manquer." },
         { cle: "inaptitude", libelle: "Inaptitude constatée par le médecin du travail", resume: "Un mois pour reclasser ou licencier, sinon le salaire repart." },
         { cle: "rupture-conventionnelle", libelle: "Rupture conventionnelle individuelle", resume: "Entretien, signature, quinze jours de rétractation, homologation." },
+        { cle: "rupture-essai", libelle: "Rupture de la période d'essai", resume: "Notification pendant l'essai, délai de prévenance selon la présence." },
+        { cle: "abandon-poste", libelle: "Abandon de poste (présomption de démission)", resume: "Mise en demeure, quinze jours au moins, démission présumée." },
       ],
     });
   }
@@ -853,9 +855,24 @@ function traiterDemande(e, options) {
       aco.enAttente += 1;
       aco.montantEnAttente = Math.round((aco.montantEnAttente + montant) * 100) / 100;
       e.dashboard.aTraiter.push({
-        t: `Acompte ${String(d.nom || "").toUpperCase()} ${d.prenom || ""} — ${montant} € à traiter`,
+        t: `${d.typeVersement === "avance" ? "Avance" : "Acompte"} ${String(d.nom || "").toUpperCase()} ${d.prenom || ""} — ${montant} € à traiter`,
         s: "À traiter",
       });
+      // Avance : l'échéancier du 1/10e, même arithmétique que le moteur
+      // qui fait foi (api/src/avance.js).
+      if (d.typeVersement === "avance" && Number(d.netMensuel) > 0) {
+        const plafond = Math.round((Number(d.netMensuel) / 10) * 100) / 100;
+        const nb = Math.ceil(montant / plafond);
+        const lignes = [];
+        let mois = String(d.dateVersement || dansNJours(0)).slice(0, 7);
+        for (let i = 0; i < nb; i++) {
+          lignes.push({ mois, retenue: i === nb - 1 ? Math.round((montant - (nb - 1) * plafond) * 100) / 100 : plafond });
+          const [a, m] = mois.split("-").map(Number);
+          const dte = new Date(Date.UTC(a, m, 1));
+          mois = `${dte.getUTCFullYear()}-${String(dte.getUTCMonth() + 1).padStart(2, "0")}`;
+        }
+        return json(202, { reference, avance: { montant, netMensuel: Number(d.netMensuel), retenueMensuelle: plafond, mois: nb, lignes } });
+      }
       return json(202, { reference });
     }
 
