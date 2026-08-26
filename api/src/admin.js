@@ -555,4 +555,4 @@ async function titreSejour(request, context, corps) {
   }
 }
 
-module.exports = { donnees, activer, importerSalaries, dpae, titreSejour };
+module.exports = { donnees, activer, importerSalaries, dpae, titreSejour, exigerAdmin };

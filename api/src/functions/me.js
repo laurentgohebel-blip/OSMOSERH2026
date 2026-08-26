@@ -54,6 +54,17 @@ app.http("me", {
               return { status: 500, jsonBody: { erreur: `Module abonnements inchargeable : ${e.message}` } };
             }
           }
+          // &onglet=paie : la boîte de réception de la paie — les
+          // variables du mois, tous clients, sans ouvrir SharePoint.
+          if (request.query.get("onglet") === "paie") {
+            try {
+              return await require("../paie").donneesAdmin(request, context);
+            } catch (e) {
+              if (e && e.status) throw e;
+              context.error("me/vue=admin/paie :", e);
+              return { status: 500, jsonBody: { erreur: `Module paie inchargeable : ${e.message}` } };
+            }
+          }
           // &onglet=echeances : vue « toutes échéances, tous clients » —
           // le plan de charge du gestionnaire, trié par urgence.
           if (request.query.get("onglet") === "echeances") {
@@ -116,7 +127,7 @@ app.http("me", {
    de « nouvelle fonction non enregistrée ». Le champ `version` identifie
    le déploiement réellement servi (s'il manque : contenu périmé côté
    plateforme). À retirer une fois l'écran d'administration validé. */
-const VERSION_API = "2026-08-26-saisie-sur-salaire";
+const VERSION_API = "2026-08-26-boite-de-paie";
 app.http("ping", {
   methods: ["GET"],
   authLevel: "anonymous",
