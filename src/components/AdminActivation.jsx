@@ -1116,6 +1116,153 @@ function SectionAbonnements() {
   );
 }
 
+/* ── La boîte de réception de la paie ─────────────────────────────────
+   GET /api/me?vue=admin&onglet=paie&mois=… : les variables du mois,
+   tous clients — sans ouvrir SharePoint. Le pointage d'avancement
+   (Nouvelle → Intégrée) passe par POST /api/demande {action:"adminPaie"}. */
+function SectionPaie() {
+  const [mois, setMois] = useState(new Date().toISOString().slice(0, 7));
+  const [data, setData] = useState(null);
+  const [choix, setChoix] = useState([]);
+  const [envoi, setEnvoi] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const euros = (v) => `${Number(v || 0).toFixed(2).replace(".", ",")} €`;
+  const frMois = (m) => m.split("-").reverse().join("/");
+
+  const charger = (m) => {
+    setData(null); setChoix([]);
+    apiFetch(`/api/me?vue=admin&onglet=paie&mois=${m}`)
+      .then(async (r) => {
+        if (r.ok) return setData(await r.json());
+        const e = await r.json().catch(() => ({}));
+        setData({ erreur: e.erreur || `Paie indisponible (HTTP ${r.status}).` });
+      })
+      .catch(() => setData({ erreur: "Paie momentanément indisponible — réessayez." }));
+  };
+  useEffect(() => { charger(mois); }, [mois]);
+
+  const pointer = async (ids, statut) => {
+    if (!ids.length) return;
+    setEnvoi(true); setMsg(null);
+    try {
+      const r = await apiFetch("/api/demande", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "adminPaie", ids, statut }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setMsg({ erreur: j.erreur || "Mise à jour refusée." });
+      else { setMsg({ ok: `${j.faites} ligne${j.faites > 1 ? "s" : ""} → ${j.statut}.` }); charger(mois); }
+    } catch { setMsg({ erreur: "API injoignable — réessayez." }); }
+    setEnvoi(false);
+  };
+  const basculer = (id) => setChoix((c) => (c.includes(id) ? c.filter((x) => x !== id) : [...c, id]));
+
+  // Résumé d'une ligne : la rubrique et son chiffre, lisibles d'un
+  // coup d'œil — le détail complet reste dans le commentaire.
+  const resume = (l) => {
+    const parts = [];
+    const h = l.heures;
+    const totalH = h.normales + h.complementaires + h.sup25 + h.sup50;
+    if (totalH) parts.push(`${totalH} h${h.sup25 || h.sup50 ? ` (dont ${h.sup25 + h.sup50} sup)` : ""}${h.nuit ? ` · ${h.nuit} h nuit` : ""}`);
+    if (l.absence) parts.push(`${l.absence.type}${l.absence.du ? ` du ${frMois(l.absence.du.slice(0, 7))}` : ""}`);
+    if (l.prime) parts.push(`${l.prime.libelle} ${euros(l.prime.montant)}`);
+    if (l.acompte) parts.push(`Acompte ${euros(l.acompte)}`);
+    if (l.titresResto) parts.push(`${l.titresResto} titres-resto`);
+    if (l.fraisPro) parts.push(`Frais ${euros(l.fraisPro)}`);
+    if (l.avantagesNature) parts.push(`AN ${euros(l.avantagesNature)}`);
+    if (l.saisieArret) parts.push(`Saisie ${euros(l.saisieArret)}`);
+    return parts.join(" · ") || "—";
+  };
+  const COULEUR_NATURE = { heures: "#0F5C4A", absence: "#7A4A05", prime: "#5B4A9E", acompte: "#0B5583",
+    "titres-resto": "#0B5583", frais: "#0F5C4A", "avantage-nature": "#7A4A05", saisie: "#8A1F3D", autre: "#666" };
+
+  const decale = (n) => {
+    const [a, m] = mois.split("-").map(Number);
+    const d = new Date(Date.UTC(a, m - 1 + n, 1));
+    setMois(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+  };
+
+  return (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 600 }}>Paie de {frMois(mois)}</h2>
+        <button onClick={() => decale(-1)} style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 13, fontWeight: 600 }}>← mois précédent</button>
+        <button onClick={() => decale(1)} style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 13, fontWeight: 600 }}>mois suivant →</button>
+        {data?.compteurs && (
+          <span style={{ marginLeft: "auto", fontSize: 12.5, color: T.mut }}>
+            {data.compteurs.ontEnvoye}/{data.compteurs.clients} clients ont transmis ·{" "}
+            <strong style={{ color: data.compteurs.nouvelles ? "#B45309" : T.accent }}>{data.compteurs.nouvelles} à intégrer</strong> · {data.compteurs.integrees} intégrées
+          </span>
+        )}
+      </div>
+
+      {msg?.ok && <p style={{ background: "#E1F5EE", color: "#085041", border: "1px solid #B7E4D4", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>✓ {msg.ok}</p>}
+      {msg?.erreur && <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "8px 12px", fontSize: 13 }}>✗ {msg.erreur}</p>}
+      {data === null && <p style={{ color: T.mut, fontSize: 13.5 }}>Chargement…</p>}
+      {data?.erreur && <p style={{ background: "#FCEBEB", color: "#791F1F", border: "1px solid #F7C1C1", borderRadius: 8, padding: "10px 14px", fontSize: 13 }}>{data.erreur}</p>}
+
+      {choix.length > 0 && (
+        <div style={{ position: "sticky", top: 0, zIndex: 5, background: "#fff", border: `1px solid ${T.border}`, borderRadius: 10, padding: "8px 12px", marginBottom: 12, display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ fontSize: 13 }}>{choix.length} ligne{choix.length > 1 ? "s" : ""} sélectionnée{choix.length > 1 ? "s" : ""}</span>
+          <button disabled={envoi} onClick={() => pointer(choix, "Intégrée")}
+            style={{ all: "unset", cursor: "pointer", background: T.accent, color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12.5, fontWeight: 600, opacity: envoi ? 0.6 : 1 }}>
+            Marquer intégrées
+          </button>
+          <button disabled={envoi} onClick={() => pointer(choix, "Nouvelle")}
+            style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 12.5 }}>Repasser en « Nouvelle »</button>
+          <button onClick={() => setChoix([])} style={{ all: "unset", cursor: "pointer", color: T.mut, fontSize: 12.5, marginLeft: "auto" }}>Tout désélectionner</button>
+        </div>
+      )}
+
+      {(data?.blocs || []).map((b) => (
+        <div key={b.codeClient} style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 12, padding: "14px 16px", marginBottom: 12, opacity: b.lignes.length ? 1 : 0.75 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <strong style={{ fontSize: 14.5 }}>{b.raisonSociale}</strong>
+            <span style={{ fontSize: 11.5, color: T.mut }}>{b.codeClient}</span>
+            {b.cycle?.statut && <span style={{ fontSize: 11.5, background: "#EEF4FB", color: "#0B5583", borderRadius: 99, padding: "2px 10px" }}>{b.cycle.statut}</span>}
+            <span style={{ marginLeft: "auto", fontSize: 12, color: b.nouvelles ? "#B45309" : T.mut }}>
+              {b.lignes.length === 0 ? "rien reçu — à relancer"
+                : b.nouvelles ? `${b.nouvelles} à intégrer` : "tout est intégré ✓"}
+            </span>
+            {b.nouvelles > 0 && (
+              <button disabled={envoi}
+                onClick={() => pointer(b.lignes.filter((l) => l.statut === "Nouvelle").map((l) => l.id), "Intégrée")}
+                style={{ all: "unset", cursor: "pointer", color: T.accent, fontSize: 12, fontWeight: 600 }}>
+                Intégrer le client
+              </button>
+            )}
+          </div>
+          {b.lignes.length > 0 && (
+            <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 10 }}>
+              <tbody>
+                {b.lignes.map((l) => (
+                  <tr key={l.id} style={{ background: choix.includes(l.id) ? "#F1F7F5" : "transparent", opacity: l.statut === "Intégrée" ? 0.55 : 1 }}>
+                    <td style={{ padding: "6px 8px 6px 0", borderBottom: `1px solid ${T.border}`, width: 24 }}>
+                      <input type="checkbox" checked={choix.includes(l.id)} onChange={() => basculer(l.id)} />
+                    </td>
+                    <td style={{ padding: "6px 8px 6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 12.5, whiteSpace: "nowrap" }}>
+                      {l.nom} {l.prenom}{l.matricule ? <span style={{ color: T.mut }}> · {l.matricule}</span> : ""}
+                    </td>
+                    <td style={{ padding: "6px 8px 6px 0", borderBottom: `1px solid ${T.border}` }}>
+                      {l.natures.map((n) => (
+                        <span key={n} style={{ fontSize: 10.5, fontWeight: 600, color: "#fff", background: COULEUR_NATURE[n] || "#666", borderRadius: 99, padding: "2px 8px", marginRight: 4, textTransform: "uppercase", letterSpacing: 0.3 }}>{n}</span>
+                      ))}
+                      <span style={{ fontSize: 12.5 }} title={l.commentaire}>{resume(l)}</span>
+                    </td>
+                    <td style={{ padding: "6px 0", borderBottom: `1px solid ${T.border}`, fontSize: 11.5, color: l.statut === "Intégrée" ? T.accent : "#B45309", textAlign: "right", whiteSpace: "nowrap" }}>
+                      {l.statut}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
 function SectionEcheancier() {
   const [data, setData] = useState(null);
   const [filtre, setFiltre] = useState("");
@@ -1378,6 +1525,7 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         {[
           ["acces", `Demandes d'accès${donnees?.demandes?.length ? ` (${donnees.demandes.length})` : ""}`],
           ["messages", `Messages clients${aRepondre ? ` (${aRepondre})` : ""}`],
+          ["paie", "Paie du mois"],
           ["echeances", "Échéances"],
           ["abonnements", "Abonnements"],
         ].map(([id, lib]) => (
@@ -1394,6 +1542,8 @@ export default function AdminActivation({ user, onLogout, msgInitial: msgProp })
         {onglet === "messages" && (
           <BoiteMessages boite={boite} recharger={chargerBoite} notifier={notifier} filInitial={msgInitial} />
         )}
+
+        {onglet === "paie" && <SectionPaie />}
 
         {onglet === "echeances" && <SectionEcheancier />}
 
